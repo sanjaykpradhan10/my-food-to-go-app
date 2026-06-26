@@ -45,9 +45,9 @@ Update this file at the end of every session (either tool can do it).
 ## Current position
 
 - **Chapter**: 3 — Interprocess communication in a microservice architecture
-- **Status**: Not started
-- **Last session**: 2026-06-18
-- **Last tool used**: Claude Chat
+- **Status**: Reading (structured walkthrough in progress)
+- **Last session**: 2026-06-25
+- **Last tool used**: Claude Code
 
 ---
 
@@ -55,6 +55,7 @@ Update this file at the end of every session (either tool can do it).
 <!-- Add a one-liner after each session: date · tool · what was covered -->
 - 2026-06-18 · Claude Chat · Ch. 1 complete — monolithic hell, scale cube, benefits/drawbacks, pattern language overview
 - 2026-06-18 · Claude Chat · Ch. 2 complete — 4+1 view model, hexagonal architecture, system operations, decompose by business capability, decompose by DDD subdomain, SRP/CCP, god classes resolved via bounded contexts
+- 2026-06-25 · Claude Code · Scaffolded full multi-module Gradle project (6 Spring Boot 3.5 stubs, compose.yml, hexagonal packages), pushed to GitHub; Ch. 3 structured walkthrough begun
 
 ---
 
@@ -92,7 +93,11 @@ Update this file at the end of every session (either tool can do it).
 | ftgo-api-gateway | Ch. 8 | Not started | |
 
 ### Architecture decisions made
-- (none yet — will populate from Ch. 2 onwards)
+- Hexagonal layers as Java packages (not Gradle sub-projects) — matches reference impl, simpler
+- No shared common module yet — extract when Ch. 4 sagas require shared event types
+- Minimal dependencies per service (web, jpa, mysql, test) — Eventuate Tram added in Ch. 3
+- Single MySQL instance, one schema per service — lower local overhead, matches Richardson's Compose setup
+- H2 in test scope with MODE=MySQL — allows contextLoads tests without a running DB
 
 ### Code patterns implemented
 - (none yet)
