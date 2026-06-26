@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: ftgo-delivery-service
+  datasource:
+    url: jdbc:mysql://localhost:3306/ftgo_delivery
+    username: ftgo
+    password: ftgo
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+server:
+  port: 8086
