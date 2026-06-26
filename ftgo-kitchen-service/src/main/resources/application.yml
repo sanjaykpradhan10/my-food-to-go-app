@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: ftgo-kitchen-service
+  datasource:
+    url: jdbc:mysql://localhost:3306/ftgo_kitchen
+    username: ftgo
+    password: ftgo
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+server:
+  port: 8083
