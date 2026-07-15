@@ -37,5 +37,32 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
+  restaurant-service:
+    build:
+      context: .
+      dockerfile: ftgo-restaurant-service/Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_restaurant
+
+  order-service:
+    build:
+      context: .
+      dockerfile: ftgo-order-service/Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+      restaurant-service:
+        condition: service_started
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order
+      RESTAURANT_SERVICE_BASE_URL: http://restaurant-service:8085
+
 volumes:
   mysql-data:
