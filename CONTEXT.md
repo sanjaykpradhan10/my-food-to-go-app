@@ -26,7 +26,7 @@ Update this file at the end of every session (either tool can do it).
 | 1  | Escaping monolithic hell | Done | High | Hexagonal arch, scale cube (X/Y/Z), monolithic hell symptoms, pattern language structure |
 | 2  | Decomposition strategies | Done | High | 4+1 views, hexagonal arch, system ops, business capability, DDD subdomains, SRP/CCP, god classes, bounded contexts |
 | 3  | Interprocess communication in a microservice architecture | Implementing | — | |
-| 4  | Managing transactions with sagas | Not started | — | |
+| 4  | Managing transactions with sagas | Reading | — | |
 | 5  | Designing business logic in a microservice architecture | Not started | — | |
 | 6  | Developing business logic with event sourcing | Not started | — | |
 | 7  | Implementing queries in a microservice architecture | Not started | — | |
@@ -44,8 +44,8 @@ Update this file at the end of every session (either tool can do it).
 
 ## Current position
 
-- **Chapter**: 3 — Interprocess communication in a microservice architecture
-- **Status**: Implementing — RPI + circuit breaker done
+- **Chapter**: 4 — Managing transactions with sagas
+- **Status**: Reading (Ch. 3 left partially implemented — RPI + circuit breaker done; messaging, transactional outbox, transaction log tailing, and discovery still open)
 - **Last session**: 2026-07-15
 - **Last tool used**: Claude Code
 
@@ -56,7 +56,8 @@ Update this file at the end of every session (either tool can do it).
 - 2026-06-18 · Claude Chat · Ch. 1 complete — monolithic hell, scale cube, benefits/drawbacks, pattern language overview
 - 2026-06-18 · Claude Chat · Ch. 2 complete — 4+1 view model, hexagonal architecture, system operations, decompose by business capability, decompose by DDD subdomain, SRP/CCP, god classes resolved via bounded contexts
 - 2026-06-25 · Claude Code · Scaffolded full multi-module Gradle project (6 Spring Boot 3.5 stubs, compose.yml, hexagonal packages), pushed to GitHub; Ch. 3 structured walkthrough begun
-- 2026-07-15 · Claude Code · Implemented and manually verified Ch. 3 synchronous REST + circuit breaker pattern: restaurant-service exposes GET /restaurants/{id} (Restaurant/MenuItem JPA entities, seed data); order-service exposes POST /orders, calling restaurant-service via RestClient wrapped in a Resilience4j circuit breaker (2s connect/read timeout, sliding-window-size 5, failure-rate-threshold 50%, wait-duration-in-open-state 5s); verified happy path (201/APPROVED), circuit opening under sustained failure (first 5 calls ~2s each then fail-fast in ~15-20ms), and recovery to CLOSED after the wait duration
+- 2026-07-15 · Claude Code · Implemented and manually verified Ch. 3 synchronous REST + circuit breaker pattern: restaurant-service exposes GET /restaurants/{id} (Restaurant/MenuItem JPA entities, seed data); order-service exposes POST /orders, calling restaurant-service via RestClient wrapped in a Resilience4j circuit breaker (2s connect/read timeout, sliding-window-size 5, failure-rate-threshold 50%, wait-duration-in-open-state 5s); verified happy path (201/APPROVED), circuit opening under sustained failure (first 5 calls ~2s each then fail-fast in ~15-20ms), and recovery to CLOSED after the wait duration; PR merged to main
+- 2026-07-15 · Claude Code · Moved on to Ch. 4 (sagas) reading; Ch. 3 left partially implemented (messaging, transactional outbox, transaction log tailing, discovery not yet built) — revisit later if desired
 
 ---
 
