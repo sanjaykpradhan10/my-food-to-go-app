@@ -27,9 +27,9 @@ class OutboxPublisherTest {
 
     @Test
     void marksEventSentAfterSuccessfulPublish() {
-        OutboxEvent event = new OutboxEvent("event-1", "OrderCreated", "{}");
+        OutboxEvent event = new OutboxEvent("event-1", "OrderCreated", 100L, "{}");
         when(outboxEventRepository.findBySentAtIsNullOrderByIdAsc()).thenReturn(List.of(event));
-        when(kafkaTemplate.send(eq("order.events"), eq("event-1"), eq("{}")))
+        when(kafkaTemplate.send(eq("order.events"), eq("100"), eq("{}")))
                 .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
 
         outboxPublisher.publishPendingEvents();
@@ -40,11 +40,11 @@ class OutboxPublisherTest {
 
     @Test
     void leavesEventUnsentWhenPublishFails() {
-        OutboxEvent event = new OutboxEvent("event-2", "OrderCreated", "{}");
+        OutboxEvent event = new OutboxEvent("event-2", "OrderCreated", 200L, "{}");
         when(outboxEventRepository.findBySentAtIsNullOrderByIdAsc()).thenReturn(List.of(event));
         CompletableFuture<SendResult<String, String>> failed = new CompletableFuture<>();
         failed.completeExceptionally(new RuntimeException("kafka down"));
-        when(kafkaTemplate.send(eq("order.events"), eq("event-2"), eq("{}"))).thenReturn(failed);
+        when(kafkaTemplate.send(eq("order.events"), eq("200"), eq("{}"))).thenReturn(failed);
 
         outboxPublisher.publishPendingEvents();
 

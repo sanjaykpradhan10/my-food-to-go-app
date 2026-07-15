@@ -40,7 +40,7 @@ public class OutboxPublisher {
 
         for (OutboxEvent event : pending) {
             try {
-                kafkaTemplate.send(TOPIC, event.getEventId(), event.getPayload()).get();
+                kafkaTemplate.send(TOPIC, String.valueOf(event.getOrderId()), event.getPayload()).get();
                 event.markSent();
                 outboxEventRepository.save(event);
             } catch (Exception e) {
