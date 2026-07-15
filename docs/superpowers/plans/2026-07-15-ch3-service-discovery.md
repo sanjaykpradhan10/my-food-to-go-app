@@ -430,8 +430,8 @@ spring:
       client:
         simple:
           instances:
-            ftgo-restaurant-service[0]:
-              uri: http://localhost:8089
+            ftgo-restaurant-service:
+              - uri: http://localhost:8089
 
 eureka:
   client:
