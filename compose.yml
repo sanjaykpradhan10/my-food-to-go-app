@@ -40,6 +40,13 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
+  service-registry:
+    build:
+      context: .
+      dockerfile: ftgo-service-registry/Dockerfile
+    ports:
+      - "8761:8761"
+
   restaurant-service:
     build:
       context: .
@@ -47,10 +54,13 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      service-registry:
+        condition: service_started
     ports:
       - "8085:8085"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_restaurant
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
 
   order-service:
     build:
@@ -61,14 +71,16 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      service-registry:
+        condition: service_started
       restaurant-service:
         condition: service_started
     ports:
       - "8082:8082"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order
-      RESTAURANT_SERVICE_BASE_URL: http://restaurant-service:8085
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
 
   kitchen-service:
     build:
