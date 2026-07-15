@@ -7,6 +7,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class OrderServiceTest {
 
@@ -18,10 +21,14 @@ class OrderServiceTest {
     private final RestaurantServicePort fakePort = restaurantId ->
             restaurantId.equals(1L) ? restaurant : null;
 
-    private final OrderService orderService = new OrderService(fakePort);
+    private final OrderRepository orderRepository = mock(OrderRepository.class);
+
+    private final OrderService orderService = new OrderService(fakePort, orderRepository);
 
     @Test
     void createsOrderWhenRestaurantAndMenuItemsAreValid() {
+        when(orderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
         Order order = orderService.createOrder(1L, List.of(new OrderLineItem(10L, 2)));
 
         assertThat(order.getRestaurantId()).isEqualTo(1L);
