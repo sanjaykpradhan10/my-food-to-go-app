@@ -25,7 +25,7 @@ Update this file at the end of every session (either tool can do it).
 |----|-------|--------|------------|-------|
 | 1  | Escaping monolithic hell | Done | High | Hexagonal arch, scale cube (X/Y/Z), monolithic hell symptoms, pattern language structure |
 | 2  | Decomposition strategies | Done | High | 4+1 views, hexagonal arch, system ops, business capability, DDD subdomains, SRP/CCP, god classes, bounded contexts |
-| 3  | Interprocess communication in a microservice architecture | Not started | — | |
+| 3  | Interprocess communication in a microservice architecture | Implementing | — | |
 | 4  | Managing transactions with sagas | Not started | — | |
 | 5  | Designing business logic in a microservice architecture | Not started | — | |
 | 6  | Developing business logic with event sourcing | Not started | — | |
@@ -45,8 +45,8 @@ Update this file at the end of every session (either tool can do it).
 ## Current position
 
 - **Chapter**: 3 — Interprocess communication in a microservice architecture
-- **Status**: Reading (structured walkthrough in progress)
-- **Last session**: 2026-06-25
+- **Status**: Implementing — RPI + circuit breaker done
+- **Last session**: 2026-07-15
 - **Last tool used**: Claude Code
 
 ---
@@ -56,6 +56,7 @@ Update this file at the end of every session (either tool can do it).
 - 2026-06-18 · Claude Chat · Ch. 1 complete — monolithic hell, scale cube, benefits/drawbacks, pattern language overview
 - 2026-06-18 · Claude Chat · Ch. 2 complete — 4+1 view model, hexagonal architecture, system operations, decompose by business capability, decompose by DDD subdomain, SRP/CCP, god classes resolved via bounded contexts
 - 2026-06-25 · Claude Code · Scaffolded full multi-module Gradle project (6 Spring Boot 3.5 stubs, compose.yml, hexagonal packages), pushed to GitHub; Ch. 3 structured walkthrough begun
+- 2026-07-15 · Claude Code · Implemented and manually verified Ch. 3 synchronous REST + circuit breaker pattern: restaurant-service exposes GET /restaurants/{id} (Restaurant/MenuItem JPA entities, seed data); order-service exposes POST /orders, calling restaurant-service via RestClient wrapped in a Resilience4j circuit breaker (2s connect/read timeout, sliding-window-size 5, failure-rate-threshold 50%, wait-duration-in-open-state 5s); verified happy path (201/APPROVED), circuit opening under sustained failure (first 5 calls ~2s each then fail-fast in ~15-20ms), and recovery to CLOSED after the wait duration
 
 ---
 
@@ -85,10 +86,10 @@ Update this file at the end of every session (either tool can do it).
 | Service | Introduced | Status | Notes |
 |---------|-----------|--------|-------|
 | ftgo-consumer-service | Ch. 1–2 | Ready to scaffold | Identified in capability mapping |
-| ftgo-order-service | Ch. 2–4 | Ready to scaffold | Core saga orchestrator; owns Order domain model |
+| ftgo-order-service | Ch. 2–4 | REST call + circuit breaker to restaurant-service | Core saga orchestrator; owns Order domain model; POST /orders calls restaurant-service via RestClient + Resilience4j circuit breaker |
 | ftgo-kitchen-service | Ch. 2, 5 | Ready to scaffold | Uses Ticket not Order; separate bounded context |
 | ftgo-accounting-service | Ch. 2, 4 | Ready to scaffold | |
-| ftgo-restaurant-service | Ch. 2 | Ready to scaffold | |
+| ftgo-restaurant-service | Ch. 2 | GET /restaurants/{id} implemented | Restaurant/MenuItem JPA entities + seed data (2 restaurants) |
 | ftgo-delivery-service | Ch. 2 | Ready to scaffold | Uses Delivery not Order; separate bounded context |
 | ftgo-api-gateway | Ch. 8 | Not started | |
 
@@ -112,9 +113,9 @@ Update this file at the end of every session (either tool can do it).
 - [x] Decompose by subdomain (Ch. 2)
 
 ### Communication
-- [ ] Remote procedure invocation / REST (Ch. 3)
+- [x] Remote procedure invocation / REST (Ch. 3)
 - [ ] Messaging (Ch. 3)
-- [ ] Circuit breaker (Ch. 3)
+- [x] Circuit breaker (Ch. 3)
 - [ ] Client-side discovery / Server-side discovery (Ch. 3)
 - [ ] Transactional outbox (Ch. 3)
 - [ ] Transaction log tailing (Ch. 3)
