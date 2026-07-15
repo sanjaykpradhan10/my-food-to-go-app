@@ -83,4 +83,24 @@ class OrderControllerTest {
                                 """))
                 .andExpect(status().isServiceUnavailable());
     }
+
+    @Test
+    void returns400WhenRestaurantIdMissing() throws Exception {
+        mockMvc.perform(post("/orders")
+                        .contentType("application/json")
+                        .content("""
+                                {"lineItems":[{"menuItemId":10,"quantity":1}]}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void returns400WhenLineItemsEmpty() throws Exception {
+        mockMvc.perform(post("/orders")
+                        .contentType("application/json")
+                        .content("""
+                                {"restaurantId":1,"lineItems":[]}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
 }

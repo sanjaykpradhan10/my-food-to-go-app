@@ -27,7 +27,14 @@ public class OrderController {
     }
 
     @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(@RequestBody CreateOrderRequest request) {
+    public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest request) {
+        if (request.restaurantId() == null) {
+            return ResponseEntity.badRequest().body("restaurantId is required");
+        }
+        if (request.lineItems() == null || request.lineItems().isEmpty()) {
+            return ResponseEntity.badRequest().body("lineItems must not be empty");
+        }
+
         List<OrderLineItem> lineItems = request.lineItems().stream()
                 .map(item -> new OrderLineItem(item.menuItemId(), item.quantity()))
                 .toList();
