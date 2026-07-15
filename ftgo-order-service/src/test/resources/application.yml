@@ -8,6 +8,8 @@ spring:
     hibernate:
       ddl-auto: create-drop
     database-platform: org.hibernate.dialect.H2Dialect
+  kafka:
+    bootstrap-servers: localhost:9092
 
 restaurant-service:
   base-url: http://localhost:8089

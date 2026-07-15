@@ -34,7 +34,10 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
   restaurant-service:
@@ -56,6 +59,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      kafka:
+        condition: service_started
       restaurant-service:
         condition: service_started
     ports:
@@ -63,6 +68,22 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order
       RESTAURANT_SERVICE_BASE_URL: http://restaurant-service:8085
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+  kitchen-service:
+    build:
+      context: .
+      dockerfile: ftgo-kitchen-service/Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_kitchen
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
 volumes:
   mysql-data:

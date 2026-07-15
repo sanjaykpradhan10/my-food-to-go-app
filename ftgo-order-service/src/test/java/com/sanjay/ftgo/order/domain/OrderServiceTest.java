@@ -1,12 +1,18 @@
 package com.sanjay.ftgo.order.domain;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class OrderServiceTest {
 
@@ -18,15 +24,36 @@ class OrderServiceTest {
     private final RestaurantServicePort fakePort = restaurantId ->
             restaurantId.equals(1L) ? restaurant : null;
 
-    private final OrderService orderService = new OrderService(fakePort);
+    private final OrderRepository orderRepository = mock(OrderRepository.class);
+    private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private final OrderService orderService =
+            new OrderService(fakePort, orderRepository, outboxEventRepository, objectMapper);
 
     @Test
     void createsOrderWhenRestaurantAndMenuItemsAreValid() {
+        when(orderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
         Order order = orderService.createOrder(1L, List.of(new OrderLineItem(10L, 2)));
 
         assertThat(order.getRestaurantId()).isEqualTo(1L);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.APPROVED);
         assertThat(order.getLineItems()).containsExactly(new OrderLineItem(10L, 2));
+    }
+
+    @Test
+    void writesOutboxEventWhenOrderIsCreated() {
+        when(orderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        orderService.createOrder(1L, List.of(new OrderLineItem(10L, 2)));
+
+        ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxEventRepository).save(captor.capture());
+        OutboxEvent savedEvent = captor.getValue();
+        assertThat(savedEvent.getEventType()).isEqualTo("OrderCreated");
+        assertThat(savedEvent.getPayload()).contains("\"restaurantId\":1");
+        assertThat(savedEvent.isSent()).isFalse();
     }
 
     @Test
