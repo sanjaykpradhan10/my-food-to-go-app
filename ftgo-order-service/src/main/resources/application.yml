@@ -17,6 +17,7 @@ server:
 outbox:
   poll-fixed-delay-ms: 2000
   batch-size: 20
+  publish-mode: polling
 
 eureka:
   client:
