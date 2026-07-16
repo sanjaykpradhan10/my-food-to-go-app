@@ -49,6 +49,9 @@ services:
       - "8761:8761"
 
   kafka-connect:
+    # 3.0.0.Final: 2.7.x issues SHOW MASTER STATUS against MySQL, which 8.4 removed
+    # (renamed to SHOW BINARY LOG STATUS) — connector reports RUNNING while silently
+    # delivering zero events on 2.7.x. Do not downgrade without re-verifying against mysql:8.4.
     image: debezium/connect:3.0.0.Final
     depends_on:
       kafka:
@@ -56,6 +59,8 @@ services:
       mysql:
         condition: service_healthy
     ports:
+      # 8087 host-side avoids colliding with kitchen-service's 8083:8083 mapping below;
+      # container-internal port stays 8083 (used by the healthcheck and connector-registrar).
       - "8087:8083"
     environment:
       BOOTSTRAP_SERVERS: kafka:29092
