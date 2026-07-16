@@ -45,8 +45,8 @@ Update this file at the end of every session (either tool can do it).
 ## Current position
 
 - **Chapter**: 4 — Managing transactions with sagas
-- **Status**: Reading (Ch. 3 left partially implemented — RPI + circuit breaker, messaging, transactional outbox, and client-side discovery done; transaction log tailing still open, the last remaining Ch. 3 pattern)
-- **Last session**: 2026-07-15
+- **Status**: Reading (all four Ch. 3 IPC patterns now done — RPI + circuit breaker, messaging, transactional outbox, client-side discovery, and transaction log tailing)
+- **Last session**: 2026-07-16
 - **Last tool used**: Claude Code
 
 ---
@@ -60,6 +60,7 @@ Update this file at the end of every session (either tool can do it).
 - 2026-07-15 · Claude Code · Moved on to Ch. 4 (sagas) reading; Ch. 3 left partially implemented (messaging, transactional outbox, transaction log tailing, discovery not yet built) — revisit later if desired
 - 2026-07-15 · Claude Code · Implemented and manually verified Ch. 3 async messaging + transactional outbox pattern: order-service now persists Order via JPA and writes OrderCreated to a transactional outbox table in the same DB transaction, with a @Scheduled poller publishing unsent outbox rows to Kafka topic order.events; kitchen-service (previously an empty stub) now consumes that topic and creates Tickets idempotently via a processed_events dedup ledger; docker-compose wires all 6 containers (mysql, zookeeper, kafka, restaurant-service, order-service, kitchen-service) with a Kafka dual internal/external listener setup; verified end-to-end via Docker — order placed, outbox row written then flipped to sent, Ticket created, and forced redelivery (resetting sent_at) confirmed deduped (ticket count and processed_events unchanged); still on feature branch worktree-ch3-messaging-outbox, not yet merged to main
 - 2026-07-15 · Claude Code · Implemented and manually verified Ch. 3 client-side service discovery pattern: new ftgo-service-registry module (standalone Eureka server, port 8761); restaurant-service now registers itself on startup; order-service resolves restaurant-service dynamically via a @LoadBalanced RestClient (base URL http://ftgo-restaurant-service, resolved by Spring Cloud LoadBalancer against the registry) instead of a hardcoded URL — RestaurantServiceProxy itself untouched, only how its RestClient bean is built changed; docker-compose wires all 7 containers (mysql, zookeeper, kafka, service-registry, restaurant-service, order-service, kitchen-service) with eureka.instance.prefer-ip-address for correct container networking; verified end-to-end via Docker including instance eviction (registry entry removed on graceful shutdown, order-service's circuit breaker degrading to 503) and dynamic recovery (registry re-populated on restart, order-service resumed 201s) without restarting order-service, proving discovery is dynamic and not resolved once at startup; still on feature branch worktree-ch3-service-discovery, not yet merged to main
+- 2026-07-16 · Claude Code · Implemented and manually verified Ch. 3 transaction log tailing (CDC) pattern, the last remaining Ch. 3 IPC pattern: added Debezium + Kafka Connect as a second outbox delivery mechanism, using the Outbox Event Router SMT to publish the existing outbox_events.payload column unchanged to Kafka topic order.events; switchable against the existing polling publisher via one OUTBOX_PUBLISH_MODE env var reconciled on both sides — OutboxPublisher's @ConditionalOnProperty gate and a new idempotent connector-registrar container that registers/deregisters the Debezium connector; OrderService's write side and kitchen-service's consumer are both unchanged; hit and fixed a real MySQL 8.4 compatibility gap along the way (Debezium 2.7.3.Final issues the removed `SHOW MASTER STATUS` syntax — MySQL 8.4 only supports `SHOW BINARY LOG STATUS` — causing the connector to loop on retriable snapshot errors despite reporting RUNNING; fixed by bumping the kafka-connect image to debezium/connect:3.0.0.Final); manually verified polling-mode regression (outbox sent_at populated, Ticket created), CDC-mode delivery (connector RUNNING, outbox sent_at stayed NULL, Ticket still created via Debezium alone), and mode-switch replay safety (ticket count and processed_events count unchanged across a fresh CDC re-registration — confirmed via kafka-connect logs that this was due to snapshot.mode: no_data skipping historical data entirely, not dedup absorbing a replay); still on feature branch worktree-ch3-cdc-transaction-log-tailing, not yet merged to main
 
 ---
 
@@ -89,7 +90,7 @@ Update this file at the end of every session (either tool can do it).
 | Service | Introduced | Status | Notes |
 |---------|-----------|--------|-------|
 | ftgo-consumer-service | Ch. 1–2 | Ready to scaffold | Identified in capability mapping |
-| ftgo-order-service | Ch. 2–4 | REST call + circuit breaker to restaurant-service (discovered via Eureka); publishes via outbox | Core saga orchestrator; owns Order domain model; POST /orders calls restaurant-service via a @LoadBalanced RestClient (base URL `http://ftgo-restaurant-service`, resolved dynamically against the Eureka registry via Spring Cloud LoadBalancer, no hardcoded base-url config anymore) wrapped in a Resilience4j circuit breaker; persists Order + OrderCreated outbox row in one transaction; scheduled poller publishes unsent rows to Kafka topic order.events |
+| ftgo-order-service | Ch. 2–4 | REST call + circuit breaker to restaurant-service (discovered via Eureka); publishes via outbox (polling or CDC) | Core saga orchestrator; owns Order domain model; POST /orders calls restaurant-service via a @LoadBalanced RestClient (base URL `http://ftgo-restaurant-service`, resolved dynamically against the Eureka registry via Spring Cloud LoadBalancer, no hardcoded base-url config anymore) wrapped in a Resilience4j circuit breaker; persists Order + OrderCreated outbox row in one transaction; outbox row is delivered to Kafka topic order.events by one of two switchable mechanisms — a scheduled poller (`OutboxPublisher`) or Debezium transaction log tailing via Kafka Connect — selected by the single `OUTBOX_PUBLISH_MODE` env var (`polling` default, or `cdc`) |
 | ftgo-kitchen-service | Ch. 2, 5 | Consumes order.events, creates Ticket | Uses Ticket not Order; separate bounded context; Kafka consumer creates Ticket idempotently, deduped via processed_events ledger |
 | ftgo-accounting-service | Ch. 2, 4 | Ready to scaffold | |
 | ftgo-restaurant-service | Ch. 2 | GET /restaurants/{id} implemented | Restaurant/MenuItem JPA entities + seed data (2 restaurants); now registers with the Eureka service registry on startup (spring.application.name: ftgo-restaurant-service) |
@@ -122,7 +123,7 @@ Update this file at the end of every session (either tool can do it).
 - [x] Circuit breaker (Ch. 3)
 - [x] Client-side discovery / Server-side discovery (Ch. 3)
 - [x] Transactional outbox (Ch. 3)
-- [ ] Transaction log tailing (Ch. 3)
+- [x] Transaction log tailing (Ch. 3)
 
 ### Data consistency
 - [ ] Saga — choreography (Ch. 4)
