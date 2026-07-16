@@ -2,6 +2,7 @@ services:
 
   mysql:
     image: mysql:8.4
+    command: --log-bin=mysql-bin --binlog-format=ROW --binlog-row-image=FULL --server-id=1
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_USER: ftgo
@@ -47,6 +48,52 @@ services:
     ports:
       - "8761:8761"
 
+  kafka-connect:
+    # 3.0.0.Final: 2.7.x issues SHOW MASTER STATUS against MySQL, which 8.4 removed
+    # (renamed to SHOW BINARY LOG STATUS) — connector reports RUNNING while silently
+    # delivering zero events on 2.7.x. Do not downgrade without re-verifying against mysql:8.4.
+    image: debezium/connect:3.0.0.Final
+    depends_on:
+      kafka:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+    ports:
+      # 8087 host-side avoids colliding with kitchen-service's 8083:8083 mapping below;
+      # container-internal port stays 8083 (used by the healthcheck and connector-registrar).
+      - "8087:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: connect-configs
+      OFFSET_STORAGE_TOPIC: connect-offsets
+      STATUS_STORAGE_TOPIC: connect-status
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  connector-registrar:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      kafka-connect:
+        condition: service_healthy
+    volumes:
+      - ./infrastructure/debezium/outbox-connector.json:/outbox-connector.json:ro
+    environment:
+      OUTBOX_PUBLISH_MODE: ${OUTBOX_PUBLISH_MODE:-polling}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ "$$OUTBOX_PUBLISH_MODE" = "cdc" ]; then
+          curl -s -X PUT http://kafka-connect:8083/connectors/outbox-connector/config -H "Content-Type: application/json" -d @/outbox-connector.json
+        else
+          curl -s -X DELETE http://kafka-connect:8083/connectors/outbox-connector || true
+        fi
+    restart: "no"
+
   restaurant-service:
     build:
       context: .
@@ -81,6 +128,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+      OUTBOX_PUBLISH_MODE: ${OUTBOX_PUBLISH_MODE:-polling}
 
   kitchen-service:
     build:
