@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -124,6 +125,53 @@ class TicketServiceTest {
 
         verify(failedOrderRepository).save(any());
         verify(outboxEventRepository, never()).save(any());
+    }
+
+    @Test
+    void createsTicketViaCommandWhenWithinCapacity() {
+        when(processedEventRepository.existsById("cmd-1")).thenReturn(false);
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleCreateTicketCommand("cmd-1", 42L, 5);
+
+        verify(ticketRepository).save(argThatStatusIs("CREATE_PENDING"));
+        verify(outboxEventRepository).save(argThat(e ->
+                "TicketCreated".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void repliesTicketCreationFailedViaCommandWhenOverCapacity() {
+        when(processedEventRepository.existsById("cmd-2")).thenReturn(false);
+
+        ticketService.handleCreateTicketCommand("cmd-2", 43L, 25);
+
+        verify(ticketRepository, never()).save(any());
+        verify(outboxEventRepository).save(argThat(e ->
+                "TicketCreationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void confirmsTicketViaCommand() {
+        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        when(processedEventRepository.existsById("cmd-3")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleConfirmTicketCommand("cmd-3", 42L);
+
+        assertThat(ticket.getStatus()).isEqualTo("AWAITING_ACCEPTANCE");
+    }
+
+    @Test
+    void cancelsTicketViaCommand() {
+        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        when(processedEventRepository.existsById("cmd-4")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleCancelTicketCommand("cmd-4", 42L);
+
+        assertThat(ticket.getStatus()).isEqualTo("CANCELLED");
     }
 
     private Ticket argThatStatusIs(String status) {

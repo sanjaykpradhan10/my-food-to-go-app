@@ -46,7 +46,7 @@ public class TicketService {
             return;
         }
 
-        if (totalQuantity > KITCHEN_CAPACITY_LIMIT) {
+        if (!isWithinCapacity(totalQuantity)) {
             publishEvent("TicketCreationFailed", event.orderId(), null, totalQuantity,
                     "order exceeds kitchen capacity");
             return;
@@ -96,17 +96,71 @@ public class TicketService {
         }
     }
 
+    @Transactional
+    public void handleCreateTicketCommand(String eventId, Long orderId, Integer totalQuantity) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        if (!isWithinCapacity(totalQuantity)) {
+            publishReply("TicketCreationFailed", orderId, "order exceeds kitchen capacity");
+            return;
+        }
+
+        ticketRepository.save(new Ticket(orderId, "CREATE_PENDING"));
+        publishReply("TicketCreated", orderId, null);
+    }
+
+    @Transactional
+    public void handleConfirmTicketCommand(String eventId, Long orderId) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
+        if (ticket != null) {
+            ticket.markAwaitingAcceptance();
+            ticketRepository.save(ticket);
+        }
+    }
+
+    @Transactional
+    public void handleCancelTicketCommand(String eventId, Long orderId) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
+        if (ticket != null) {
+            ticket.markCancelled();
+            ticketRepository.save(ticket);
+        }
+    }
+
+    private boolean isWithinCapacity(int totalQuantity) {
+        return totalQuantity <= KITCHEN_CAPACITY_LIMIT;
+    }
+
     private void publishEvent(String eventType, Long orderId, Long ticketId, Integer totalQuantity, String reason) {
         String eventId = UUID.randomUUID().toString();
         KitchenEvent event = new KitchenEvent(eventId, eventType, orderId, ticketId, totalQuantity, reason);
         outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "kitchen.events", toJson(event)));
     }
 
-    private String toJson(KitchenEvent event) {
+    private void publishReply(String eventType, Long orderId, String reason) {
+        String eventId = UUID.randomUUID().toString();
+        SagaReply reply = new SagaReply(eventId, "kitchen", eventType, orderId, reason);
+        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "saga.replies", toJson(reply)));
+    }
+
+    private String toJson(Object event) {
         try {
             return objectMapper.writeValueAsString(event);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize " + event.eventType() + " for order " + event.orderId(), e);
+            throw new IllegalStateException("Failed to serialize saga event", e);
         }
     }
 }
