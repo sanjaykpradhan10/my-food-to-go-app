@@ -75,6 +75,32 @@ class TicketServiceTest {
         verify(outboxEventRepository).save(argThatEventTypeIs("TicketCreationFailed"));
     }
 
+    @Test
+    void confirmsTicketWhenCardAuthorized() {
+        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        when(processedEventRepository.existsById("acct-event-1")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleAccountingEvent("acct-event-1", 42L, "CardAuthorized");
+
+        assertThat(ticket.getStatus()).isEqualTo("AWAITING_ACCEPTANCE");
+        verify(outboxEventRepository).save(argThatEventTypeIs("TicketConfirmed"));
+    }
+
+    @Test
+    void cancelsTicketWhenCardAuthorizationFailed() {
+        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        when(processedEventRepository.existsById("acct-event-2")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleAccountingEvent("acct-event-2", 42L, "CardAuthorizationFailed");
+
+        assertThat(ticket.getStatus()).isEqualTo("CANCELLED");
+        verify(outboxEventRepository).save(argThatEventTypeIs("TicketCancelled"));
+    }
+
     private Ticket argThatStatusIs(String status) {
         return org.mockito.ArgumentMatchers.argThat(t -> t != null && status.equals(t.getStatus()));
     }

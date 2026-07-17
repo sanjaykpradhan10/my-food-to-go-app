@@ -56,6 +56,29 @@ public class TicketService {
         publishEvent("TicketCreated", event.orderId(), ticket.getId(), totalQuantity, null);
     }
 
+    @Transactional
+    public void handleAccountingEvent(String eventId, Long orderId, String eventType) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
+        if (ticket == null) {
+            return;
+        }
+
+        if ("CardAuthorized".equals(eventType)) {
+            ticket.markAwaitingAcceptance();
+            ticketRepository.save(ticket);
+            publishEvent("TicketConfirmed", orderId, ticket.getId(), null, null);
+        } else {
+            ticket.markCancelled();
+            ticketRepository.save(ticket);
+            publishEvent("TicketCancelled", orderId, ticket.getId(), null, null);
+        }
+    }
+
     private void publishEvent(String eventType, Long orderId, Long ticketId, Integer totalQuantity, String reason) {
         String eventId = UUID.randomUUID().toString();
         KitchenEvent event = new KitchenEvent(eventId, eventType, orderId, ticketId, totalQuantity, reason);
