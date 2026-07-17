@@ -129,6 +129,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       OUTBOX_PUBLISH_MODE: ${OUTBOX_PUBLISH_MODE:-polling}
+      SAGA_MODE: ${SAGA_MODE:-choreography}
 
   kitchen-service:
     build:
@@ -144,6 +145,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_kitchen
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SAGA_MODE: ${SAGA_MODE:-choreography}
 
   consumer-service:
     build:
@@ -159,6 +161,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_consumer
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SAGA_MODE: ${SAGA_MODE:-choreography}
 
   accounting-service:
     build:
@@ -174,6 +177,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_accounting
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SAGA_MODE: ${SAGA_MODE:-choreography}
 
 volumes:
   mysql-data:
