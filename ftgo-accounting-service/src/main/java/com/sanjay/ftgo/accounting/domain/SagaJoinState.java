@@ -3,6 +3,7 @@ package com.sanjay.ftgo.accounting.domain;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "saga_join_state")
@@ -16,6 +17,9 @@ public class SagaJoinState {
     private boolean failed;
     private boolean resolved;
     private Integer totalQuantity;
+
+    @Version
+    private Long version;
 
     protected SagaJoinState() {
     }
@@ -50,6 +54,10 @@ public class SagaJoinState {
 
     public Integer getTotalQuantity() {
         return totalQuantity;
+    }
+
+    public Long getVersion() {
+        return version;
     }
 
     public void markConsumerVerified() {

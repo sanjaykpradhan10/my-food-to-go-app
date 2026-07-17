@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -100,5 +101,22 @@ class SagaJoinServiceTest {
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
 
         verify(sagaJoinStateRepository, never()).findById(any());
+    }
+
+    @Test
+    void ignoresLateDuplicateEventAfterJoinAlreadyResolved() {
+        SagaJoinState state = new SagaJoinState(42L);
+        when(processedEventRepository.existsById(any())).thenReturn(false);
+        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
+        service.handleKitchenEvent("e2", 42L, "TicketCreated", 5);
+
+        // Late/duplicate redelivery for the same order, after the join has already resolved.
+        service.handleKitchenEvent("e3", 42L, "TicketCreated", 5);
+
+        verify(authorizationRepository, times(1)).save(any());
+        verify(outboxEventRepository, times(1)).save(any());
     }
 }
