@@ -29,7 +29,7 @@ public class OrderService {
     }
 
     @Transactional
-    public Order createOrder(Long restaurantId, List<OrderLineItem> lineItems) {
+    public Order createOrder(Long consumerId, Long restaurantId, List<OrderLineItem> lineItems) {
         RestaurantInfo restaurant = restaurantServicePort.findRestaurant(restaurantId);
 
         Set<Long> validMenuItemIds = restaurant.menuItems().stream()
@@ -42,7 +42,7 @@ public class OrderService {
             }
         }
 
-        Order order = orderRepository.save(new Order(restaurantId, lineItems, OrderStatus.APPROVED));
+        Order order = orderRepository.save(new Order(consumerId, restaurantId, lineItems, OrderStatus.APPROVAL_PENDING));
 
         String eventId = UUID.randomUUID().toString();
         OrderCreatedEvent event = OrderCreatedEvent.from(order, eventId);

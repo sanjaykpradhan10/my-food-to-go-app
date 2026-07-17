@@ -6,6 +6,7 @@ public record OrderCreatedEvent(
         String eventId,
         String eventType,
         Long orderId,
+        Long consumerId,
         Long restaurantId,
         List<LineItem> lineItems) {
 
@@ -16,6 +17,6 @@ public record OrderCreatedEvent(
         List<LineItem> items = order.getLineItems().stream()
                 .map(lineItem -> new LineItem(lineItem.menuItemId(), lineItem.quantity()))
                 .toList();
-        return new OrderCreatedEvent(eventId, "OrderCreated", order.getId(), order.getRestaurantId(), items);
+        return new OrderCreatedEvent(eventId, "OrderCreated", order.getId(), order.getConsumerId(), order.getRestaurantId(), items);
     }
 }

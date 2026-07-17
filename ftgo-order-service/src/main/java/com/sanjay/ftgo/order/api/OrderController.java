@@ -28,6 +28,9 @@ public class OrderController {
 
     @PostMapping
     public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest request) {
+        if (request.consumerId() == null) {
+            return ResponseEntity.badRequest().body("consumerId is required");
+        }
         if (request.restaurantId() == null) {
             return ResponseEntity.badRequest().body("restaurantId is required");
         }
@@ -39,7 +42,7 @@ public class OrderController {
                 .map(item -> new OrderLineItem(item.menuItemId(), item.quantity()))
                 .toList();
 
-        Order order = orderService.createOrder(request.restaurantId(), lineItems);
+        Order order = orderService.createOrder(request.consumerId(), request.restaurantId(), lineItems);
         return ResponseEntity.status(HttpStatus.CREATED).body(OrderResponse.from(order));
     }
 

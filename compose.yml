@@ -145,5 +145,35 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_kitchen
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
+  consumer-service:
+    build:
+      context: .
+      dockerfile: ftgo-consumer-service/Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_consumer
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+  accounting-service:
+    build:
+      context: .
+      dockerfile: ftgo-accounting-service/Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_accounting
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
 volumes:
   mysql-data:

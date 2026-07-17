@@ -10,6 +10,11 @@ spring:
     database-platform: org.hibernate.dialect.H2Dialect
   kafka:
     bootstrap-servers: localhost:9092
+    consumer:
+      group-id: order-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
   cloud:
     discovery:
       client:

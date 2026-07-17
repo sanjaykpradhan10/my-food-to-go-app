@@ -4,7 +4,7 @@ import com.sanjay.ftgo.order.domain.Order;
 
 import java.util.List;
 
-public record OrderResponse(Long id, Long restaurantId, List<LineItemResponse> lineItems, String status) {
+public record OrderResponse(Long id, Long consumerId, Long restaurantId, List<LineItemResponse> lineItems, String status) {
 
     public record LineItemResponse(Long menuItemId, int quantity) {
     }
@@ -13,6 +13,6 @@ public record OrderResponse(Long id, Long restaurantId, List<LineItemResponse> l
         List<LineItemResponse> items = order.getLineItems().stream()
                 .map(lineItem -> new LineItemResponse(lineItem.menuItemId(), lineItem.quantity()))
                 .toList();
-        return new OrderResponse(order.getId(), order.getRestaurantId(), items, order.getStatus().name());
+        return new OrderResponse(order.getId(), order.getConsumerId(), order.getRestaurantId(), items, order.getStatus().name());
     }
 }

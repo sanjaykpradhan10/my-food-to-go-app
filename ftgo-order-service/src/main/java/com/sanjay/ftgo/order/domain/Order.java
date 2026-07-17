@@ -21,6 +21,8 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private Long consumerId;
+
     private Long restaurantId;
 
     @ElementCollection
@@ -33,19 +35,24 @@ public class Order {
     protected Order() {
     }
 
-    public Order(Long id, Long restaurantId, List<OrderLineItem> lineItems, OrderStatus status) {
+    public Order(Long id, Long consumerId, Long restaurantId, List<OrderLineItem> lineItems, OrderStatus status) {
         this.id = id;
+        this.consumerId = consumerId;
         this.restaurantId = restaurantId;
         this.lineItems = lineItems;
         this.status = status;
     }
 
-    public Order(Long restaurantId, List<OrderLineItem> lineItems, OrderStatus status) {
-        this(null, restaurantId, lineItems, status);
+    public Order(Long consumerId, Long restaurantId, List<OrderLineItem> lineItems, OrderStatus status) {
+        this(null, consumerId, restaurantId, lineItems, status);
     }
 
     public Long getId() {
         return id;
+    }
+
+    public Long getConsumerId() {
+        return consumerId;
     }
 
     public Long getRestaurantId() {
@@ -58,5 +65,13 @@ public class Order {
 
     public OrderStatus getStatus() {
         return status;
+    }
+
+    public void markApproved() {
+        this.status = OrderStatus.APPROVED;
+    }
+
+    public void markRejected() {
+        this.status = OrderStatus.REJECTED;
     }
 }
