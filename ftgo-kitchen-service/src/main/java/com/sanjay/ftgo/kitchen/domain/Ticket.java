@@ -37,4 +37,12 @@ public class Ticket {
     public String getStatus() {
         return status;
     }
+
+    public void markAwaitingAcceptance() {
+        this.status = "AWAITING_ACCEPTANCE";
+    }
+
+    public void markCancelled() {
+        this.status = "CANCELLED";
+    }
 }
