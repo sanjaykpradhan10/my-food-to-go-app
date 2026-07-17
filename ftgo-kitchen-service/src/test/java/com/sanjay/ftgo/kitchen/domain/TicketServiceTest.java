@@ -101,6 +101,31 @@ class TicketServiceTest {
         verify(outboxEventRepository).save(argThatEventTypeIs("TicketCancelled"));
     }
 
+    @Test
+    void cancelsExistingTicketWhenConsumerVerificationFails() {
+        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        when(processedEventRepository.existsById("cons-event-1")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleConsumerVerificationFailed("cons-event-1", 42L);
+
+        assertThat(ticket.getStatus()).isEqualTo("CANCELLED");
+        verify(outboxEventRepository).save(argThatEventTypeIs("TicketCancelled"));
+        verify(failedOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void recordsFailedOrderWhenNoTicketExistsYet() {
+        when(processedEventRepository.existsById("cons-event-2")).thenReturn(false);
+        when(ticketRepository.findByOrderId(43L)).thenReturn(Optional.empty());
+
+        ticketService.handleConsumerVerificationFailed("cons-event-2", 43L);
+
+        verify(failedOrderRepository).save(any());
+        verify(outboxEventRepository, never()).save(any());
+    }
+
     private Ticket argThatStatusIs(String status) {
         return org.mockito.ArgumentMatchers.argThat(t -> t != null && status.equals(t.getStatus()));
     }

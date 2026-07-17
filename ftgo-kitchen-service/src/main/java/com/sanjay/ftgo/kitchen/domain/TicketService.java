@@ -79,6 +79,23 @@ public class TicketService {
         }
     }
 
+    @Transactional
+    public void handleConsumerVerificationFailed(String eventId, Long orderId) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
+        if (ticket != null) {
+            ticket.markCancelled();
+            ticketRepository.save(ticket);
+            publishEvent("TicketCancelled", orderId, ticket.getId(), null, null);
+        } else {
+            failedOrderRepository.save(new FailedOrder(orderId));
+        }
+    }
+
     private void publishEvent(String eventType, Long orderId, Long ticketId, Integer totalQuantity, String reason) {
         String eventId = UUID.randomUUID().toString();
         KitchenEvent event = new KitchenEvent(eventId, eventType, orderId, ticketId, totalQuantity, reason);
