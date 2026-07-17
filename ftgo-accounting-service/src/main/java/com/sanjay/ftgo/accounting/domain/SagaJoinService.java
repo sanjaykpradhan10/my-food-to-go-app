@@ -76,6 +76,28 @@ public class SagaJoinService {
         tryResolve(state);
     }
 
+    @Transactional
+    public void handleAuthorizeCardCommand(String eventId, Long orderId, Integer totalQuantity) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        if (totalQuantity == null) {
+            publishReply("CardAuthorizationFailed", orderId, "order quantity is missing");
+            return;
+        }
+
+        boolean authorized = isAuthorized(totalQuantity);
+        authorizationRepository.save(new Authorization(orderId, authorized ? "AUTHORIZED" : "DECLINED"));
+
+        if (authorized) {
+            publishReply("CardAuthorized", orderId, null);
+        } else {
+            publishReply("CardAuthorizationFailed", orderId, "order quantity exceeds authorization limit");
+        }
+    }
+
     private void tryResolve(SagaJoinState state) {
         if (!state.isConsumerVerified() || !state.isTicketCreated()) {
             return;
@@ -83,7 +105,7 @@ public class SagaJoinService {
         state.markResolved();
         sagaJoinStateRepository.save(state);
 
-        boolean authorized = state.getTotalQuantity() <= AUTHORIZATION_QUANTITY_LIMIT;
+        boolean authorized = isAuthorized(state.getTotalQuantity());
         authorizationRepository.save(new Authorization(state.getOrderId(), authorized ? "AUTHORIZED" : "DECLINED"));
 
         if (authorized) {
@@ -93,17 +115,27 @@ public class SagaJoinService {
         }
     }
 
+    private boolean isAuthorized(int totalQuantity) {
+        return totalQuantity <= AUTHORIZATION_QUANTITY_LIMIT;
+    }
+
     private void publishEvent(String eventType, Long orderId, String reason) {
         String eventId = UUID.randomUUID().toString();
         AccountingEvent event = new AccountingEvent(eventId, eventType, orderId, reason);
         outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "accounting.events", toJson(event)));
     }
 
-    private String toJson(AccountingEvent event) {
+    private void publishReply(String eventType, Long orderId, String reason) {
+        String eventId = UUID.randomUUID().toString();
+        SagaReply reply = new SagaReply(eventId, "accounting", eventType, orderId, reason);
+        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "saga.replies", toJson(reply)));
+    }
+
+    private String toJson(Object event) {
         try {
             return objectMapper.writeValueAsString(event);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize " + event.eventType() + " for order " + event.orderId(), e);
+            throw new IllegalStateException("Failed to serialize saga event", e);
         }
     }
 }

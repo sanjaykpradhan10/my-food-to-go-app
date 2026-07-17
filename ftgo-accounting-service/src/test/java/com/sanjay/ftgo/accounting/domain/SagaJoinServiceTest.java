@@ -119,4 +119,46 @@ class SagaJoinServiceTest {
         verify(authorizationRepository, times(1)).save(any());
         verify(outboxEventRepository, times(1)).save(any());
     }
+
+    @Test
+    void authorizesViaCommandWhenWithinLimit() {
+        when(processedEventRepository.existsById("cmd-1")).thenReturn(false);
+
+        service.handleAuthorizeCardCommand("cmd-1", 42L, 5);
+
+        verify(authorizationRepository).save(argThat(a -> "AUTHORIZED".equals(a.getStatus())));
+        verify(outboxEventRepository).save(argThat(e ->
+                "CardAuthorized".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void declinesViaCommandWhenOverLimit() {
+        when(processedEventRepository.existsById("cmd-2")).thenReturn(false);
+
+        service.handleAuthorizeCardCommand("cmd-2", 42L, 15);
+
+        verify(authorizationRepository).save(argThat(a -> "DECLINED".equals(a.getStatus())));
+        verify(outboxEventRepository).save(argThat(e ->
+                "CardAuthorizationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void skipsDuplicateCommandDelivery() {
+        when(processedEventRepository.existsById("cmd-1")).thenReturn(true);
+
+        service.handleAuthorizeCardCommand("cmd-1", 42L, 5);
+
+        verify(authorizationRepository, never()).save(any());
+    }
+
+    @Test
+    void declineViaCommandWhenQuantityIsNull() {
+        when(processedEventRepository.existsById("cmd-3")).thenReturn(false);
+
+        service.handleAuthorizeCardCommand("cmd-3", 42L, null);
+
+        verify(authorizationRepository, never()).save(any());
+        verify(outboxEventRepository).save(argThat(e ->
+                "CardAuthorizationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
 }
