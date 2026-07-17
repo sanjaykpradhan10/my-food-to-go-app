@@ -20,5 +20,8 @@ outbox:
   poll-fixed-delay-ms: 2000
   batch-size: 20
 
+saga:
+  mode: choreography
+
 server:
   port: 8083

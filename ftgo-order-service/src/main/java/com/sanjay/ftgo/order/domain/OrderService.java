@@ -1,7 +1,5 @@
 package com.sanjay.ftgo.order.domain;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,17 +13,14 @@ public class OrderService {
 
     private final RestaurantServicePort restaurantServicePort;
     private final OrderRepository orderRepository;
-    private final OutboxEventRepository outboxEventRepository;
-    private final ObjectMapper objectMapper;
+    private final OrderCreationSagaTrigger orderCreationSagaTrigger;
 
     public OrderService(RestaurantServicePort restaurantServicePort,
                          OrderRepository orderRepository,
-                         OutboxEventRepository outboxEventRepository,
-                         ObjectMapper objectMapper) {
+                         OrderCreationSagaTrigger orderCreationSagaTrigger) {
         this.restaurantServicePort = restaurantServicePort;
         this.orderRepository = orderRepository;
-        this.outboxEventRepository = outboxEventRepository;
-        this.objectMapper = objectMapper;
+        this.orderCreationSagaTrigger = orderCreationSagaTrigger;
     }
 
     @Transactional
@@ -45,17 +40,8 @@ public class OrderService {
         Order order = orderRepository.save(new Order(consumerId, restaurantId, lineItems, OrderStatus.APPROVAL_PENDING));
 
         String eventId = UUID.randomUUID().toString();
-        OrderCreatedEvent event = OrderCreatedEvent.from(order, eventId);
-        outboxEventRepository.save(new OutboxEvent(eventId, "OrderCreated", order.getId(), toJson(event)));
+        orderCreationSagaTrigger.onOrderCreated(order, eventId);
 
         return order;
-    }
-
-    private String toJson(OrderCreatedEvent event) {
-        try {
-            return objectMapper.writeValueAsString(event);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize OrderCreatedEvent for order " + event.orderId(), e);
-        }
     }
 }

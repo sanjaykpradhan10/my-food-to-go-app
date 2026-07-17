@@ -27,6 +27,9 @@ public class OutboxEvent {
     @Column(name = "order_id", nullable = false)
     private Long orderId;
 
+    @Column(name = "topic", nullable = false)
+    private String topic;
+
     @Lob
     @Column(name = "payload", nullable = false)
     private String payload;
@@ -37,10 +40,11 @@ public class OutboxEvent {
     protected OutboxEvent() {
     }
 
-    public OutboxEvent(String eventId, String eventType, Long orderId, String payload) {
+    public OutboxEvent(String eventId, String eventType, Long orderId, String topic, String payload) {
         this.eventId = eventId;
         this.eventType = eventType;
         this.orderId = orderId;
+        this.topic = topic;
         this.payload = payload;
     }
 
@@ -58,6 +62,10 @@ public class OutboxEvent {
 
     public Long getOrderId() {
         return orderId;
+    }
+
+    public String getTopic() {
+        return topic;
     }
 
     public String getPayload() {

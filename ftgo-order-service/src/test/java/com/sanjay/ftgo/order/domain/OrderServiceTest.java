@@ -1,6 +1,5 @@
 package com.sanjay.ftgo.order.domain;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -25,11 +24,10 @@ class OrderServiceTest {
             restaurantId.equals(1L) ? restaurant : null;
 
     private final OrderRepository orderRepository = mock(OrderRepository.class);
-    private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final OrderCreationSagaTrigger orderCreationSagaTrigger = mock(OrderCreationSagaTrigger.class);
 
     private final OrderService orderService =
-            new OrderService(fakePort, orderRepository, outboxEventRepository, objectMapper);
+            new OrderService(fakePort, orderRepository, orderCreationSagaTrigger);
 
     @Test
     void createsOrderInApprovalPendingWhenRestaurantAndMenuItemsAreValid() {
@@ -44,18 +42,16 @@ class OrderServiceTest {
     }
 
     @Test
-    void writesOutboxEventWhenOrderIsCreated() {
+    void triggersSagaWhenOrderIsCreated() {
         when(orderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         orderService.createOrder(1L, 1L, List.of(new OrderLineItem(10L, 2)));
 
-        ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(outboxEventRepository).save(captor.capture());
-        OutboxEvent savedEvent = captor.getValue();
-        assertThat(savedEvent.getEventType()).isEqualTo("OrderCreated");
-        assertThat(savedEvent.getPayload()).contains("\"consumerId\":1");
-        assertThat(savedEvent.getPayload()).contains("\"restaurantId\":1");
-        assertThat(savedEvent.isSent()).isFalse();
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        ArgumentCaptor<String> eventIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(orderCreationSagaTrigger).onOrderCreated(orderCaptor.capture(), eventIdCaptor.capture());
+        assertThat(orderCaptor.getValue().getRestaurantId()).isEqualTo(1L);
+        assertThat(eventIdCaptor.getValue()).isNotBlank();
     }
 
     @Test

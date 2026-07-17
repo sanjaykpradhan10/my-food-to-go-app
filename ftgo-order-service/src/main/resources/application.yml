@@ -32,6 +32,9 @@ eureka:
   instance:
     prefer-ip-address: true
 
+saga:
+  mode: choreography
+
 resilience4j:
   circuitbreaker:
     instances:

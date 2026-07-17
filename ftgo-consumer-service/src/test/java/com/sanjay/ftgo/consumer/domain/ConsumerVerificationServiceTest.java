@@ -63,4 +63,36 @@ class ConsumerVerificationServiceTest {
         verify(outboxEventRepository, never()).save(any());
         verify(consumerRepository, never()).findById(any());
     }
+
+    @Test
+    void publishesConsumerVerifiedReplyWhenConsumerIsActiveViaCommand() {
+        when(processedEventRepository.existsById("cmd-1")).thenReturn(false);
+        when(consumerRepository.findById(1L)).thenReturn(Optional.of(new Consumer(1L, "Sanjay", true)));
+
+        service.handleVerifyConsumerCommand("cmd-1", 42L, 1L);
+
+        verify(outboxEventRepository).save(argThat(e ->
+                "ConsumerVerified".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void publishesConsumerVerificationFailedReplyWhenConsumerIsInactiveViaCommand() {
+        when(processedEventRepository.existsById("cmd-2")).thenReturn(false);
+        when(consumerRepository.findById(1L)).thenReturn(Optional.of(new Consumer(1L, "Blocked Consumer", false)));
+
+        service.handleVerifyConsumerCommand("cmd-2", 42L, 1L);
+
+        verify(outboxEventRepository).save(argThat(e ->
+                "ConsumerVerificationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void skipsDuplicateCommandDelivery() {
+        when(processedEventRepository.existsById("cmd-1")).thenReturn(true);
+
+        service.handleVerifyConsumerCommand("cmd-1", 42L, 1L);
+
+        verify(outboxEventRepository, never()).save(any());
+        verify(consumerRepository, never()).findById(any());
+    }
 }

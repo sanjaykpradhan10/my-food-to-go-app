@@ -18,7 +18,6 @@ import java.util.List;
 public class OutboxPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
-    private static final String TOPIC = "order.events";
 
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaTemplate<String, String> kafkaTemplate;
@@ -42,7 +41,7 @@ public class OutboxPublisher {
 
         for (OutboxEvent event : pending) {
             try {
-                kafkaTemplate.send(TOPIC, String.valueOf(event.getOrderId()), event.getPayload()).get();
+                kafkaTemplate.send(event.getTopic(), String.valueOf(event.getOrderId()), event.getPayload()).get();
                 event.markSent();
                 outboxEventRepository.save(event);
             } catch (Exception e) {
