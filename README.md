@@ -6,18 +6,19 @@ A hands-on implementation of the FTGO (Food To Go) application from [*Microservi
 
 This project follows the book's progression, adding real code at each chapter. It is not a clone of the [reference implementation](https://github.com/microservices-patterns/ftgo-application) — it's a ground-up build used to develop a deep, working understanding of microservices patterns.
 
-**Progress:** Chapters 1–2 complete. Starting Chapter 3 (Interprocess communication).
+**Progress:** Chapters 1–3 complete. Chapter 4 (sagas) implemented — Create Order saga built twice, choreography and orchestration, switchable via `SAGA_MODE`.
 
 ## Services
 
 | Service | Port | Domain | Status |
 |---------|------|--------|--------|
-| ftgo-consumer-service | 8081 | Consumer management | Stub |
-| ftgo-order-service | 8082 | Order lifecycle (core saga orchestrator) | Stub |
-| ftgo-kitchen-service | 8083 | Ticket management (separate bounded context from Order) | Stub |
-| ftgo-accounting-service | 8084 | Payment authorisation | Stub |
-| ftgo-restaurant-service | 8085 | Restaurant/menu management | Stub |
-| ftgo-delivery-service | 8086 | Delivery tracking (separate bounded context from Order) | Stub |
+| ftgo-consumer-service | 8081 | Consumer management | Verifies consumer, publishes `ConsumerVerified`/`Failed` (choreography) or replies to `VerifyConsumerCommand` (orchestration) |
+| ftgo-order-service | 8082 | Order lifecycle (saga participant/coordinator) | `POST /orders`; choreography: reacts to 3 event topics; orchestration: `CreateOrderSagaOrchestrator` sends commands and reacts to replies |
+| ftgo-kitchen-service | 8083 | Ticket management (separate bounded context from Order) | Creates capacity-gated `Ticket`s; confirms/cancels based on saga outcome, either style |
+| ftgo-accounting-service | 8084 | Payment authorisation | Authorizes/declines by order quantity threshold; choreography needs a local join, orchestration doesn't (orchestrator already waited for both prerequisites) |
+| ftgo-restaurant-service | 8085 | Restaurant/menu management | `GET /restaurants/{id}`, registers with Eureka |
+| ftgo-service-registry | 8761 | Eureka service registry | Standalone |
+| ftgo-delivery-service | 8086 | Delivery tracking (separate bounded context from Order) | Stub — not yet in scope |
 
 ## Architecture
 
@@ -30,7 +31,7 @@ src/main/java/com/sanjay/ftgo/<service>/
 └── infrastructure/ ← outbound adapters (JPA repositories, Kafka publishers)
 ```
 
-Services communicate via messaging (Apache Kafka) introduced in Chapter 3. Each service owns its own MySQL schema — no shared database.
+Services communicate via messaging (Apache Kafka), introduced in Chapter 3 and extended in Chapter 4 for saga coordination. Each service owns its own MySQL schema — no shared database. Every service that publishes events uses a hand-rolled transactional outbox (not Eventuate Tram) so the mechanics stay visible for learning purposes.
 
 ## Tech stack
 
@@ -39,7 +40,7 @@ Services communicate via messaging (Apache Kafka) introduced in Chapter 3. Each 
 | Language | Java 21 |
 | Framework | Spring Boot 3.5.3 |
 | Build | Gradle 8.14.2 (multi-module) |
-| Messaging | Apache Kafka (via Eventuate Tram — wired in Ch. 3) |
+| Messaging | Apache Kafka, hand-rolled transactional outbox pattern (Ch. 3), optional CDC via Debezium/Kafka Connect |
 | Database | MySQL 8.4 (one schema per service) |
 | Infrastructure | Docker Compose (local) |
 | Testing | JUnit 5, H2 (in-memory, MySQL mode) |
@@ -104,8 +105,8 @@ my-food-to-go-app/
 |----|-------|--------|
 | 1 | Escaping monolithic hell | Done |
 | 2 | Decomposition strategies | Done |
-| 3 | Interprocess communication | Not started |
-| 4 | Managing transactions with sagas | Not started |
+| 3 | Interprocess communication | Done — RPI + circuit breaker, messaging, transactional outbox, service discovery, transaction log tailing (CDC) |
+| 4 | Managing transactions with sagas | Create Order saga implemented both ways (choreography, orchestration) |
 | 5–13 | … | Not started |
 
 See [`CONTEXT.md`](CONTEXT.md) for detailed notes and concept understanding per chapter.
