@@ -20,6 +20,8 @@ This project follows the book's progression, adding real code at each chapter. I
 | ftgo-service-registry | 8761 | Eureka service registry | Standalone |
 | ftgo-delivery-service | 8086 | Delivery tracking (separate bounded context from Order) | Stub — not yet in scope |
 
+Each service has its own `README.md` with its full API/events/domain model. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the project-level event catalog, the shared outbox pattern, and sequence diagrams for both saga styles.
+
 ## Architecture
 
 Each service follows **hexagonal architecture** (ports and adapters):
@@ -94,6 +96,8 @@ my-food-to-go-app/
 ├── ftgo-restaurant-service/
 ├── ftgo-delivery-service/
 └── docs/
+    ├── ARCHITECTURE.md       ← event catalog, outbox pattern, saga sequence diagrams
+    ├── session-*.md          ← per-session summaries
     └── superpowers/
         └── specs/            ← design decisions per chapter
         └── plans/            ← implementation plans per chapter
