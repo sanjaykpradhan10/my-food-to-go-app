@@ -103,6 +103,11 @@ public class TicketService {
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
 
+        if (totalQuantity == null) {
+            publishReply("TicketCreationFailed", orderId, "totalQuantity is required");
+            return;
+        }
+
         if (!isWithinCapacity(totalQuantity)) {
             publishReply("TicketCreationFailed", orderId, "order exceeds kitchen capacity");
             return;

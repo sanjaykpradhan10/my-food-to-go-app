@@ -151,6 +151,17 @@ class TicketServiceTest {
     }
 
     @Test
+    void repliesTicketCreationFailedViaCommandWhenTotalQuantityIsNull() {
+        when(processedEventRepository.existsById("cmd-5")).thenReturn(false);
+
+        ticketService.handleCreateTicketCommand("cmd-5", 44L, null);
+
+        verify(ticketRepository, never()).save(any());
+        verify(outboxEventRepository).save(argThat(e ->
+                "TicketCreationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
     void confirmsTicketViaCommand() {
         Ticket ticket = new Ticket(42L, "CREATE_PENDING");
         when(processedEventRepository.existsById("cmd-3")).thenReturn(false);
