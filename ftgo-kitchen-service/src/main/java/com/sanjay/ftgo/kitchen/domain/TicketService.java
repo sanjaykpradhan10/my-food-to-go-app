@@ -99,7 +99,7 @@ public class TicketService {
     private void publishEvent(String eventType, Long orderId, Long ticketId, Integer totalQuantity, String reason) {
         String eventId = UUID.randomUUID().toString();
         KitchenEvent event = new KitchenEvent(eventId, eventType, orderId, ticketId, totalQuantity, reason);
-        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, toJson(event)));
+        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "kitchen.events", toJson(event)));
     }
 
     private String toJson(KitchenEvent event) {

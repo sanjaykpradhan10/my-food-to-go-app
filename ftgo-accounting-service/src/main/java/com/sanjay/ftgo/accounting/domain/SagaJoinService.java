@@ -96,7 +96,7 @@ public class SagaJoinService {
     private void publishEvent(String eventType, Long orderId, String reason) {
         String eventId = UUID.randomUUID().toString();
         AccountingEvent event = new AccountingEvent(eventId, eventType, orderId, reason);
-        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, toJson(event)));
+        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "accounting.events", toJson(event)));
     }
 
     private String toJson(AccountingEvent event) {

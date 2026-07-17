@@ -46,7 +46,7 @@ public class OrderService {
 
         String eventId = UUID.randomUUID().toString();
         OrderCreatedEvent event = OrderCreatedEvent.from(order, eventId);
-        outboxEventRepository.save(new OutboxEvent(eventId, "OrderCreated", order.getId(), toJson(event)));
+        outboxEventRepository.save(new OutboxEvent(eventId, "OrderCreated", order.getId(), "order.events", toJson(event)));
 
         return order;
     }

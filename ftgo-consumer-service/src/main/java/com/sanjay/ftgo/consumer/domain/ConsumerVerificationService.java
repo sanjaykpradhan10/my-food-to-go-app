@@ -45,7 +45,7 @@ public class ConsumerVerificationService {
     private void publishEvent(String eventType, Long orderId, Long consumerId, String reason) {
         String eventId = UUID.randomUUID().toString();
         ConsumerVerificationEvent event = new ConsumerVerificationEvent(eventId, eventType, orderId, consumerId, reason);
-        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, toJson(event)));
+        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "consumer.events", toJson(event)));
     }
 
     private String toJson(ConsumerVerificationEvent event) {

@@ -5,12 +5,14 @@ import com.sanjay.ftgo.accounting.domain.KitchenEvent;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
 
 @Component
+@ConditionalOnProperty(name = "saga.mode", havingValue = "choreography", matchIfMissing = true)
 public class KitchenEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(KitchenEventListener.class);
