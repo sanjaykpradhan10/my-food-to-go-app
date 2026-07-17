@@ -33,55 +33,66 @@ class OrderControllerTest {
 
     @Test
     void createsOrderSuccessfully() throws Exception {
-        Order order = new Order(1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
-        when(orderService.createOrder(eq(1L), any())).thenReturn(order);
+        Order order = new Order(1L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
+        when(orderService.createOrder(eq(1L), eq(1L), any())).thenReturn(order);
 
         mockMvc.perform(post("/orders")
                         .contentType("application/json")
                         .content("""
-                                {"restaurantId":1,"lineItems":[{"menuItemId":10,"quantity":2}]}
+                                {"consumerId":1,"restaurantId":1,"lineItems":[{"menuItemId":10,"quantity":2}]}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.consumerId").value(1))
                 .andExpect(jsonPath("$.restaurantId").value(1))
-                .andExpect(jsonPath("$.status").value("APPROVED"));
+                .andExpect(jsonPath("$.status").value("APPROVAL_PENDING"));
     }
 
     @Test
     void returns404WhenRestaurantNotFound() throws Exception {
-        when(orderService.createOrder(eq(99L), any())).thenThrow(new RestaurantNotFoundException(99L));
+        when(orderService.createOrder(eq(1L), eq(99L), any())).thenThrow(new RestaurantNotFoundException(99L));
 
         mockMvc.perform(post("/orders")
                         .contentType("application/json")
                         .content("""
-                                {"restaurantId":99,"lineItems":[{"menuItemId":10,"quantity":1}]}
+                                {"consumerId":1,"restaurantId":99,"lineItems":[{"menuItemId":10,"quantity":1}]}
                                 """))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void returns404WhenMenuItemNotFound() throws Exception {
-        when(orderService.createOrder(eq(1L), any())).thenThrow(new MenuItemNotFoundException(999L, 1L));
+        when(orderService.createOrder(eq(1L), eq(1L), any())).thenThrow(new MenuItemNotFoundException(999L, 1L));
 
         mockMvc.perform(post("/orders")
                         .contentType("application/json")
                         .content("""
-                                {"restaurantId":1,"lineItems":[{"menuItemId":999,"quantity":1}]}
+                                {"consumerId":1,"restaurantId":1,"lineItems":[{"menuItemId":999,"quantity":1}]}
                                 """))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void returns503WhenRestaurantServiceUnavailable() throws Exception {
-        when(orderService.createOrder(eq(1L), any()))
+        when(orderService.createOrder(eq(1L), eq(1L), any()))
                 .thenThrow(new RestaurantServiceUnavailableException(1L, new RuntimeException("timeout")));
 
         mockMvc.perform(post("/orders")
                         .contentType("application/json")
                         .content("""
-                                {"restaurantId":1,"lineItems":[{"menuItemId":10,"quantity":1}]}
+                                {"consumerId":1,"restaurantId":1,"lineItems":[{"menuItemId":10,"quantity":1}]}
                                 """))
                 .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void returns400WhenConsumerIdMissing() throws Exception {
+        mockMvc.perform(post("/orders")
+                        .contentType("application/json")
+                        .content("""
+                                {"restaurantId":1,"lineItems":[{"menuItemId":10,"quantity":1}]}
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -89,7 +100,7 @@ class OrderControllerTest {
         mockMvc.perform(post("/orders")
                         .contentType("application/json")
                         .content("""
-                                {"lineItems":[{"menuItemId":10,"quantity":1}]}
+                                {"consumerId":1,"lineItems":[{"menuItemId":10,"quantity":1}]}
                                 """))
                 .andExpect(status().isBadRequest());
     }
@@ -99,7 +110,7 @@ class OrderControllerTest {
         mockMvc.perform(post("/orders")
                         .contentType("application/json")
                         .content("""
-                                {"restaurantId":1,"lineItems":[]}
+                                {"consumerId":1,"restaurantId":1,"lineItems":[]}
                                 """))
                 .andExpect(status().isBadRequest());
     }

@@ -32,13 +32,14 @@ class OrderServiceTest {
             new OrderService(fakePort, orderRepository, outboxEventRepository, objectMapper);
 
     @Test
-    void createsOrderWhenRestaurantAndMenuItemsAreValid() {
+    void createsOrderInApprovalPendingWhenRestaurantAndMenuItemsAreValid() {
         when(orderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Order order = orderService.createOrder(1L, List.of(new OrderLineItem(10L, 2)));
+        Order order = orderService.createOrder(1L, 1L, List.of(new OrderLineItem(10L, 2)));
 
+        assertThat(order.getConsumerId()).isEqualTo(1L);
         assertThat(order.getRestaurantId()).isEqualTo(1L);
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.APPROVED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.APPROVAL_PENDING);
         assertThat(order.getLineItems()).containsExactly(new OrderLineItem(10L, 2));
     }
 
@@ -46,19 +47,20 @@ class OrderServiceTest {
     void writesOutboxEventWhenOrderIsCreated() {
         when(orderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        orderService.createOrder(1L, List.of(new OrderLineItem(10L, 2)));
+        orderService.createOrder(1L, 1L, List.of(new OrderLineItem(10L, 2)));
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(outboxEventRepository).save(captor.capture());
         OutboxEvent savedEvent = captor.getValue();
         assertThat(savedEvent.getEventType()).isEqualTo("OrderCreated");
+        assertThat(savedEvent.getPayload()).contains("\"consumerId\":1");
         assertThat(savedEvent.getPayload()).contains("\"restaurantId\":1");
         assertThat(savedEvent.isSent()).isFalse();
     }
 
     @Test
     void rejectsOrderWhenMenuItemDoesNotBelongToRestaurant() {
-        assertThatThrownBy(() -> orderService.createOrder(1L, List.of(new OrderLineItem(999L, 1))))
+        assertThatThrownBy(() -> orderService.createOrder(1L, 1L, List.of(new OrderLineItem(999L, 1))))
                 .isInstanceOf(MenuItemNotFoundException.class);
     }
 }
