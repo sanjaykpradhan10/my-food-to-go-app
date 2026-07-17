@@ -1,9 +1,9 @@
 # Session — 2026-07-17 (orchestration follow-up)
 
 **Tool:** Claude Code
-**Duration:** Full brainstorm → spec → plan → subagent-driven-development cycle for the Ch.4 Create Order saga, orchestration style, plus setup work (CLAUDE.md)
+**Duration:** Full brainstorm → spec → plan → subagent-driven-development cycle for the Ch.4 Create Order saga (orchestration style) + full documentation site, plus setup work (CLAUDE.md)
 **Repo:** https://github.com/sanjaykpradhan10/my-food-to-go-app
-**PR:** (to be opened)
+**PRs:** #7 (orchestration saga, merged); documentation site committed directly to `main` (docs-only, low risk)
 
 Continuation of `docs/session-2026-07-17.md` (choreography, PR #6, merged earlier the same day).
 
@@ -42,6 +42,12 @@ Full brainstorm → spec → plan → subagent-driven-development cycle (7 tasks
 
 One transient hiccup during manual verification: the first `POST /orders` call failed with "Restaurant service unavailable" because order-service's Eureka client hadn't finished its first registry-refresh cycle yet (~30s after container start) — not a code defect, just startup timing; resolved by retrying after the refresh completed.
 
+PR #7 opened, reviewed (whole-branch review: Ready to merge, no blockers — one intentional design point flagged for conscious sign-off: a brief `Order=APPROVED`-while-`Ticket=CREATE_PENDING` window on the direct-approve path, which converges correctly since `ConfirmTicket` rides the same ordered Kafka partition), and merged.
+
+### Full documentation site
+
+Once both saga styles were merged, built the deferred documentation site: **7 per-service `README.md` files** (all 4 saga services + restaurant-service + service-registry + the still-stub delivery-service), each written by a parallel fork that read the actual current source before writing (role, API, event catalog for both saga modes where applicable, domain model, how to run standalone) — dispatched all 7 in parallel since they're independent of each other. Then **`docs/ARCHITECTURE.md`** written directly (needs the holistic cross-service view a single fork can't have): the shared transactional-outbox pattern explained once, the full 8-topic Kafka catalog, the `SAGA_MODE` switch, and **8 mermaid sequence diagrams** — choreography's happy path + all 3 compensation cases, and orchestration's same 4 scenarios, laid out in matching pairs so the two styles can be flipped between directly — plus a comparison table of what actually differs (the join, the `FailedOrder` race table, the direct-approve shortcut, new topic count). Root `README.md` updated to link both. Committed directly to `main` (docs-only, no code risk, no PR needed).
+
 ---
 
 ## What's implemented now (full picture, both saga styles)
@@ -58,15 +64,33 @@ One transient hiccup during manual verification: the first `POST /orders` call f
 - [x] Saga — choreography
 - [x] Saga — orchestration
 
-Ch. 4's core saga pattern work is done. Next book chapter is Ch. 5 (designing business logic) unless there's more Ch. 4 material to cover first.
+Ch. 4's core saga pattern work — including documentation — is fully done.
+
+## Documentation site status: complete
+
+- [x] Per-service READMEs (all 7 services)
+- [x] `docs/ARCHITECTURE.md` (event catalog, outbox pattern, `SAGA_MODE` switch, 8 sequence diagrams, choreography-vs-orchestration comparison table)
+- [x] Root `README.md` linked to both
 
 ---
 
-## Deferred / next steps
+## Project state at end of session
 
-- **Full documentation site** — the user asked for per-service READMEs, a project-level architecture doc (event/topic catalog, outbox pattern explainer), and sequence diagrams for both saga styles. Deliberately deferred until after orchestration landed, so the architecture doc covers both styles at once rather than being written twice. This is the next explicit piece of work.
-- Shared module extraction for the now-further-multiplied outbox/dedup/event-record duplication across all 4 services (still deferred, noted again in this pass's spec).
-- Continue Ch. 5 reading/implementation once documentation work is settled, or sooner if preferred.
+```
+Git log (main, HEAD):
+60ebc17 docs: add full documentation site — per-service READMEs + architecture doc
+59d5b8a Merge pull request #7 from sanjaykpradhan10/worktree-ch4-create-order-saga-orchestration
+4211d34 docs: update CONTEXT.md/README.md — Ch.4 Create Order saga (orchestration) implemented
+07fd3e1 feat: wire SAGA_MODE env var through docker-compose for all 4 saga participants
+b566d8c feat(accounting-service): handle AuthorizeCardCommand for SAGA_MODE=orchestration
+```
+
+All commits pushed to `main`. No open PRs, no open branches, no worktrees.
+
+## Next actions
+
+- [ ] **Move on to Ch. 5** — "Designing business logic in a microservice architecture" (DDD aggregates, domain events, transaction script). This is the recommended next step — the natural continuation, nothing else is blocking it.
+- [ ] Optional, not blocking: shared module extraction for the now-4x-duplicated (and orchestration-doubled) outbox/dedup/event-record infrastructure across all 4 saga services. No urgency — both saga styles work correctly as-is; this is a code-quality cleanup, not a functional gap.
 
 ---
 
@@ -74,8 +98,8 @@ Ch. 4's core saga pattern work is done. Next book chapter is Ch. 5 (designing bu
 
 ### In Claude Code
 Open the project and say:
-> "Read CONTEXT.md and docs/session-2026-07-17-orchestration.md. Let's do the full documentation site now that both saga styles are implemented."
+> "Read CONTEXT.md and docs/session-2026-07-17-orchestration.md. Let's start Ch. 5 — designing business logic."
 
 ### In Claude Chat
 Paste `CONTEXT.md` and this file, then say:
-> "I'm working through Microservices Patterns Ch. 4/5. Here is my context and last session notes. Resume from where I left off."
+> "I'm working through Microservices Patterns Ch. 5. Here is my context and last session notes. Resume from where I left off."

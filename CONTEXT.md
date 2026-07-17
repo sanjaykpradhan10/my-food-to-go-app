@@ -25,8 +25,8 @@ Update this file at the end of every session (either tool can do it).
 |----|-------|--------|------------|-------|
 | 1  | Escaping monolithic hell | Done | High | Hexagonal arch, scale cube (X/Y/Z), monolithic hell symptoms, pattern language structure |
 | 2  | Decomposition strategies | Done | High | 4+1 views, hexagonal arch, system ops, business capability, DDD subdomains, SRP/CCP, god classes, bounded contexts |
-| 3  | Interprocess communication in a microservice architecture | Implementing | — | |
-| 4  | Managing transactions with sagas | Reading | — | |
+| 3  | Interprocess communication in a microservice architecture | Done | High | RPI/REST + circuit breaker, messaging, transactional outbox, service discovery, transaction log tailing (CDC) — all implemented and verified |
+| 4  | Managing transactions with sagas | Done | High | Create Order saga implemented twice — choreography and orchestration, switchable via SAGA_MODE, verified to reach identical outcomes, fully documented (docs/ARCHITECTURE.md) |
 | 5  | Designing business logic in a microservice architecture | Not started | — | |
 | 6  | Developing business logic with event sourcing | Not started | — | |
 | 7  | Implementing queries in a microservice architecture | Not started | — | |
@@ -44,8 +44,8 @@ Update this file at the end of every session (either tool can do it).
 
 ## Current position
 
-- **Chapter**: 4 — Managing transactions with sagas
-- **Status**: Implementing (Create Order saga — both choreography and orchestration styles implemented, switchable via SAGA_MODE, and manually verified to reach identical outcomes)
+- **Chapter**: 4 — Managing transactions with sagas — Done (both choreography and orchestration styles implemented, switchable via SAGA_MODE, manually verified to reach identical outcomes, fully documented). Next chapter: 5 — Designing business logic in a microservice architecture.
+- **Status**: Ready to start Ch. 5
 - **Last session**: 2026-07-17
 - **Last tool used**: Claude Code
 
