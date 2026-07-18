@@ -5,6 +5,10 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
+// Kept separate from FtgoKitchenServiceApplication because @EntityScan/@EnableJpaRepositories
+// placed directly on the @SpringBootApplication class bypass @WebMvcTest's slice filtering,
+// which only excludes @Component/@Configuration beans discovered via scan — see order-service's
+// PersistenceConfig (Task 5) for the concrete failure this pattern avoids.
 // @ComponentScan is required in addition to @EntityScan/@EnableJpaRepositories because
 // OutboxPublisher (@Component) and KafkaProducerConfig (@Configuration) in ftgo-common
 // are beans, not entities/repositories — without it they're silently never registered

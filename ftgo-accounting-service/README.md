@@ -44,7 +44,7 @@ The authorization decision is a simple threshold: `totalQuantity <= AUTHORIZATIO
 
 ## Idempotency & reliability
 
-Every Kafka-driven handler dedupes via a `processed_events` ledger (insert-then-act in one local transaction) before doing anything else. Outgoing events use the same transactional-outbox pattern as every other service in this repo: `Authorization`/join-state changes and the corresponding `OutboxEvent` row are written in one transaction, and a `@Scheduled` `OutboxPublisher` polls unsent rows and publishes them to Kafka (topic read per-row, not hardcoded), marking them sent only after a successful publish.
+Every Kafka-driven handler dedupes via a `processed_events` ledger (insert-then-act in one local transaction) before doing anything else. Outgoing events use the same transactional-outbox pattern as every other service in this repo: `Authorization`/join-state changes and the corresponding `OutboxEvent` row are written in one transaction, and a `@Scheduled` `OutboxPublisher` polls unsent rows and publishes them to Kafka (topic read per-row, not hardcoded), marking them sent only after a successful publish. `OutboxEvent`/`OutboxPublisher`/`KafkaProducerConfig` themselves live in the shared `ftgo-common` module (see the root `docs/ARCHITECTURE.md`), not this service's own source tree.
 
 ## Running standalone
 

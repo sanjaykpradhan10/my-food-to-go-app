@@ -48,7 +48,7 @@ None. This service has no REST endpoints — it's a pure Kafka consumer/producer
 
 Every handler dedupes via a `processed_events` ledger (insert-then-act in one local transaction) before touching any other state — protects against Kafka's at-least-once redelivery.
 
-This service's outbox/producer capability (`OutboxEvent`, `OutboxPublisher`, `KafkaProducerConfig`) was added during the Ch.4 choreography pass — before that, kitchen-service only ever consumed `order.events`, it never published anything. `OutboxEvent` carries a `topic` column per row (not a fixed constant), since this service now writes to two different topics (`kitchen.events` in choreography mode, `saga.replies` in orchestration mode) from one outbox table.
+This service's outbox/producer capability (`OutboxEvent`, `OutboxPublisher`, `KafkaProducerConfig` — now shared via the `ftgo-common` module, see the root `docs/ARCHITECTURE.md`) was added during the Ch.4 choreography pass — before that, kitchen-service only ever consumed `order.events`, it never published anything. `OutboxEvent` carries a `topic` column per row (not a fixed constant), since this service now writes to two different topics (`kitchen.events` in choreography mode, `saga.replies` in orchestration mode) from one outbox table.
 
 ## Running standalone
 
