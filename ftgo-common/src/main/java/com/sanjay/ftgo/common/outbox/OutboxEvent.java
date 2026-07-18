@@ -24,8 +24,14 @@ public class OutboxEvent {
     @Column(name = "event_type", nullable = false)
     private String eventType;
 
+    // Column name (order_id) unchanged from before this class was shared across services —
+    // renaming the DB column is a schema change out of scope for this extraction. The Java
+    // field is named generically (aggregateId, not orderId) since every consumer's saga is
+    // actually keyed by the order's id regardless of which service's aggregate it's reacting
+    // to (Ticket, Authorization, etc.) — see OutboxPublisher, which uses it as the Kafka
+    // partition key so all events for one saga land on the same partition.
     @Column(name = "order_id", nullable = false)
-    private Long orderId;
+    private Long aggregateId;
 
     @Column(name = "topic", nullable = false)
     private String topic;
@@ -40,10 +46,10 @@ public class OutboxEvent {
     protected OutboxEvent() {
     }
 
-    public OutboxEvent(String eventId, String eventType, Long orderId, String topic, String payload) {
+    public OutboxEvent(String eventId, String eventType, Long aggregateId, String topic, String payload) {
         this.eventId = eventId;
         this.eventType = eventType;
-        this.orderId = orderId;
+        this.aggregateId = aggregateId;
         this.topic = topic;
         this.payload = payload;
     }
@@ -60,8 +66,8 @@ public class OutboxEvent {
         return eventType;
     }
 
-    public Long getOrderId() {
-        return orderId;
+    public Long getAggregateId() {
+        return aggregateId;
     }
 
     public String getTopic() {
