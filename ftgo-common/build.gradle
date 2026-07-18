@@ -1,0 +1,14 @@
+apply plugin: 'java-library'
+
+bootJar {
+    enabled = false
+}
+
+jar {
+    enabled = true
+}
+
+dependencies {
+    api 'org.springframework.boot:spring-boot-starter-data-jpa'
+    api 'org.springframework.kafka:spring-kafka'
+}
