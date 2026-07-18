@@ -40,7 +40,7 @@ Services communicate via messaging (Apache Kafka), introduced in Chapter 3 and e
 | Layer | Technology |
 |-------|-----------|
 | Language | Java 21 |
-| Framework | Spring Boot 3.5.3 |
+| Framework | Spring Boot 3.5.16 (final 3.5.x release — line reached EOL 2026-06-30) |
 | Build | Gradle 8.14.2 (multi-module) |
 | Messaging | Apache Kafka, hand-rolled transactional outbox pattern (Ch. 3), optional CDC via Debezium/Kafka Connect |
 | Database | MySQL 8.4 (one schema per service) |
