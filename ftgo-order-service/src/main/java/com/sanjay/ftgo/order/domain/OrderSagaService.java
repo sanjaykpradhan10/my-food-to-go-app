@@ -1,5 +1,7 @@
 package com.sanjay.ftgo.order.domain;
 
+import com.sanjay.ftgo.common.outbox.ProcessedEvent;
+import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

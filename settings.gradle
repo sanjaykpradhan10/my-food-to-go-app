@@ -1,5 +1,6 @@
 rootProject.name = 'my-food-to-go-app'
 
+include 'ftgo-common'
 include 'ftgo-consumer-service'
 include 'ftgo-order-service'
 include 'ftgo-kitchen-service'

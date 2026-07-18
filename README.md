@@ -84,17 +84,19 @@ docker compose down -v
 ```
 my-food-to-go-app/
 ├── build.gradle              ← shared plugin versions and dependencies
-├── settings.gradle           ← declares all 6 sub-projects
+├── settings.gradle           ← declares all 8 sub-projects
 ├── compose.yml               ← local MySQL + Kafka infrastructure
 ├── infrastructure/
 │   └── mysql/
 │       └── init.sql          ← creates schemas and grants on first boot
+├── ftgo-common/               ← shared library: outbox/dedup infra (OutboxEvent, OutboxPublisher, etc.), not a runnable service
 ├── ftgo-consumer-service/
 ├── ftgo-order-service/
 ├── ftgo-kitchen-service/
 ├── ftgo-accounting-service/
 ├── ftgo-restaurant-service/
 ├── ftgo-delivery-service/
+├── ftgo-service-registry/
 └── docs/
     ├── ARCHITECTURE.md       ← event catalog, outbox pattern, saga sequence diagrams
     ├── session-*.md          ← per-session summaries

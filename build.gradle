@@ -19,15 +19,20 @@ subprojects {
         mavenCentral()
     }
 
+    test {
+        useJUnitPlatform()
+    }
+}
+
+// ftgo-common is a plain library (no REST layer, no JDBC runtime of its own) — it declares
+// its own minimal dependency set in its own build.gradle instead of inheriting the runnable
+// services' web/mysql/test stack, so its classpath isn't bloated with dependencies it never uses.
+configure(subprojects.findAll { it.name != 'ftgo-common' }) {
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-web'
         implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
         runtimeOnly    'com.mysql:mysql-connector-j'
         testImplementation 'org.springframework.boot:spring-boot-starter-test'
         testRuntimeOnly    'com.h2database:h2'
-    }
-
-    test {
-        useJUnitPlatform()
     }
 }

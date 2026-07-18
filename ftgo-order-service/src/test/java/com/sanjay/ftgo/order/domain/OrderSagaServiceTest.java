@@ -1,5 +1,6 @@
 package com.sanjay.ftgo.order.domain;
 
+import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

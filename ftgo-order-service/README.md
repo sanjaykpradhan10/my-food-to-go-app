@@ -71,7 +71,7 @@ See [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the full side-by-side 
 
 ## Idempotency & reliability
 
-Every Kafka-driven state change (both saga modes) is guarded by the `processed_events` dedup ledger — insert-then-act in one local transaction, so at-least-once Kafka delivery can't double-process. All outbound events go through a transactional outbox (`OutboxEvent`, now carrying a `topic` column per row since this service fans out to up to 4 different topics depending on mode) written in the same transaction as the business change, published by a separate `@Scheduled` poller.
+Every Kafka-driven state change (both saga modes) is guarded by the `processed_events` dedup ledger — insert-then-act in one local transaction, so at-least-once Kafka delivery can't double-process. All outbound events go through a transactional outbox (`OutboxEvent`, now carrying a `topic` column per row since this service fans out to up to 4 different topics depending on mode) written in the same transaction as the business change, published by a separate `@Scheduled` poller. `OutboxEvent`/`OutboxPublisher`/`KafkaProducerConfig` themselves live in the shared `ftgo-common` module (see the root `docs/ARCHITECTURE.md`), not this service's own source tree.
 
 ## Running standalone
 
