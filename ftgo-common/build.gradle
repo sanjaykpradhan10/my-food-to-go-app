@@ -9,6 +9,13 @@ jar {
 }
 
 dependencies {
+    // api, not implementation: consumers need JpaRepository/KafkaTemplate on their own compile
+    // classpath to call inherited methods on OutboxEventRepository/ProcessedEventRepository and
+    // to reference KafkaTemplate — declared once here, no longer duplicated by the root build.gradle
+    // (ftgo-common is now excluded from the blanket subprojects{} dependency block) or by each
+    // consuming service's own build.gradle (which used to separately declare spring-kafka).
     api 'org.springframework.boot:spring-boot-starter-data-jpa'
     api 'org.springframework.kafka:spring-kafka'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
