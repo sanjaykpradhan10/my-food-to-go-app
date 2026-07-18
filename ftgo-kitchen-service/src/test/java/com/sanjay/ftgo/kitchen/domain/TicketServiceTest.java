@@ -1,5 +1,8 @@
 package com.sanjay.ftgo.kitchen.domain;
 
+import com.sanjay.ftgo.common.outbox.OutboxEvent;
+import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
+import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
