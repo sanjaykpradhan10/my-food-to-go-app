@@ -1,5 +1,9 @@
 package com.sanjay.ftgo.order.domain;
 
+import com.sanjay.ftgo.common.outbox.OutboxEvent;
+import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
+import com.sanjay.ftgo.common.outbox.ProcessedEvent;
+import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;

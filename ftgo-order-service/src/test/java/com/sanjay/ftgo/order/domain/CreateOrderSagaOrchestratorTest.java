@@ -1,5 +1,7 @@
 package com.sanjay.ftgo.order.domain;
 
+import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
+import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
