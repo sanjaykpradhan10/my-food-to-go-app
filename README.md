@@ -96,6 +96,7 @@ my-food-to-go-app/
 ├── ftgo-accounting-service/
 ├── ftgo-restaurant-service/
 ├── ftgo-delivery-service/
+├── ftgo-service-registry/
 └── docs/
     ├── ARCHITECTURE.md       ← event catalog, outbox pattern, saga sequence diagrams
     ├── session-*.md          ← per-session summaries
