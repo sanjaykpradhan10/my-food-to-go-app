@@ -14,7 +14,7 @@ This project follows the book's progression, adding real code at each chapter. I
 |---------|------|--------|--------|
 | ftgo-consumer-service | 8081 | Consumer management | Verifies consumer, publishes `ConsumerVerified`/`Failed` (choreography) or replies to `VerifyConsumerCommand` (orchestration) |
 | ftgo-order-service | 8082 | Order lifecycle (saga participant/coordinator) | `POST /orders`; choreography: reacts to 3 event topics; orchestration: `CreateOrderSagaOrchestrator` sends commands and reacts to replies |
-| ftgo-kitchen-service | 8083 | Ticket management (separate bounded context from Order) | Creates capacity-gated `Ticket`s; confirms/cancels based on saga outcome, either style |
+| ftgo-kitchen-service | 8083 | Ticket management (separate bounded context from Order) | `Ticket` is a DDD aggregate (Ch.5) with an enforced state machine and class-per-event domain events; creates capacity-gated `Ticket`s, confirms/cancels based on saga outcome (either style); REST API for restaurant staff (`accept`/`preparing`/`ready-for-pickup`/`picked-up`) |
 | ftgo-accounting-service | 8084 | Payment authorisation | Authorizes/declines by order quantity threshold; choreography needs a local join, orchestration doesn't (orchestrator already waited for both prerequisites) |
 | ftgo-restaurant-service | 8085 | Restaurant/menu management | `GET /restaurants/{id}`, registers with Eureka |
 | ftgo-service-registry | 8761 | Eureka service registry | Standalone |
@@ -113,6 +113,7 @@ my-food-to-go-app/
 | 2 | Decomposition strategies | Done |
 | 3 | Interprocess communication | Done — RPI + circuit breaker, messaging, transactional outbox, service discovery, transaction log tailing (CDC) |
 | 4 | Managing transactions with sagas | Create Order saga implemented both ways (choreography, orchestration) |
-| 5–13 | … | Not started |
+| 5 | Designing business logic | `Ticket` (kitchen-service) refactored into a DDD aggregate with enforced state transitions and domain events; `Order` (order-service) not yet done |
+| 6–13 | … | Not started |
 
 See [`CONTEXT.md`](CONTEXT.md) for detailed notes and concept understanding per chapter.
