@@ -1,5 +1,6 @@
 package com.sanjay.ftgo.kitchen.domain;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.common.outbox.OutboxEvent;
 import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
@@ -14,6 +15,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class TicketServiceTest {
@@ -22,10 +24,12 @@ class TicketServiceTest {
     private final ProcessedEventRepository processedEventRepository = mock(ProcessedEventRepository.class);
     private final FailedOrderRepository failedOrderRepository = mock(FailedOrderRepository.class);
     private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
-    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+    private final TicketDomainEventPublisher domainEventPublisher = mock(TicketDomainEventPublisher.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final TicketService ticketService = new TicketService(
-            ticketRepository, processedEventRepository, failedOrderRepository, outboxEventRepository, objectMapper);
+            ticketRepository, processedEventRepository, failedOrderRepository,
+            outboxEventRepository, domainEventPublisher, objectMapper);
 
     private final OrderCreatedEvent event = new OrderCreatedEvent(
             "event-1", "OrderCreated", 42L, 1L, List.of(new OrderCreatedEvent.LineItem(10L, 2)));
@@ -39,8 +43,9 @@ class TicketServiceTest {
         ticketService.handleOrderCreated(event);
 
         verify(processedEventRepository).save(any());
-        verify(ticketRepository).save(argThatStatusIs("CREATE_PENDING"));
-        verify(outboxEventRepository).save(argThatEventTypeIs("TicketCreated"));
+        verify(ticketRepository).save(argThat(t -> t.getState() == TicketState.CREATE_PENDING));
+        verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
+                events.size() == 1 && events.get(0) instanceof TicketCreatedEvent));
     }
 
     @Test
@@ -51,7 +56,7 @@ class TicketServiceTest {
 
         verify(processedEventRepository, never()).save(any());
         verify(ticketRepository, never()).save(any());
-        verify(outboxEventRepository, never()).save(any());
+        verifyNoInteractions(domainEventPublisher);
     }
 
     @Test
@@ -62,8 +67,8 @@ class TicketServiceTest {
 
         ticketService.handleOrderCreated(event);
 
-        verify(ticketRepository).save(argThatStatusIs("CANCELLED"));
-        verify(outboxEventRepository, never()).save(any());
+        verify(ticketRepository).save(argThat(t -> t.getState() == TicketState.CANCELLED));
+        verifyNoInteractions(domainEventPublisher);
     }
 
     @Test
@@ -76,46 +81,49 @@ class TicketServiceTest {
         ticketService.handleOrderCreated(bigEvent);
 
         verify(ticketRepository, never()).save(any());
-        verify(outboxEventRepository).save(argThatEventTypeIs("TicketCreationFailed"));
+        verify(domainEventPublisher).publishCreationFailed(argThat(e -> e.orderId().equals(43L)));
     }
 
     @Test
     void confirmsTicketWhenCardAuthorized() {
-        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
         when(processedEventRepository.existsById("acct-event-1")).thenReturn(false);
         when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
         when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ticketService.handleAccountingEvent("acct-event-1", 42L, "CardAuthorized");
 
-        assertThat(ticket.getStatus()).isEqualTo("AWAITING_ACCEPTANCE");
-        verify(outboxEventRepository).save(argThatEventTypeIs("TicketConfirmed"));
+        assertThat(ticket.getState()).isEqualTo(TicketState.AWAITING_ACCEPTANCE);
+        verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
+                events.size() == 1 && events.get(0) instanceof TicketConfirmedEvent));
     }
 
     @Test
     void cancelsTicketWhenCardAuthorizationFailed() {
-        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
         when(processedEventRepository.existsById("acct-event-2")).thenReturn(false);
         when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
         when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ticketService.handleAccountingEvent("acct-event-2", 42L, "CardAuthorizationFailed");
 
-        assertThat(ticket.getStatus()).isEqualTo("CANCELLED");
-        verify(outboxEventRepository).save(argThatEventTypeIs("TicketCancelled"));
+        assertThat(ticket.getState()).isEqualTo(TicketState.CANCELLED);
+        verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
+                events.size() == 1 && events.get(0) instanceof TicketCancelledEvent));
     }
 
     @Test
     void cancelsExistingTicketWhenConsumerVerificationFails() {
-        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
         when(processedEventRepository.existsById("cons-event-1")).thenReturn(false);
         when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
         when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ticketService.handleConsumerVerificationFailed("cons-event-1", 42L);
 
-        assertThat(ticket.getStatus()).isEqualTo("CANCELLED");
-        verify(outboxEventRepository).save(argThatEventTypeIs("TicketCancelled"));
+        assertThat(ticket.getState()).isEqualTo(TicketState.CANCELLED);
+        verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
+                events.size() == 1 && events.get(0) instanceof TicketCancelledEvent));
         verify(failedOrderRepository, never()).save(any());
     }
 
@@ -127,7 +135,7 @@ class TicketServiceTest {
         ticketService.handleConsumerVerificationFailed("cons-event-2", 43L);
 
         verify(failedOrderRepository).save(any());
-        verify(outboxEventRepository, never()).save(any());
+        verifyNoInteractions(domainEventPublisher);
     }
 
     @Test
@@ -137,8 +145,8 @@ class TicketServiceTest {
 
         ticketService.handleCreateTicketCommand("cmd-1", 42L, 5);
 
-        verify(ticketRepository).save(argThatStatusIs("CREATE_PENDING"));
-        verify(outboxEventRepository).save(argThat(e ->
+        verify(ticketRepository).save(argThat(t -> t.getState() == TicketState.CREATE_PENDING));
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
                 "TicketCreated".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
     }
 
@@ -149,7 +157,7 @@ class TicketServiceTest {
         ticketService.handleCreateTicketCommand("cmd-2", 43L, 25);
 
         verify(ticketRepository, never()).save(any());
-        verify(outboxEventRepository).save(argThat(e ->
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
                 "TicketCreationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
     }
 
@@ -160,39 +168,31 @@ class TicketServiceTest {
         ticketService.handleCreateTicketCommand("cmd-5", 44L, null);
 
         verify(ticketRepository, never()).save(any());
-        verify(outboxEventRepository).save(argThat(e ->
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
                 "TicketCreationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
     }
 
     @Test
     void confirmsTicketViaCommand() {
-        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
         when(processedEventRepository.existsById("cmd-3")).thenReturn(false);
         when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
         when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ticketService.handleConfirmTicketCommand("cmd-3", 42L);
 
-        assertThat(ticket.getStatus()).isEqualTo("AWAITING_ACCEPTANCE");
+        assertThat(ticket.getState()).isEqualTo(TicketState.AWAITING_ACCEPTANCE);
     }
 
     @Test
     void cancelsTicketViaCommand() {
-        Ticket ticket = new Ticket(42L, "CREATE_PENDING");
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
         when(processedEventRepository.existsById("cmd-4")).thenReturn(false);
         when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
         when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ticketService.handleCancelTicketCommand("cmd-4", 42L);
 
-        assertThat(ticket.getStatus()).isEqualTo("CANCELLED");
-    }
-
-    private Ticket argThatStatusIs(String status) {
-        return org.mockito.ArgumentMatchers.argThat(t -> t != null && status.equals(t.getStatus()));
-    }
-
-    private OutboxEvent argThatEventTypeIs(String eventType) {
-        return org.mockito.ArgumentMatchers.argThat(e -> e != null && eventType.equals(e.getEventType()));
+        assertThat(ticket.getState()).isEqualTo(TicketState.CANCELLED);
     }
 }

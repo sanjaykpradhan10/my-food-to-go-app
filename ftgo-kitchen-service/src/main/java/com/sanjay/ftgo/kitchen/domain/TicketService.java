@@ -9,6 +9,7 @@ import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -20,17 +21,20 @@ public class TicketService {
     private final ProcessedEventRepository processedEventRepository;
     private final FailedOrderRepository failedOrderRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final TicketDomainEventPublisher domainEventPublisher;
     private final ObjectMapper objectMapper;
 
     public TicketService(TicketRepository ticketRepository,
                           ProcessedEventRepository processedEventRepository,
                           FailedOrderRepository failedOrderRepository,
                           OutboxEventRepository outboxEventRepository,
+                          TicketDomainEventPublisher domainEventPublisher,
                           ObjectMapper objectMapper) {
         this.ticketRepository = ticketRepository;
         this.processedEventRepository = processedEventRepository;
         this.failedOrderRepository = failedOrderRepository;
         this.outboxEventRepository = outboxEventRepository;
+        this.domainEventPublisher = domainEventPublisher;
         this.objectMapper = objectMapper;
     }
 
@@ -46,18 +50,19 @@ public class TicketService {
                 .sum();
 
         if (failedOrderRepository.existsById(event.orderId())) {
-            ticketRepository.save(new Ticket(event.orderId(), "CANCELLED"));
+            ticketRepository.save(Ticket.createCancelled(event.orderId()));
             return;
         }
 
         if (!isWithinCapacity(totalQuantity)) {
-            publishEvent("TicketCreationFailed", event.orderId(), null, totalQuantity,
-                    "order exceeds kitchen capacity");
+            domainEventPublisher.publishCreationFailed(
+                    new TicketCreationFailedEvent(event.orderId(), "order exceeds kitchen capacity"));
             return;
         }
 
-        Ticket ticket = ticketRepository.save(new Ticket(event.orderId(), "CREATE_PENDING"));
-        publishEvent("TicketCreated", event.orderId(), ticket.getId(), totalQuantity, null);
+        TicketCreationResult result = Ticket.createTicket(event.orderId(), totalQuantity);
+        Ticket ticket = ticketRepository.save(result.ticket());
+        domainEventPublisher.publish(ticket, result.events());
     }
 
     @Transactional
@@ -72,15 +77,9 @@ public class TicketService {
             return;
         }
 
-        if ("CardAuthorized".equals(eventType)) {
-            ticket.markAwaitingAcceptance();
-            ticketRepository.save(ticket);
-            publishEvent("TicketConfirmed", orderId, ticket.getId(), null, null);
-        } else {
-            ticket.markCancelled();
-            ticketRepository.save(ticket);
-            publishEvent("TicketCancelled", orderId, ticket.getId(), null, null);
-        }
+        List<TicketDomainEvent> events = "CardAuthorized".equals(eventType) ? ticket.confirm() : ticket.cancel();
+        ticketRepository.save(ticket);
+        domainEventPublisher.publish(ticket, events);
     }
 
     @Transactional
@@ -92,9 +91,9 @@ public class TicketService {
 
         Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
         if (ticket != null) {
-            ticket.markCancelled();
+            List<TicketDomainEvent> events = ticket.cancel();
             ticketRepository.save(ticket);
-            publishEvent("TicketCancelled", orderId, ticket.getId(), null, null);
+            domainEventPublisher.publish(ticket, events);
         } else {
             failedOrderRepository.save(new FailedOrder(orderId));
         }
@@ -117,7 +116,8 @@ public class TicketService {
             return;
         }
 
-        ticketRepository.save(new Ticket(orderId, "CREATE_PENDING"));
+        TicketCreationResult result = Ticket.createTicket(orderId, totalQuantity);
+        ticketRepository.save(result.ticket());
         publishReply("TicketCreated", orderId, null);
     }
 
@@ -130,7 +130,7 @@ public class TicketService {
 
         Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
         if (ticket != null) {
-            ticket.markAwaitingAcceptance();
+            ticket.confirm();
             ticketRepository.save(ticket);
         }
     }
@@ -144,19 +144,13 @@ public class TicketService {
 
         Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
         if (ticket != null) {
-            ticket.markCancelled();
+            ticket.cancel();
             ticketRepository.save(ticket);
         }
     }
 
     private boolean isWithinCapacity(int totalQuantity) {
         return totalQuantity <= KITCHEN_CAPACITY_LIMIT;
-    }
-
-    private void publishEvent(String eventType, Long orderId, Long ticketId, Integer totalQuantity, String reason) {
-        String eventId = UUID.randomUUID().toString();
-        KitchenEvent event = new KitchenEvent(eventId, eventType, orderId, ticketId, totalQuantity, reason);
-        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "kitchen.events", toJson(event)));
     }
 
     private void publishReply(String eventType, Long orderId, String reason) {
