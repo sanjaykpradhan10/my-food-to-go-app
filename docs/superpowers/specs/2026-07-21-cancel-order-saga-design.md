@@ -79,6 +79,11 @@ New `AuthorizationDomainEventPublisher`, same shape as `TicketDomainEventPublish
 
 `SagaJoinService.tryResolve`/`handleAuthorizeCardCommand` updated to call the new factories instead of constructing `Authorization` directly, and to publish through the new publisher instead of hand-building `AccountingEvent` inline.
 
+**Also discovered during plan-writing**: accounting-service's inbound command wire format (`AuthorizeCardCommand(eventId, orderId, totalQuantity)`, order-service's producer-side copy and accounting-service's consumer-side copy) has **no `commandType` discriminator at all** — safe today only because `accounting.commands` has only ever carried one command type. Adding `ReverseAuthorization` on the same topic needs the same generalization already applied to `KitchenCommand`/`OrderEvent`. Both services' copies are renamed/generalized to `AccountingCommand(eventId, commandType, orderId, totalQuantity, sagaType)`:
+- order-service's `CreateOrderSagaOrchestrator.tryAuthorize` sends `new AccountingCommand(eventId, "AuthorizeCard", orderId, totalQuantity, "CreateOrder")` (replacing the old `AuthorizeCardCommand` construction).
+- The new `CancelOrderSagaOrchestrator` sends `new AccountingCommand(eventId, "ReverseAuthorization", orderId, null, "CancelOrder")`.
+- accounting-service's `AuthorizeCardCommandListener` is renamed to `AccountingCommandListener` and gains a `commandType` switch: `"AuthorizeCard"` → the existing `sagaJoinService.handleAuthorizeCardCommand` (unchanged logic); `"ReverseAuthorization"` → a new `AuthorizationCancelService.handleReverseAuthorizationCommand(eventId, orderId, sagaType)`.
+
 ## Kitchen-service changes
 
 - `TicketDomainEvent` gains 2 new implementations: `TicketCancelledEvent` already exists (reused, no change) — only `TicketCancellationRejectedEvent` is new (`orderId`, no other fields).
