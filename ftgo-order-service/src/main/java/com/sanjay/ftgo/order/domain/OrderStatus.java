@@ -3,5 +3,8 @@ package com.sanjay.ftgo.order.domain;
 public enum OrderStatus {
     APPROVAL_PENDING,
     APPROVED,
-    REJECTED
+    REJECTED,
+    CANCEL_PENDING,
+    CANCELLED,
+    REVISION_PENDING
 }

@@ -32,6 +32,13 @@ public class OrderEventListener {
             log.warn("Skipping malformed order event: {}", payload, e);
             return;
         }
+        // order-service's order.events topic now carries every Order lifecycle event
+        // (OrderApproved, OrderCancelled, etc.), not just OrderCreated — without this
+        // check, deserializing e.g. an OrderApproved payload into OrderCreatedEvent
+        // would succeed with a null consumerId and blow up consumerRepository.findById(null).
+        if (!"OrderCreated".equals(event.eventType())) {
+            return;
+        }
         consumerVerificationService.handleOrderCreated(event);
     }
 }

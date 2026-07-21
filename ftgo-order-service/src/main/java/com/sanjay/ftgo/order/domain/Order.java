@@ -67,11 +67,68 @@ public class Order {
         return status;
     }
 
-    public void markApproved() {
+    public List<OrderDomainEvent> noteApproved() {
+        if (status != OrderStatus.APPROVAL_PENDING) {
+            throw new UnsupportedStateTransitionException(status);
+        }
         this.status = OrderStatus.APPROVED;
+        return List.of(new OrderApprovedEvent(id));
     }
 
-    public void markRejected() {
+    public List<OrderDomainEvent> noteRejected() {
+        if (status != OrderStatus.APPROVAL_PENDING) {
+            throw new UnsupportedStateTransitionException(status);
+        }
         this.status = OrderStatus.REJECTED;
+        return List.of(new OrderRejectedEvent(id));
+    }
+
+    public List<OrderDomainEvent> cancel() {
+        if (status != OrderStatus.APPROVED) {
+            throw new OrderCannotBeCancelledException(id);
+        }
+        this.status = OrderStatus.CANCEL_PENDING;
+        return List.of(new OrderCancelledEvent(id));
+    }
+
+    public List<OrderDomainEvent> noteCancelled() {
+        if (status != OrderStatus.CANCEL_PENDING) {
+            throw new UnsupportedStateTransitionException(status);
+        }
+        this.status = OrderStatus.CANCELLED;
+        return List.of(new OrderCancelConfirmedEvent(id));
+    }
+
+    public List<OrderDomainEvent> undoCancel() {
+        if (status != OrderStatus.CANCEL_PENDING) {
+            throw new UnsupportedStateTransitionException(status);
+        }
+        this.status = OrderStatus.APPROVED;
+        return List.of(new OrderCancelRejectedEvent(id));
+    }
+
+    public List<OrderDomainEvent> revise(OrderRevision revision) {
+        if (status != OrderStatus.APPROVED) {
+            throw new UnsupportedStateTransitionException(status);
+        }
+        this.status = OrderStatus.REVISION_PENDING;
+        return List.of(new OrderRevisionProposedEvent(id, revision.revisedLineItems()));
+    }
+
+    public List<OrderDomainEvent> confirmRevision(OrderRevision revision) {
+        if (status != OrderStatus.REVISION_PENDING) {
+            throw new UnsupportedStateTransitionException(status);
+        }
+        this.status = OrderStatus.APPROVED;
+        this.lineItems = revision.revisedLineItems();
+        return List.of(new OrderRevisedEvent(id, revision.revisedLineItems()));
+    }
+
+    public List<OrderDomainEvent> rejectRevision() {
+        if (status != OrderStatus.REVISION_PENDING) {
+            throw new UnsupportedStateTransitionException(status);
+        }
+        this.status = OrderStatus.APPROVED;
+        return List.of(new OrderRevisionRejectedEvent(id));
     }
 }

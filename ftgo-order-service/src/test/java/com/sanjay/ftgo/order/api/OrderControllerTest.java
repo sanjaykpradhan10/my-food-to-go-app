@@ -2,11 +2,16 @@ package com.sanjay.ftgo.order.api;
 
 import com.sanjay.ftgo.order.domain.MenuItemNotFoundException;
 import com.sanjay.ftgo.order.domain.Order;
+import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
+import com.sanjay.ftgo.order.domain.OrderDomainEventPublisher;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
+import com.sanjay.ftgo.order.domain.OrderNotFoundException;
+import com.sanjay.ftgo.order.domain.OrderRepository;
 import com.sanjay.ftgo.order.domain.OrderService;
 import com.sanjay.ftgo.order.domain.OrderStatus;
 import com.sanjay.ftgo.order.domain.RestaurantNotFoundException;
 import com.sanjay.ftgo.order.domain.RestaurantServiceUnavailableException;
+import com.sanjay.ftgo.order.domain.UnsupportedStateTransitionException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -14,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -30,6 +36,12 @@ class OrderControllerTest {
 
     @MockitoBean
     private OrderService orderService;
+
+    @MockitoBean
+    private OrderRepository orderRepository;
+
+    @MockitoBean
+    private OrderDomainEventPublisher domainEventPublisher;
 
     @Test
     void createsOrderSuccessfully() throws Exception {
@@ -113,5 +125,71 @@ class OrderControllerTest {
                                 {"consumerId":1,"restaurantId":1,"lineItems":[]}
                                 """))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void cancelsAnApprovedOrder() throws Exception {
+        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
+        when(orderRepository.findById(5L)).thenReturn(Optional.of(order));
+
+        mockMvc.perform(post("/orders/5/cancel"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCEL_PENDING"));
+    }
+
+    @Test
+    void returns404WhenCancellingUnknownOrder() throws Exception {
+        when(orderRepository.findById(99L)).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/orders/99/cancel"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void returns409WhenCancellingAnOrderThatCannotBeCancelled() throws Exception {
+        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
+        when(orderRepository.findById(5L)).thenReturn(Optional.of(order));
+
+        mockMvc.perform(post("/orders/5/cancel"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void revisesAnApprovedOrder() throws Exception {
+        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
+        when(orderRepository.findById(5L)).thenReturn(Optional.of(order));
+
+        mockMvc.perform(post("/orders/5/revise")
+                        .contentType("application/json")
+                        .content("""
+                                {"lineItems":[{"menuItemId":10,"quantity":5}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REVISION_PENDING"));
+    }
+
+    @Test
+    void returns404WhenRevisingUnknownOrder() throws Exception {
+        when(orderRepository.findById(99L)).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/orders/99/revise")
+                        .contentType("application/json")
+                        .content("""
+                                {"lineItems":[{"menuItemId":10,"quantity":5}]}
+                                """))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void returns409WhenRevisingAnOrderNotYetApproved() throws Exception {
+        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
+        when(orderRepository.findById(5L)).thenReturn(Optional.of(order));
+
+        mockMvc.perform(post("/orders/5/revise")
+                        .contentType("application/json")
+                        .content("""
+                                {"lineItems":[{"menuItemId":10,"quantity":5}]}
+                                """))
+                .andExpect(status().isConflict());
     }
 }
