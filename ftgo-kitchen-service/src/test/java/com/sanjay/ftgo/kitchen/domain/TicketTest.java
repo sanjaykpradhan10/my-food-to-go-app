@@ -183,6 +183,78 @@ class TicketTest {
         assertThatThrownBy(ticket::cancel).isInstanceOf(UnsupportedStateTransitionException.class);
     }
 
+    @Test
+    void createTicketStoresTotalQuantity() {
+        Ticket ticket = Ticket.createTicket(42L, 7).ticket();
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(7);
+    }
+
+    @Test
+    void reviseQuantityFromCreatePendingSucceeds() {
+        Ticket ticket = Ticket.createTicket(42L, 3).ticket();
+
+        List<TicketDomainEvent> events = ticket.reviseQuantity(8);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(8);
+        assertThat(events).containsExactly(new TicketQuantityRevisedEvent(42L, 8));
+    }
+
+    @Test
+    void reviseQuantityFromPreparingSucceeds() {
+        Ticket ticket = acceptedTicket();
+        ticket.preparing();
+
+        List<TicketDomainEvent> events = ticket.reviseQuantity(8);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(8);
+        assertThat(events).containsExactly(new TicketQuantityRevisedEvent(42L, 8));
+    }
+
+    @Test
+    void reviseQuantityFromReadyForPickupThrowsUnsupportedStateTransition() {
+        Ticket ticket = acceptedTicket();
+        ticket.preparing();
+        ticket.readyForPickup();
+
+        assertThatThrownBy(() -> ticket.reviseQuantity(8)).isInstanceOf(UnsupportedStateTransitionException.class);
+    }
+
+    @Test
+    void reviseQuantityFromPickedUpThrowsUnsupportedStateTransition() {
+        Ticket ticket = acceptedTicket();
+        ticket.preparing();
+        ticket.readyForPickup();
+        ticket.pickedUp();
+
+        assertThatThrownBy(() -> ticket.reviseQuantity(8)).isInstanceOf(UnsupportedStateTransitionException.class);
+    }
+
+    @Test
+    void reviseQuantityFromCancelledThrowsUnsupportedStateTransition() {
+        Ticket ticket = Ticket.createCancelled(42L);
+
+        assertThatThrownBy(() -> ticket.reviseQuantity(8)).isInstanceOf(UnsupportedStateTransitionException.class);
+    }
+
+    @Test
+    void undoRevisionRestoresOriginalQuantity() {
+        Ticket ticket = Ticket.createTicket(42L, 3).ticket();
+        ticket.reviseQuantity(8);
+
+        List<TicketDomainEvent> events = ticket.undoRevision(3);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(3);
+        assertThat(events).containsExactly(new TicketRevisionUndoneEvent(42L, 3));
+    }
+
+    @Test
+    void undoRevisionFromCancelledThrowsUnsupportedStateTransition() {
+        Ticket ticket = Ticket.createCancelled(42L);
+
+        assertThatThrownBy(() -> ticket.undoRevision(3)).isInstanceOf(UnsupportedStateTransitionException.class);
+    }
+
     private Ticket acceptedTicket() {
         Ticket ticket = Ticket.createTicket(42L, 3).ticket();
         ticket.confirm();
