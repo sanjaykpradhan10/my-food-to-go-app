@@ -107,18 +107,18 @@ public class TicketService {
         processedEventRepository.save(new ProcessedEvent(eventId));
 
         if (totalQuantity == null) {
-            publishReply("TicketCreationFailed", orderId, "totalQuantity is required");
+            publishReply("TicketCreationFailed", orderId, "totalQuantity is required", "CreateOrder");
             return;
         }
 
         if (!isWithinCapacity(totalQuantity)) {
-            publishReply("TicketCreationFailed", orderId, "order exceeds kitchen capacity");
+            publishReply("TicketCreationFailed", orderId, "order exceeds kitchen capacity", "CreateOrder");
             return;
         }
 
         TicketCreationResult result = Ticket.createTicket(orderId, totalQuantity);
         ticketRepository.save(result.ticket());
-        publishReply("TicketCreated", orderId, null);
+        publishReply("TicketCreated", orderId, null, "CreateOrder");
     }
 
     @Transactional
@@ -153,9 +153,9 @@ public class TicketService {
         return totalQuantity <= KITCHEN_CAPACITY_LIMIT;
     }
 
-    private void publishReply(String eventType, Long orderId, String reason) {
+    private void publishReply(String eventType, Long orderId, String reason, String sagaType) {
         String eventId = UUID.randomUUID().toString();
-        SagaReply reply = new SagaReply(eventId, "kitchen", eventType, orderId, reason);
+        SagaReply reply = new SagaReply(eventId, "kitchen", eventType, orderId, reason, sagaType);
         outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "saga.replies", toJson(reply)));
     }
 

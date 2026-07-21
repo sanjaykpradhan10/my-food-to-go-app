@@ -50,7 +50,7 @@ public class ConsumerVerificationService {
 
         VerificationResult result = verify(consumerId);
         String eventType = result.verified() ? "ConsumerVerified" : "ConsumerVerificationFailed";
-        publishReply(eventType, orderId, result.reason());
+        publishReply(eventType, orderId, result.reason(), "CreateOrder");
     }
 
     private VerificationResult verify(Long consumerId) {
@@ -73,9 +73,9 @@ public class ConsumerVerificationService {
         outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "consumer.events", toJson(event)));
     }
 
-    private void publishReply(String eventType, Long orderId, String reason) {
+    private void publishReply(String eventType, Long orderId, String reason, String sagaType) {
         String eventId = UUID.randomUUID().toString();
-        SagaReply reply = new SagaReply(eventId, "consumer", eventType, orderId, reason);
+        SagaReply reply = new SagaReply(eventId, "consumer", eventType, orderId, reason, sagaType);
         outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "saga.replies", toJson(reply)));
     }
 

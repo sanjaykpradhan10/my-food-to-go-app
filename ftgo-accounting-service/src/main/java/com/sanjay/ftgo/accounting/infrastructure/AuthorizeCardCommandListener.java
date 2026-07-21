@@ -1,7 +1,7 @@
 package com.sanjay.ftgo.accounting.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sanjay.ftgo.accounting.domain.AuthorizeCardCommand;
+import com.sanjay.ftgo.accounting.domain.AccountingCommand;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,11 +25,11 @@ public class AuthorizeCardCommandListener {
 
     @KafkaListener(topics = "accounting.commands", groupId = "accounting-service")
     public void onMessage(String payload) {
-        AuthorizeCardCommand command;
+        AccountingCommand command;
         try {
-            command = objectMapper.readValue(payload, AuthorizeCardCommand.class);
+            command = objectMapper.readValue(payload, AccountingCommand.class);
         } catch (Exception e) {
-            log.warn("Skipping malformed authorize-card command: {}", payload, e);
+            log.warn("Skipping malformed accounting command: {}", payload, e);
             return;
         }
         sagaJoinService.handleAuthorizeCardCommand(command.eventId(), command.orderId(), command.totalQuantity());
