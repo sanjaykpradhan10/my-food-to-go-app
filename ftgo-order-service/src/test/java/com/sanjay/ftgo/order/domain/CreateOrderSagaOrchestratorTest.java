@@ -22,10 +22,12 @@ class CreateOrderSagaOrchestratorTest {
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final ProcessedEventRepository processedEventRepository = mock(ProcessedEventRepository.class);
     private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
+    private final OrderDomainEventPublisher domainEventPublisher = mock(OrderDomainEventPublisher.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final CreateOrderSagaOrchestrator orchestrator = new CreateOrderSagaOrchestrator(
-            sagaInstanceRepository, orderRepository, processedEventRepository, outboxEventRepository, objectMapper);
+            sagaInstanceRepository, orderRepository, processedEventRepository, outboxEventRepository,
+            domainEventPublisher, objectMapper);
 
     private Order pendingOrder() {
         return new Order(42L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
@@ -81,6 +83,7 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.handleReply("e1", "accounting", "CardAuthorized", 42L, null);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.APPROVED);
+        verify(domainEventPublisher).publish(List.of(new OrderApprovedEvent(42L)));
         verify(outboxEventRepository).save(argThat(e -> "kitchen.commands".equals(e.getTopic())
                 && "ConfirmTicket".equals(e.getEventType())));
     }
@@ -97,6 +100,7 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.handleReply("e1", "accounting", "CardAuthorizationFailed", 42L, "declined");
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        verify(domainEventPublisher).publish(List.of(new OrderRejectedEvent(42L)));
         verify(outboxEventRepository).save(argThat(e -> "kitchen.commands".equals(e.getTopic())
                 && "CancelTicket".equals(e.getEventType())));
     }

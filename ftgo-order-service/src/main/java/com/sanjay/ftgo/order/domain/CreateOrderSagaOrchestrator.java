@@ -6,6 +6,8 @@ import com.sanjay.ftgo.common.outbox.ProcessedEvent;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,21 +17,26 @@ import java.util.UUID;
 @Service
 public class CreateOrderSagaOrchestrator {
 
+    private static final Logger log = LoggerFactory.getLogger(CreateOrderSagaOrchestrator.class);
+
     private final CreateOrderSagaInstanceRepository sagaInstanceRepository;
     private final OrderRepository orderRepository;
     private final ProcessedEventRepository processedEventRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final OrderDomainEventPublisher domainEventPublisher;
     private final ObjectMapper objectMapper;
 
     public CreateOrderSagaOrchestrator(CreateOrderSagaInstanceRepository sagaInstanceRepository,
                                         OrderRepository orderRepository,
                                         ProcessedEventRepository processedEventRepository,
                                         OutboxEventRepository outboxEventRepository,
+                                        OrderDomainEventPublisher domainEventPublisher,
                                         ObjectMapper objectMapper) {
         this.sagaInstanceRepository = sagaInstanceRepository;
         this.orderRepository = orderRepository;
         this.processedEventRepository = processedEventRepository;
         this.outboxEventRepository = outboxEventRepository;
+        this.domainEventPublisher = domainEventPublisher;
         this.objectMapper = objectMapper;
     }
 
@@ -100,10 +107,7 @@ public class CreateOrderSagaOrchestrator {
             return;
         }
         if ("CardAuthorized".equals(eventType)) {
-            if (order.getStatus() == OrderStatus.APPROVAL_PENDING) {
-                order.noteApproved();
-                orderRepository.save(order);
-            }
+            approveOrder(order);
             String eventId = UUID.randomUUID().toString();
             publishCommand("kitchen.commands", eventId, "ConfirmTicket", instance.getOrderId(),
                     new KitchenCommand(eventId, "ConfirmTicket", instance.getOrderId(), null));
@@ -142,10 +146,23 @@ public class CreateOrderSagaOrchestrator {
                 new KitchenCommand(eventId, "CancelTicket", orderId, null));
     }
 
-    private void rejectOrder(Order order) {
-        if (order.getStatus() == OrderStatus.APPROVAL_PENDING) {
-            order.noteRejected();
+    private void approveOrder(Order order) {
+        try {
+            List<OrderDomainEvent> events = order.noteApproved();
             orderRepository.save(order);
+            domainEventPublisher.publish(events);
+        } catch (UnsupportedStateTransitionException e) {
+            log.debug("Ignoring approve for order {}: {}", order.getId(), e.getMessage());
+        }
+    }
+
+    private void rejectOrder(Order order) {
+        try {
+            List<OrderDomainEvent> events = order.noteRejected();
+            orderRepository.save(order);
+            domainEventPublisher.publish(events);
+        } catch (UnsupportedStateTransitionException e) {
+            log.debug("Ignoring reject for order {}: {}", order.getId(), e.getMessage());
         }
     }
 
