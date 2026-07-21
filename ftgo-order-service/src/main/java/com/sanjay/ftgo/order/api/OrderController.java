@@ -15,6 +15,7 @@ import com.sanjay.ftgo.order.domain.RestaurantServiceUnavailableException;
 import com.sanjay.ftgo.order.domain.UnsupportedStateTransitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,6 +61,7 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/cancel")
+    @Transactional
     public ResponseEntity<OrderResponse> cancel(@PathVariable Long id) {
         Order order = findOrder(id);
         apply(order, order.cancel());
@@ -67,6 +69,7 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/revise")
+    @Transactional
     public ResponseEntity<OrderResponse> revise(@PathVariable Long id, @RequestBody ReviseOrderRequest request) {
         Order order = findOrder(id);
         List<OrderLineItem> revisedLineItems = request.lineItems().stream()
