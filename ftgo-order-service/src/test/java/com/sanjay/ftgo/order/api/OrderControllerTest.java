@@ -3,6 +3,7 @@ package com.sanjay.ftgo.order.api;
 import com.sanjay.ftgo.order.domain.MenuItemNotFoundException;
 import com.sanjay.ftgo.order.domain.Order;
 import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
+import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderDomainEventPublisher;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderNotFoundException;
@@ -23,6 +24,7 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -42,6 +44,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private OrderDomainEventPublisher domainEventPublisher;
+
+    @MockitoBean
+    private OrderCancellationSagaTrigger cancellationSagaTrigger;
 
     @Test
     void createsOrderSuccessfully() throws Exception {
@@ -135,6 +140,8 @@ class OrderControllerTest {
         mockMvc.perform(post("/orders/5/cancel"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCEL_PENDING"));
+
+        verify(cancellationSagaTrigger).onOrderCancelled(eq(order), any());
     }
 
     @Test

@@ -51,7 +51,7 @@ public class CreateOrderSagaOrchestrator {
 
         String createTicketEventId = UUID.randomUUID().toString();
         publishCommand("kitchen.commands", createTicketEventId, "CreateTicket", order.getId(),
-                new KitchenCommand(createTicketEventId, "CreateTicket", order.getId(), totalQuantity));
+                new KitchenCommand(createTicketEventId, "CreateTicket", order.getId(), totalQuantity, "CreateOrder"));
     }
 
     @Transactional
@@ -110,7 +110,7 @@ public class CreateOrderSagaOrchestrator {
             approveOrder(order);
             String eventId = UUID.randomUUID().toString();
             publishCommand("kitchen.commands", eventId, "ConfirmTicket", instance.getOrderId(),
-                    new KitchenCommand(eventId, "ConfirmTicket", instance.getOrderId(), null));
+                    new KitchenCommand(eventId, "ConfirmTicket", instance.getOrderId(), null, "CreateOrder"));
         } else {
             rejectOrder(order);
             sendCancelTicket(instance.getOrderId());
@@ -123,7 +123,7 @@ public class CreateOrderSagaOrchestrator {
         }
         String eventId = UUID.randomUUID().toString();
         publishCommand("accounting.commands", eventId, "AuthorizeCard", instance.getOrderId(),
-                new AuthorizeCardCommand(eventId, instance.getOrderId(), instance.getTotalQuantity()));
+                new AccountingCommand(eventId, "AuthorizeCard", instance.getOrderId(), instance.getTotalQuantity(), "CreateOrder"));
     }
 
     private void fail(CreateOrderSagaInstance instance) {
@@ -143,7 +143,7 @@ public class CreateOrderSagaOrchestrator {
     private void sendCancelTicket(Long orderId) {
         String eventId = UUID.randomUUID().toString();
         publishCommand("kitchen.commands", eventId, "CancelTicket", orderId,
-                new KitchenCommand(eventId, "CancelTicket", orderId, null));
+                new KitchenCommand(eventId, "CancelTicket", orderId, null, "CreateOrder"));
     }
 
     private void approveOrder(Order order) {

@@ -46,4 +46,15 @@ class OrderEventListenerTest {
 
         verify(ticketService, never()).handleOrderCreated(any());
     }
+
+    @Test
+    void handlesOrderCancelledEvent() {
+        String payload = """
+                {"eventId":"e3","eventType":"OrderCancelled","orderId":42}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(ticketService).handleOrderCancelled("e3", 42L);
+    }
 }

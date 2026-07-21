@@ -36,7 +36,7 @@ public class KitchenCommandListener {
             case "CreateTicket" ->
                     ticketService.handleCreateTicketCommand(command.eventId(), command.orderId(), command.totalQuantity());
             case "ConfirmTicket" -> ticketService.handleConfirmTicketCommand(command.eventId(), command.orderId());
-            case "CancelTicket" -> ticketService.handleCancelTicketCommand(command.eventId(), command.orderId());
+            case "CancelTicket" -> ticketService.handleCancelTicketCommand(command.eventId(), command.orderId(), command.sagaType());
             default -> log.warn("Unknown kitchen command type: {}", command.commandType());
         }
     }

@@ -20,17 +20,20 @@ public class SagaJoinService {
     private final AuthorizationRepository authorizationRepository;
     private final ProcessedEventRepository processedEventRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final AuthorizationDomainEventPublisher domainEventPublisher;
     private final ObjectMapper objectMapper;
 
     public SagaJoinService(SagaJoinStateRepository sagaJoinStateRepository,
                             AuthorizationRepository authorizationRepository,
                             ProcessedEventRepository processedEventRepository,
                             OutboxEventRepository outboxEventRepository,
+                            AuthorizationDomainEventPublisher domainEventPublisher,
                             ObjectMapper objectMapper) {
         this.sagaJoinStateRepository = sagaJoinStateRepository;
         this.authorizationRepository = authorizationRepository;
         this.processedEventRepository = processedEventRepository;
         this.outboxEventRepository = outboxEventRepository;
+        this.domainEventPublisher = domainEventPublisher;
         this.objectMapper = objectMapper;
     }
 
@@ -88,17 +91,20 @@ public class SagaJoinService {
         processedEventRepository.save(new ProcessedEvent(eventId));
 
         if (totalQuantity == null) {
-            publishReply("CardAuthorizationFailed", orderId, "order quantity is missing");
+            publishReply("CardAuthorizationFailed", orderId, "order quantity is missing", "CreateOrder");
             return;
         }
 
         boolean authorized = isAuthorized(totalQuantity);
-        authorizationRepository.save(new Authorization(orderId, authorized ? "AUTHORIZED" : "DECLINED"));
+        AuthorizationResult result = authorized
+                ? Authorization.authorize(orderId)
+                : Authorization.decline(orderId, "order quantity exceeds authorization limit");
+        authorizationRepository.save(result.authorization());
 
         if (authorized) {
-            publishReply("CardAuthorized", orderId, null);
+            publishReply("CardAuthorized", orderId, null, "CreateOrder");
         } else {
-            publishReply("CardAuthorizationFailed", orderId, "order quantity exceeds authorization limit");
+            publishReply("CardAuthorizationFailed", orderId, "order quantity exceeds authorization limit", "CreateOrder");
         }
     }
 
@@ -110,28 +116,20 @@ public class SagaJoinService {
         sagaJoinStateRepository.save(state);
 
         boolean authorized = isAuthorized(state.getTotalQuantity());
-        authorizationRepository.save(new Authorization(state.getOrderId(), authorized ? "AUTHORIZED" : "DECLINED"));
-
-        if (authorized) {
-            publishEvent("CardAuthorized", state.getOrderId(), null);
-        } else {
-            publishEvent("CardAuthorizationFailed", state.getOrderId(), "order quantity exceeds authorization limit");
-        }
+        AuthorizationResult result = authorized
+                ? Authorization.authorize(state.getOrderId())
+                : Authorization.decline(state.getOrderId(), "order quantity exceeds authorization limit");
+        authorizationRepository.save(result.authorization());
+        domainEventPublisher.publish(result.events());
     }
 
     private boolean isAuthorized(int totalQuantity) {
         return totalQuantity <= AUTHORIZATION_QUANTITY_LIMIT;
     }
 
-    private void publishEvent(String eventType, Long orderId, String reason) {
+    private void publishReply(String eventType, Long orderId, String reason, String sagaType) {
         String eventId = UUID.randomUUID().toString();
-        AccountingEvent event = new AccountingEvent(eventId, eventType, orderId, reason);
-        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "accounting.events", toJson(event)));
-    }
-
-    private void publishReply(String eventType, Long orderId, String reason) {
-        String eventId = UUID.randomUUID().toString();
-        SagaReply reply = new SagaReply(eventId, "accounting", eventType, orderId, reason);
+        SagaReply reply = new SagaReply(eventId, "accounting", eventType, orderId, reason, sagaType);
         outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "saga.replies", toJson(reply)));
     }
 

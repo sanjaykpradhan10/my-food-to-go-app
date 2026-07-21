@@ -2,6 +2,7 @@ package com.sanjay.ftgo.order.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.order.domain.AccountingEvent;
+import com.sanjay.ftgo.order.domain.OrderCancelSagaService;
 import com.sanjay.ftgo.order.domain.OrderSagaService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,10 +17,14 @@ public class AccountingEventListener {
     private static final Logger log = LoggerFactory.getLogger(AccountingEventListener.class);
 
     private final OrderSagaService orderSagaService;
+    private final OrderCancelSagaService orderCancelSagaService;
     private final ObjectMapper objectMapper;
 
-    public AccountingEventListener(OrderSagaService orderSagaService, ObjectMapper objectMapper) {
+    public AccountingEventListener(OrderSagaService orderSagaService,
+                                    OrderCancelSagaService orderCancelSagaService,
+                                    ObjectMapper objectMapper) {
         this.orderSagaService = orderSagaService;
+        this.orderCancelSagaService = orderCancelSagaService;
         this.objectMapper = objectMapper;
     }
 
@@ -32,8 +37,10 @@ public class AccountingEventListener {
             log.warn("Skipping malformed accounting event: {}", payload, e);
             return;
         }
-        if ("CardAuthorizationFailed".equals(event.eventType())) {
-            orderSagaService.reject(event.orderId(), event.eventId());
+        switch (event.eventType()) {
+            case "CardAuthorizationFailed" -> orderSagaService.reject(event.orderId(), event.eventId());
+            case "AuthorizationReversed" -> orderCancelSagaService.confirmCancel(event.orderId(), event.eventId());
+            default -> { }
         }
     }
 }

@@ -32,13 +32,14 @@ public class OrderEventListener {
             log.warn("Skipping malformed order event: {}", payload, e);
             return;
         }
-        // order-service's order.events topic now carries every Order lifecycle event
-        // (OrderApproved, OrderCancelled, etc.), not just OrderCreated — without this
-        // check, deserializing e.g. an OrderApproved payload into OrderCreatedEvent
-        // would succeed with null consumerId/restaurantId/lineItems and create a bogus Ticket.
-        if (!"OrderCreated".equals(event.eventType())) {
-            return;
+        // order-service's order.events topic carries every Order lifecycle event; this
+        // listener only reacts to the two that concern the kitchen ticket lifecycle.
+        // OrderCreatedEvent's fields are reused for OrderCancelled too — we only read
+        // eventId/orderId from it in that case, which deserialize fine regardless.
+        switch (event.eventType()) {
+            case "OrderCreated" -> ticketService.handleOrderCreated(event);
+            case "OrderCancelled" -> ticketService.handleOrderCancelled(event.eventId(), event.orderId());
+            default -> { }
         }
-        ticketService.handleOrderCreated(event);
     }
 }

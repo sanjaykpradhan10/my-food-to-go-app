@@ -3,6 +3,7 @@ package com.sanjay.ftgo.order.api;
 import com.sanjay.ftgo.order.domain.MenuItemNotFoundException;
 import com.sanjay.ftgo.order.domain.Order;
 import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
+import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderDomainEvent;
 import com.sanjay.ftgo.order.domain.OrderDomainEventPublisher;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
@@ -32,12 +33,15 @@ public class OrderController {
     private final OrderService orderService;
     private final OrderRepository orderRepository;
     private final OrderDomainEventPublisher domainEventPublisher;
+    private final OrderCancellationSagaTrigger cancellationSagaTrigger;
 
     public OrderController(OrderService orderService, OrderRepository orderRepository,
-                            OrderDomainEventPublisher domainEventPublisher) {
+                            OrderDomainEventPublisher domainEventPublisher,
+                            OrderCancellationSagaTrigger cancellationSagaTrigger) {
         this.orderService = orderService;
         this.orderRepository = orderRepository;
         this.domainEventPublisher = domainEventPublisher;
+        this.cancellationSagaTrigger = cancellationSagaTrigger;
     }
 
     @PostMapping
@@ -64,7 +68,9 @@ public class OrderController {
     @Transactional
     public ResponseEntity<OrderResponse> cancel(@PathVariable Long id) {
         Order order = findOrder(id);
-        apply(order, order.cancel());
+        List<OrderDomainEvent> events = order.cancel();
+        orderRepository.save(order);
+        cancellationSagaTrigger.onOrderCancelled(order, events);
         return ResponseEntity.ok(OrderResponse.from(order));
     }
 
