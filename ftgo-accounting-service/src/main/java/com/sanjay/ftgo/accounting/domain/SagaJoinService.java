@@ -93,7 +93,10 @@ public class SagaJoinService {
         }
 
         boolean authorized = isAuthorized(totalQuantity);
-        authorizationRepository.save(new Authorization(orderId, authorized ? "AUTHORIZED" : "DECLINED"));
+        Authorization authorization = authorized
+                ? Authorization.authorize(orderId).authorization()
+                : Authorization.decline(orderId, "order quantity exceeds authorization limit").authorization();
+        authorizationRepository.save(authorization);
 
         if (authorized) {
             publishReply("CardAuthorized", orderId, null, "CreateOrder");
@@ -110,7 +113,10 @@ public class SagaJoinService {
         sagaJoinStateRepository.save(state);
 
         boolean authorized = isAuthorized(state.getTotalQuantity());
-        authorizationRepository.save(new Authorization(state.getOrderId(), authorized ? "AUTHORIZED" : "DECLINED"));
+        Authorization authorization = authorized
+                ? Authorization.authorize(state.getOrderId()).authorization()
+                : Authorization.decline(state.getOrderId(), "order quantity exceeds authorization limit").authorization();
+        authorizationRepository.save(authorization);
 
         if (authorized) {
             publishEvent("CardAuthorized", state.getOrderId(), null);

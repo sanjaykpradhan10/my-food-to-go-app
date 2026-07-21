@@ -36,7 +36,7 @@ class SagaJoinServiceTest {
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
         service.handleKitchenEvent("e2", 42L, "TicketCreated", 5);
 
-        verify(authorizationRepository).save(argThat(a -> "AUTHORIZED".equals(a.getStatus())));
+        verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.AUTHORIZED));
         verify(outboxEventRepository).save(argThat(e -> "CardAuthorized".equals(e.getEventType())));
     }
 
@@ -50,7 +50,7 @@ class SagaJoinServiceTest {
         service.handleKitchenEvent("e1", 42L, "TicketCreated", 5);
         service.handleConsumerEvent("e2", 42L, "ConsumerVerified");
 
-        verify(authorizationRepository).save(argThat(a -> "AUTHORIZED".equals(a.getStatus())));
+        verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.AUTHORIZED));
         verify(outboxEventRepository).save(argThat(e -> "CardAuthorized".equals(e.getEventType())));
     }
 
@@ -64,7 +64,7 @@ class SagaJoinServiceTest {
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
         service.handleKitchenEvent("e2", 42L, "TicketCreated", 15);
 
-        verify(authorizationRepository).save(argThat(a -> "DECLINED".equals(a.getStatus())));
+        verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.DECLINED));
         verify(outboxEventRepository).save(argThat(e -> "CardAuthorizationFailed".equals(e.getEventType())));
     }
 
@@ -128,7 +128,7 @@ class SagaJoinServiceTest {
 
         service.handleAuthorizeCardCommand("cmd-1", 42L, 5);
 
-        verify(authorizationRepository).save(argThat(a -> "AUTHORIZED".equals(a.getStatus())));
+        verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.AUTHORIZED));
         verify(outboxEventRepository).save(argThat(e ->
                 "CardAuthorized".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
     }
@@ -139,7 +139,7 @@ class SagaJoinServiceTest {
 
         service.handleAuthorizeCardCommand("cmd-2", 42L, 15);
 
-        verify(authorizationRepository).save(argThat(a -> "DECLINED".equals(a.getStatus())));
+        verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.DECLINED));
         verify(outboxEventRepository).save(argThat(e ->
                 "CardAuthorizationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
     }
