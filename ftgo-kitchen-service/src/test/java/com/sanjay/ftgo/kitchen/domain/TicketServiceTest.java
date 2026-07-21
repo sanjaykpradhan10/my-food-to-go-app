@@ -6,6 +6,7 @@ import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import org.junit.jupiter.api.Test;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -185,14 +186,68 @@ class TicketServiceTest {
     }
 
     @Test
-    void cancelsTicketViaCommand() {
+    void cancelsTicketViaCommandAndRepliesTicketCancelled() {
         Ticket ticket = Ticket.createTicket(42L, 2).ticket();
         when(processedEventRepository.existsById("cmd-4")).thenReturn(false);
         when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
         when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ticketService.handleCancelTicketCommand("cmd-4", 42L);
+        ticketService.handleCancelTicketCommand("cmd-4", 42L, "CreateOrder");
 
         assertThat(ticket.getState()).isEqualTo(TicketState.CANCELLED);
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
+                "TicketCancelled".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())
+                        && e.getPayload().contains("\"sagaType\":\"CreateOrder\"")));
+    }
+
+    @Test
+    void repliesTicketCancellationRejectedWhenTicketCannotBeCancelled() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        ticket.confirm();
+        ticket.accept(ZonedDateTime.now().plusMinutes(30));
+        ticket.preparing();
+        ticket.readyForPickup();
+        when(processedEventRepository.existsById("cmd-5")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+
+        ticketService.handleCancelTicketCommand("cmd-5", 42L, "CancelOrder");
+
+        assertThat(ticket.getState()).isEqualTo(TicketState.READY_FOR_PICKUP);
+        verify(ticketRepository, never()).save(any());
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
+                "TicketCancellationRejected".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())
+                        && e.getPayload().contains("\"sagaType\":\"CancelOrder\"")));
+    }
+
+    @Test
+    void handlesOrderCancelledChoreographyAndPublishesTicketCancelled() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        when(processedEventRepository.existsById("evt-1")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleOrderCancelled("evt-1", 42L);
+
+        assertThat(ticket.getState()).isEqualTo(TicketState.CANCELLED);
+        verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
+                events.size() == 1 && events.get(0) instanceof TicketCancelledEvent));
+    }
+
+    @Test
+    void handlesOrderCancelledChoreographyRejectionWithoutMutatingTicket() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        ticket.confirm();
+        ticket.accept(ZonedDateTime.now().plusMinutes(30));
+        ticket.preparing();
+        ticket.readyForPickup();
+        when(processedEventRepository.existsById("evt-2")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+
+        ticketService.handleOrderCancelled("evt-2", 42L);
+
+        assertThat(ticket.getState()).isEqualTo(TicketState.READY_FOR_PICKUP);
+        verify(ticketRepository, never()).save(any());
+        verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
+                events.size() == 1 && events.get(0) instanceof TicketCancellationRejectedEvent));
     }
 }

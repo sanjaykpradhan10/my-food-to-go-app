@@ -136,16 +136,42 @@ public class TicketService {
     }
 
     @Transactional
-    public void handleCancelTicketCommand(String eventId, Long orderId) {
+    public void handleCancelTicketCommand(String eventId, Long orderId, String sagaType) {
         if (processedEventRepository.existsById(eventId)) {
             return;
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
 
         Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
-        if (ticket != null) {
+        if (ticket == null) {
+            return;
+        }
+        try {
             ticket.cancel();
             ticketRepository.save(ticket);
+            publishReply("TicketCancelled", orderId, null, sagaType);
+        } catch (TicketCannotBeCancelledException | UnsupportedStateTransitionException e) {
+            publishReply("TicketCancellationRejected", orderId, e.getMessage(), sagaType);
+        }
+    }
+
+    @Transactional
+    public void handleOrderCancelled(String eventId, Long orderId) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
+        if (ticket == null) {
+            return;
+        }
+        try {
+            List<TicketDomainEvent> events = ticket.cancel();
+            ticketRepository.save(ticket);
+            domainEventPublisher.publish(ticket, events);
+        } catch (TicketCannotBeCancelledException | UnsupportedStateTransitionException e) {
+            domainEventPublisher.publish(ticket, List.of(new TicketCancellationRejectedEvent(orderId, e.getMessage())));
         }
     }
 

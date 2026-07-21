@@ -54,4 +54,16 @@ class TicketDomainEventPublisherTest {
                         && row.getAggregateId().equals(43L)
                         && row.getPayload().contains("order exceeds kitchen capacity")));
     }
+
+    @Test
+    void publishesTicketCancellationRejectedWithReason() {
+        Ticket ticket = Ticket.createTicket(42L, 3).ticket();
+
+        publisher.publish(ticket, List.of(new TicketCancellationRejectedEvent(42L, "cannot cancel once ready for pickup")));
+
+        verify(outboxEventRepository).save(argThat(row ->
+                "TicketCancellationRejected".equals(row.getEventType())
+                        && "kitchen.events".equals(row.getTopic())
+                        && row.getPayload().contains("cannot cancel once ready for pickup")));
+    }
 }
