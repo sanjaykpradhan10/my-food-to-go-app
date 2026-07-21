@@ -108,4 +108,19 @@ class OrderDomainEventPublisherTest {
         verify(outboxEventRepository).save(argThat(row ->
                 "OrderRevisionRejected".equals(row.getEventType()) && row.getAggregateId().equals(42L)));
     }
+
+    @Test
+    void publishesRevisionCompensationRequestedWithOriginalLineItems() {
+        Order order = new Order(42L, 7L, 3L, List.of(new OrderLineItem(10L, 2)), OrderStatus.REVISION_PENDING);
+
+        publisher.publishRevisionCompensationRequested(order, "event-9");
+
+        verify(outboxEventRepository).save(argThat(row ->
+                "OrderRevisionCompensationRequested".equals(row.getEventType())
+                        && "order.events".equals(row.getTopic())
+                        && row.getAggregateId().equals(42L)
+                        && row.getPayload().contains("\"eventId\":\"event-9\"")
+                        && row.getPayload().contains("\"menuItemId\":10")
+                        && row.getPayload().contains("\"quantity\":2")));
+    }
 }
