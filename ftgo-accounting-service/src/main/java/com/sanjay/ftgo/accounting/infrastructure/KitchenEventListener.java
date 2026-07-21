@@ -40,7 +40,7 @@ public class KitchenEventListener {
         switch (event.eventType()) {
             case "TicketCreated", "TicketCreationFailed" ->
                     sagaJoinService.handleKitchenEvent(event.eventId(), event.orderId(), event.eventType(), event.totalQuantity());
-            case "TicketCancelled" -> authorizationCancelService.reverse(event.eventId(), event.orderId(), "CancelOrder");
+            case "TicketCancelled" -> authorizationCancelService.reverseForChoreography(event.eventId(), event.orderId());
             default -> { }
         }
     }

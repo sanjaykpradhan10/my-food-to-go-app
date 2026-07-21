@@ -28,7 +28,7 @@ class AccountingCommandListenerTest {
         listener.onMessage(payload);
 
         verify(sagaJoinService).handleAuthorizeCardCommand("e1", 42L, 5);
-        verify(authorizationCancelService, never()).reverse(any(), any(), any());
+        verify(authorizationCancelService, never()).reverseForCommand(any(), any(), any());
     }
 
     @Test
@@ -39,7 +39,7 @@ class AccountingCommandListenerTest {
 
         listener.onMessage(payload);
 
-        verify(authorizationCancelService).reverse("e2", 42L, "CancelOrder");
+        verify(authorizationCancelService).reverseForCommand("e2", 42L, "CancelOrder");
         verify(sagaJoinService, never()).handleAuthorizeCardCommand(any(), any(), any());
     }
 }

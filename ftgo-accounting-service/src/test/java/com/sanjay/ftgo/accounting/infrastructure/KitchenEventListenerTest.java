@@ -28,7 +28,7 @@ class KitchenEventListenerTest {
         listener.onMessage(payload);
 
         verify(sagaJoinService).handleKitchenEvent("e1", 42L, "TicketCreated", 5);
-        verify(authorizationCancelService, never()).reverse(any(), any(), any());
+        verify(authorizationCancelService, never()).reverseForChoreography(any(), any());
     }
 
     @Test
@@ -39,7 +39,7 @@ class KitchenEventListenerTest {
 
         listener.onMessage(payload);
 
-        verify(authorizationCancelService).reverse("e2", 42L, "CancelOrder");
+        verify(authorizationCancelService).reverseForChoreography("e2", 42L);
         verify(sagaJoinService, never()).handleKitchenEvent(any(), any(), any(), any());
     }
 
@@ -52,6 +52,6 @@ class KitchenEventListenerTest {
         listener.onMessage(payload);
 
         verify(sagaJoinService, never()).handleKitchenEvent(any(), any(), any(), any());
-        verify(authorizationCancelService, never()).reverse(any(), any(), any());
+        verify(authorizationCancelService, never()).reverseForChoreography(any(), any());
     }
 }

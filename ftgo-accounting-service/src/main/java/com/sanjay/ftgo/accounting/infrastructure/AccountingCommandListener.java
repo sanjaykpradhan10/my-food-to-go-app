@@ -41,7 +41,7 @@ public class AccountingCommandListener {
             case "AuthorizeCard" ->
                     sagaJoinService.handleAuthorizeCardCommand(command.eventId(), command.orderId(), command.totalQuantity());
             case "ReverseAuthorization" ->
-                    authorizationCancelService.reverse(command.eventId(), command.orderId(), command.sagaType());
+                    authorizationCancelService.reverseForCommand(command.eventId(), command.orderId(), command.sagaType());
             default -> log.warn("Unknown accounting command type: {}", command.commandType());
         }
     }
