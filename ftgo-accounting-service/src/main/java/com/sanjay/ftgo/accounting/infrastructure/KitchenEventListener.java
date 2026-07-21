@@ -1,6 +1,7 @@
 package com.sanjay.ftgo.accounting.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sanjay.ftgo.accounting.domain.AuthorizationCancelService;
 import com.sanjay.ftgo.accounting.domain.KitchenEvent;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
 import org.slf4j.Logger;
@@ -9,20 +10,21 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-import java.util.Set;
-
 @Component
 @ConditionalOnProperty(name = "saga.mode", havingValue = "choreography", matchIfMissing = true)
 public class KitchenEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(KitchenEventListener.class);
-    private static final Set<String> RELEVANT_EVENT_TYPES = Set.of("TicketCreated", "TicketCreationFailed");
 
     private final SagaJoinService sagaJoinService;
+    private final AuthorizationCancelService authorizationCancelService;
     private final ObjectMapper objectMapper;
 
-    public KitchenEventListener(SagaJoinService sagaJoinService, ObjectMapper objectMapper) {
+    public KitchenEventListener(SagaJoinService sagaJoinService,
+                                 AuthorizationCancelService authorizationCancelService,
+                                 ObjectMapper objectMapper) {
         this.sagaJoinService = sagaJoinService;
+        this.authorizationCancelService = authorizationCancelService;
         this.objectMapper = objectMapper;
     }
 
@@ -35,9 +37,11 @@ public class KitchenEventListener {
             log.warn("Skipping malformed kitchen event: {}", payload, e);
             return;
         }
-        if (!RELEVANT_EVENT_TYPES.contains(event.eventType())) {
-            return;
+        switch (event.eventType()) {
+            case "TicketCreated", "TicketCreationFailed" ->
+                    sagaJoinService.handleKitchenEvent(event.eventId(), event.orderId(), event.eventType(), event.totalQuantity());
+            case "TicketCancelled" -> authorizationCancelService.reverse(event.eventId(), event.orderId(), "CancelOrder");
+            default -> { }
         }
-        sagaJoinService.handleKitchenEvent(event.eventId(), event.orderId(), event.eventType(), event.totalQuantity());
     }
 }

@@ -20,17 +20,20 @@ public class SagaJoinService {
     private final AuthorizationRepository authorizationRepository;
     private final ProcessedEventRepository processedEventRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final AuthorizationDomainEventPublisher domainEventPublisher;
     private final ObjectMapper objectMapper;
 
     public SagaJoinService(SagaJoinStateRepository sagaJoinStateRepository,
                             AuthorizationRepository authorizationRepository,
                             ProcessedEventRepository processedEventRepository,
                             OutboxEventRepository outboxEventRepository,
+                            AuthorizationDomainEventPublisher domainEventPublisher,
                             ObjectMapper objectMapper) {
         this.sagaJoinStateRepository = sagaJoinStateRepository;
         this.authorizationRepository = authorizationRepository;
         this.processedEventRepository = processedEventRepository;
         this.outboxEventRepository = outboxEventRepository;
+        this.domainEventPublisher = domainEventPublisher;
         this.objectMapper = objectMapper;
     }
 
@@ -93,10 +96,10 @@ public class SagaJoinService {
         }
 
         boolean authorized = isAuthorized(totalQuantity);
-        Authorization authorization = authorized
-                ? Authorization.authorize(orderId).authorization()
-                : Authorization.decline(orderId, "order quantity exceeds authorization limit").authorization();
-        authorizationRepository.save(authorization);
+        AuthorizationResult result = authorized
+                ? Authorization.authorize(orderId)
+                : Authorization.decline(orderId, "order quantity exceeds authorization limit");
+        authorizationRepository.save(result.authorization());
 
         if (authorized) {
             publishReply("CardAuthorized", orderId, null, "CreateOrder");
@@ -113,26 +116,15 @@ public class SagaJoinService {
         sagaJoinStateRepository.save(state);
 
         boolean authorized = isAuthorized(state.getTotalQuantity());
-        Authorization authorization = authorized
-                ? Authorization.authorize(state.getOrderId()).authorization()
-                : Authorization.decline(state.getOrderId(), "order quantity exceeds authorization limit").authorization();
-        authorizationRepository.save(authorization);
-
-        if (authorized) {
-            publishEvent("CardAuthorized", state.getOrderId(), null);
-        } else {
-            publishEvent("CardAuthorizationFailed", state.getOrderId(), "order quantity exceeds authorization limit");
-        }
+        AuthorizationResult result = authorized
+                ? Authorization.authorize(state.getOrderId())
+                : Authorization.decline(state.getOrderId(), "order quantity exceeds authorization limit");
+        authorizationRepository.save(result.authorization());
+        domainEventPublisher.publish(result.events());
     }
 
     private boolean isAuthorized(int totalQuantity) {
         return totalQuantity <= AUTHORIZATION_QUANTITY_LIMIT;
-    }
-
-    private void publishEvent(String eventType, Long orderId, String reason) {
-        String eventId = UUID.randomUUID().toString();
-        AccountingEvent event = new AccountingEvent(eventId, eventType, orderId, reason);
-        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, "accounting.events", toJson(event)));
     }
 
     private void publishReply(String eventType, Long orderId, String reason, String sagaType) {

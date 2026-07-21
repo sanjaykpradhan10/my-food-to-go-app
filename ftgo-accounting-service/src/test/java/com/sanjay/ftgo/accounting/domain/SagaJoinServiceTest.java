@@ -13,6 +13,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class SagaJoinServiceTest {
@@ -21,10 +22,12 @@ class SagaJoinServiceTest {
     private final AuthorizationRepository authorizationRepository = mock(AuthorizationRepository.class);
     private final ProcessedEventRepository processedEventRepository = mock(ProcessedEventRepository.class);
     private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
+    private final AuthorizationDomainEventPublisher domainEventPublisher = mock(AuthorizationDomainEventPublisher.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final SagaJoinService service = new SagaJoinService(
-            sagaJoinStateRepository, authorizationRepository, processedEventRepository, outboxEventRepository, objectMapper);
+            sagaJoinStateRepository, authorizationRepository, processedEventRepository, outboxEventRepository,
+            domainEventPublisher, objectMapper);
 
     @Test
     void authorizesWhenConsumerVerifiedArrivesFirstThenTicketCreatedUnderLimit() {
@@ -37,7 +40,7 @@ class SagaJoinServiceTest {
         service.handleKitchenEvent("e2", 42L, "TicketCreated", 5);
 
         verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.AUTHORIZED));
-        verify(outboxEventRepository).save(argThat(e -> "CardAuthorized".equals(e.getEventType())));
+        verify(domainEventPublisher).publish(java.util.List.of(new CardAuthorizedEvent(42L)));
     }
 
     @Test
@@ -51,7 +54,7 @@ class SagaJoinServiceTest {
         service.handleConsumerEvent("e2", 42L, "ConsumerVerified");
 
         verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.AUTHORIZED));
-        verify(outboxEventRepository).save(argThat(e -> "CardAuthorized".equals(e.getEventType())));
+        verify(domainEventPublisher).publish(java.util.List.of(new CardAuthorizedEvent(42L)));
     }
 
     @Test
@@ -65,7 +68,7 @@ class SagaJoinServiceTest {
         service.handleKitchenEvent("e2", 42L, "TicketCreated", 15);
 
         verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.DECLINED));
-        verify(outboxEventRepository).save(argThat(e -> "CardAuthorizationFailed".equals(e.getEventType())));
+        verify(domainEventPublisher).publish(java.util.List.of(new CardAuthorizationDeclinedEvent(42L, "order quantity exceeds authorization limit")));
     }
 
     @Test
@@ -80,6 +83,7 @@ class SagaJoinServiceTest {
 
         verify(authorizationRepository, never()).save(any());
         verify(outboxEventRepository, never()).save(any());
+        verifyNoInteractions(domainEventPublisher);
     }
 
     @Test
@@ -94,6 +98,7 @@ class SagaJoinServiceTest {
 
         verify(authorizationRepository, never()).save(any());
         verify(outboxEventRepository, never()).save(any());
+        verifyNoInteractions(domainEventPublisher);
     }
 
     @Test
@@ -119,7 +124,7 @@ class SagaJoinServiceTest {
         service.handleKitchenEvent("e3", 42L, "TicketCreated", 5);
 
         verify(authorizationRepository, times(1)).save(any());
-        verify(outboxEventRepository, times(1)).save(any());
+        verify(domainEventPublisher, times(1)).publish(any());
     }
 
     @Test

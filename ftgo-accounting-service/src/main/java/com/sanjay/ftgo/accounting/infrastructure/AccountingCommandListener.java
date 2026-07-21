@@ -2,6 +2,7 @@ package com.sanjay.ftgo.accounting.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.accounting.domain.AccountingCommand;
+import com.sanjay.ftgo.accounting.domain.AuthorizationCancelService;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,15 +12,19 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(name = "saga.mode", havingValue = "orchestration")
-public class AuthorizeCardCommandListener {
+public class AccountingCommandListener {
 
-    private static final Logger log = LoggerFactory.getLogger(AuthorizeCardCommandListener.class);
+    private static final Logger log = LoggerFactory.getLogger(AccountingCommandListener.class);
 
     private final SagaJoinService sagaJoinService;
+    private final AuthorizationCancelService authorizationCancelService;
     private final ObjectMapper objectMapper;
 
-    public AuthorizeCardCommandListener(SagaJoinService sagaJoinService, ObjectMapper objectMapper) {
+    public AccountingCommandListener(SagaJoinService sagaJoinService,
+                                      AuthorizationCancelService authorizationCancelService,
+                                      ObjectMapper objectMapper) {
         this.sagaJoinService = sagaJoinService;
+        this.authorizationCancelService = authorizationCancelService;
         this.objectMapper = objectMapper;
     }
 
@@ -32,6 +37,12 @@ public class AuthorizeCardCommandListener {
             log.warn("Skipping malformed accounting command: {}", payload, e);
             return;
         }
-        sagaJoinService.handleAuthorizeCardCommand(command.eventId(), command.orderId(), command.totalQuantity());
+        switch (command.commandType()) {
+            case "AuthorizeCard" ->
+                    sagaJoinService.handleAuthorizeCardCommand(command.eventId(), command.orderId(), command.totalQuantity());
+            case "ReverseAuthorization" ->
+                    authorizationCancelService.reverse(command.eventId(), command.orderId(), command.sagaType());
+            default -> log.warn("Unknown accounting command type: {}", command.commandType());
+        }
     }
 }
