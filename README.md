@@ -13,9 +13,9 @@ This project follows the book's progression, adding real code at each chapter. I
 | Service | Port | Domain | Status |
 |---------|------|--------|--------|
 | ftgo-consumer-service | 8081 | Consumer management | Verifies consumer, publishes `ConsumerVerified`/`Failed` (choreography) or replies to `VerifyConsumerCommand` (orchestration) |
-| ftgo-order-service | 8082 | Order lifecycle (saga participant/coordinator); `Order` is a DDD aggregate (Ch.5) with the full create/cancel/revise state machine | `POST /orders`, `POST /orders/{id}/cancel`, `POST /orders/{id}/revise`; choreography: reacts to 3 event topics; orchestration: `CreateOrderSagaOrchestrator` sends commands and reacts to replies |
-| ftgo-kitchen-service | 8083 | Ticket management (separate bounded context from Order) | `Ticket` is a DDD aggregate (Ch.5) with an enforced state machine and class-per-event domain events; creates capacity-gated `Ticket`s, confirms/cancels based on saga outcome (either style); REST API for restaurant staff (`accept`/`preparing`/`ready-for-pickup`/`picked-up`) |
-| ftgo-accounting-service | 8084 | Payment authorisation | Authorizes/declines by order quantity threshold; choreography needs a local join, orchestration doesn't (orchestrator already waited for both prerequisites) |
+| ftgo-order-service | 8082 | Order lifecycle (saga participant/coordinator); `Order` is a DDD aggregate (Ch.5) with the full create/cancel/revise state machine; Cancel Order saga participant (both modes) | `POST /orders`, `POST /orders/{id}/cancel`, `POST /orders/{id}/revise`; choreography: `OrderSagaService`/`OrderCancelSagaService` react to event topics; orchestration: `CreateOrderSagaOrchestrator` (create) + stateless `CancelOrderSagaOrchestrator` (cancel), routed from one shared `saga.replies` listener via `SagaReply.sagaType()` |
+| ftgo-kitchen-service | 8083 | Ticket management (separate bounded context from Order); Cancel Order saga participant (both modes) | `Ticket` is a DDD aggregate (Ch.5) with an enforced state machine and class-per-event domain events; creates capacity-gated `Ticket`s, confirms/cancels based on saga outcome (either style); asks-kitchen-first gate for Cancel Order (`handleOrderCancelled`/`handleCancelTicketCommand`, both replying with the real cancel/reject outcome); REST API for restaurant staff (`accept`/`preparing`/`ready-for-pickup`/`picked-up`) |
+| ftgo-accounting-service | 8084 | Payment authorisation; `Authorization` is a DDD aggregate (Ch.5); Cancel Order saga participant (both modes) | Authorizes/declines by order quantity threshold; choreography needs a local join, orchestration doesn't (orchestrator already waited for both prerequisites); reverses an authorization only after kitchen confirms a ticket cancellable — `reverseForChoreography`/`reverseForCommand` publish to different channels (`accounting.events` vs. a `saga.replies` reply) and are not interchangeable |
 | ftgo-restaurant-service | 8085 | Restaurant/menu management | `GET /restaurants/{id}`, registers with Eureka |
 | ftgo-service-registry | 8761 | Eureka service registry | Standalone |
 | ftgo-delivery-service | 8086 | Delivery tracking (separate bounded context from Order) | Stub — not yet in scope |
@@ -113,7 +113,7 @@ my-food-to-go-app/
 | 2 | Decomposition strategies | Done |
 | 3 | Interprocess communication | Done — RPI + circuit breaker, messaging, transactional outbox, service discovery, transaction log tailing (CDC) |
 | 4 | Managing transactions with sagas | Create Order saga implemented both ways (choreography, orchestration) |
-| 5 | Designing business logic | `Ticket` (kitchen-service) and `Order` (order-service) both refactored into DDD aggregates with enforced state transitions and domain events; `Order`'s cancel/revise use cases await their sagas (future sessions) |
+| 5 | Designing business logic | `Ticket` (kitchen-service), `Order` (order-service), and `Authorization` (accounting-service) all refactored into DDD aggregates with enforced state transitions and domain events. Cancel Order saga implemented (both modes); Revise Order saga awaits a future session |
 | 6–13 | … | Not started |
 
 See [`CONTEXT.md`](CONTEXT.md) for detailed notes and concept understanding per chapter.
