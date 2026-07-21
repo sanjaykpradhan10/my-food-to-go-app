@@ -250,6 +250,7 @@ public class TicketService {
         processedEventRepository.save(new ProcessedEvent(eventId));
 
         if (originalTotalQuantity == null) {
+            publishReply("TicketRevisionRejected", orderId, "originalTotalQuantity is required", "ReviseOrder");
             return;
         }
 

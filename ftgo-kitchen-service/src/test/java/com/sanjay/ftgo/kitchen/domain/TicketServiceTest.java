@@ -344,4 +344,32 @@ class TicketServiceTest {
                 "TicketRevisionUndone".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())
                         && e.getPayload().contains("\"sagaType\":\"ReviseOrder\"")));
     }
+
+    @Test
+    void reviseTicketCommandWithNullQuantityRepliesRevisionRejectedWithoutMutating() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        when(processedEventRepository.existsById("cmd-null-1")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+
+        ticketService.handleReviseTicketCommand("cmd-null-1", 42L, null);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(2);
+        verify(ticketRepository, never()).save(any());
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
+                "TicketRevisionRejected".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void undoReviseTicketCommandWithNullQuantityRepliesRevisionRejectedWithoutMutating() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        when(processedEventRepository.existsById("cmd-null-2")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+
+        ticketService.handleUndoReviseTicketCommand("cmd-null-2", 42L, null);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(2);
+        verify(ticketRepository, never()).save(any());
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
+                "TicketRevisionRejected".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
 }
