@@ -250,4 +250,98 @@ class TicketServiceTest {
         verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
                 events.size() == 1 && events.get(0) instanceof TicketCancellationRejectedEvent));
     }
+
+    @Test
+    void handlesOrderRevisionProposedWithinCapacityAndPublishesQuantityRevised() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        OrderCreatedEvent event = new OrderCreatedEvent("evt-10", "OrderRevisionProposed", 42L, null,
+                List.of(new OrderCreatedEvent.LineItem(10L, 8)));
+        when(processedEventRepository.existsById("evt-10")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleOrderRevisionProposed(event);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(8);
+        verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
+                events.size() == 1 && events.get(0) instanceof TicketQuantityRevisedEvent));
+    }
+
+    @Test
+    void handlesOrderRevisionProposedOverCapacityAndPublishesRevisionRejectedWithoutMutating() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        OrderCreatedEvent event = new OrderCreatedEvent("evt-11", "OrderRevisionProposed", 42L, null,
+                List.of(new OrderCreatedEvent.LineItem(10L, 25)));
+        when(processedEventRepository.existsById("evt-11")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+
+        ticketService.handleOrderRevisionProposed(event);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(2);
+        verify(ticketRepository, never()).save(any());
+        verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
+                events.size() == 1 && events.get(0) instanceof TicketRevisionRejectedEvent));
+    }
+
+    @Test
+    void handlesOrderRevisionRejectedCompensationAndUndoesQuantity() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        ticket.reviseQuantity(8);
+        OrderCreatedEvent event = new OrderCreatedEvent("evt-12", "OrderRevisionCompensationRequested", 42L, null,
+                List.of(new OrderCreatedEvent.LineItem(10L, 2)));
+        when(processedEventRepository.existsById("evt-12")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleOrderRevisionRejected(event);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(2);
+        verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
+                events.size() == 1 && events.get(0) instanceof TicketRevisionUndoneEvent));
+    }
+
+    @Test
+    void reviseTicketCommandWithinCapacityRepliesQuantityRevised() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        when(processedEventRepository.existsById("cmd-10")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleReviseTicketCommand("cmd-10", 42L, 8);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(8);
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
+                "TicketQuantityRevised".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())
+                        && e.getPayload().contains("\"sagaType\":\"ReviseOrder\"")));
+    }
+
+    @Test
+    void reviseTicketCommandOverCapacityRepliesRevisionRejected() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        when(processedEventRepository.existsById("cmd-11")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+
+        ticketService.handleReviseTicketCommand("cmd-11", 42L, 25);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(2);
+        verify(ticketRepository, never()).save(any());
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
+                "TicketRevisionRejected".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void undoReviseTicketCommandRestoresOriginalQuantityAndReplies() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        ticket.reviseQuantity(8);
+        when(processedEventRepository.existsById("cmd-12")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleUndoReviseTicketCommand("cmd-12", 42L, 2);
+
+        assertThat(ticket.getTotalQuantity()).isEqualTo(2);
+        verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
+                "TicketRevisionUndone".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())
+                        && e.getPayload().contains("\"sagaType\":\"ReviseOrder\"")));
+    }
 }
