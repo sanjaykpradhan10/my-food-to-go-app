@@ -97,8 +97,8 @@ public class SagaJoinService {
 
         boolean authorized = isAuthorized(totalQuantity);
         AuthorizationResult result = authorized
-                ? Authorization.authorize(orderId)
-                : Authorization.decline(orderId, "order quantity exceeds authorization limit");
+                ? Authorization.authorize(orderId, totalQuantity)
+                : Authorization.decline(orderId, "order quantity exceeds authorization limit", totalQuantity);
         authorizationRepository.save(result.authorization());
 
         if (authorized) {
@@ -117,8 +117,8 @@ public class SagaJoinService {
 
         boolean authorized = isAuthorized(state.getTotalQuantity());
         AuthorizationResult result = authorized
-                ? Authorization.authorize(state.getOrderId())
-                : Authorization.decline(state.getOrderId(), "order quantity exceeds authorization limit");
+                ? Authorization.authorize(state.getOrderId(), state.getTotalQuantity())
+                : Authorization.decline(state.getOrderId(), "order quantity exceeds authorization limit", state.getTotalQuantity());
         authorizationRepository.save(result.authorization());
         domainEventPublisher.publish(result.events());
     }

@@ -30,7 +30,7 @@ class AuthorizationCancelServiceTest {
 
     @Test
     void reverseForChoreographyReversesAndPublishesDomainEvent() {
-        Authorization authorization = Authorization.authorize(42L).authorization();
+        Authorization authorization = Authorization.authorize(42L, 3).authorization();
         when(processedEventRepository.existsById("e1")).thenReturn(false);
         when(authorizationRepository.findByOrderId(42L)).thenReturn(Optional.of(authorization));
         when(authorizationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -63,7 +63,7 @@ class AuthorizationCancelServiceTest {
 
     @Test
     void reverseForCommandReversesAndPublishesSagaReply() {
-        Authorization authorization = Authorization.authorize(42L).authorization();
+        Authorization authorization = Authorization.authorize(42L, 3).authorization();
         when(processedEventRepository.existsById("e3")).thenReturn(false);
         when(authorizationRepository.findByOrderId(42L)).thenReturn(Optional.of(authorization));
         when(authorizationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
