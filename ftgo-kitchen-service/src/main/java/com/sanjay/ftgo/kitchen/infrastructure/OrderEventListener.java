@@ -39,6 +39,8 @@ public class OrderEventListener {
         switch (event.eventType()) {
             case "OrderCreated" -> ticketService.handleOrderCreated(event);
             case "OrderCancelled" -> ticketService.handleOrderCancelled(event.eventId(), event.orderId());
+            case "OrderRevisionProposed" -> ticketService.handleOrderRevisionProposed(event);
+            case "OrderRevisionCompensationRequested" -> ticketService.handleOrderRevisionRejected(event);
             default -> { }
         }
     }
