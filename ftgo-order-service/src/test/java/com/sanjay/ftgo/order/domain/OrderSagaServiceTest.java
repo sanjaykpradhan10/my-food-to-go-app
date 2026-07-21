@@ -50,7 +50,7 @@ class OrderSagaServiceTest {
     @Test
     void doesNotReapproveAnAlreadyRejectedOrder() {
         Order order = pendingOrder();
-        order.markRejected();
+        order.noteRejected();
         when(processedEventRepository.existsById("e1")).thenReturn(false);
         when(orderRepository.findById(42L)).thenReturn(Optional.of(order));
 

@@ -101,7 +101,7 @@ public class CreateOrderSagaOrchestrator {
         }
         if ("CardAuthorized".equals(eventType)) {
             if (order.getStatus() == OrderStatus.APPROVAL_PENDING) {
-                order.markApproved();
+                order.noteApproved();
                 orderRepository.save(order);
             }
             String eventId = UUID.randomUUID().toString();
@@ -144,7 +144,7 @@ public class CreateOrderSagaOrchestrator {
 
     private void rejectOrder(Order order) {
         if (order.getStatus() == OrderStatus.APPROVAL_PENDING) {
-            order.markRejected();
+            order.noteRejected();
             orderRepository.save(order);
         }
     }

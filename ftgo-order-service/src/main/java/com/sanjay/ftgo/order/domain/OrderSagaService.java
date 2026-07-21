@@ -27,7 +27,7 @@ public class OrderSagaService {
         if (order == null || order.getStatus() != OrderStatus.APPROVAL_PENDING) {
             return;
         }
-        order.markApproved();
+        order.noteApproved();
         orderRepository.save(order);
     }
 
@@ -42,7 +42,7 @@ public class OrderSagaService {
         if (order == null || order.getStatus() != OrderStatus.APPROVAL_PENDING) {
             return;
         }
-        order.markRejected();
+        order.noteRejected();
         orderRepository.save(order);
     }
 }
