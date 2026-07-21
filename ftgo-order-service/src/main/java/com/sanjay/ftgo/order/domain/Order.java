@@ -32,6 +32,13 @@ public class Order {
     @Enumerated(EnumType.STRING)
     private OrderStatus status;
 
+    // Only populated between revise() and confirmRevision()/rejectRevision() - the confirming
+    // reply arrives in a different transaction than the original /revise request, so the
+    // OrderRevision object itself no longer exists to pass back in.
+    @ElementCollection
+    @CollectionTable(name = "order_pending_revised_line_items", joinColumns = @JoinColumn(name = "order_id"))
+    private List<OrderLineItem> pendingRevisedLineItems;
+
     protected Order() {
     }
 
@@ -65,6 +72,10 @@ public class Order {
 
     public OrderStatus getStatus() {
         return status;
+    }
+
+    public List<OrderLineItem> getPendingRevisedLineItems() {
+        return pendingRevisedLineItems;
     }
 
     public List<OrderDomainEvent> noteApproved() {
@@ -112,16 +123,19 @@ public class Order {
             throw new UnsupportedStateTransitionException(status);
         }
         this.status = OrderStatus.REVISION_PENDING;
+        this.pendingRevisedLineItems = revision.revisedLineItems();
         return List.of(new OrderRevisionProposedEvent(id, revision.revisedLineItems()));
     }
 
-    public List<OrderDomainEvent> confirmRevision(OrderRevision revision) {
+    public List<OrderDomainEvent> confirmRevision() {
         if (status != OrderStatus.REVISION_PENDING) {
             throw new UnsupportedStateTransitionException(status);
         }
         this.status = OrderStatus.APPROVED;
-        this.lineItems = revision.revisedLineItems();
-        return List.of(new OrderRevisedEvent(id, revision.revisedLineItems()));
+        this.lineItems = pendingRevisedLineItems;
+        List<OrderDomainEvent> events = List.of(new OrderRevisedEvent(id, pendingRevisedLineItems));
+        this.pendingRevisedLineItems = null;
+        return events;
     }
 
     public List<OrderDomainEvent> rejectRevision() {
@@ -129,6 +143,7 @@ public class Order {
             throw new UnsupportedStateTransitionException(status);
         }
         this.status = OrderStatus.APPROVED;
+        this.pendingRevisedLineItems = null;
         return List.of(new OrderRevisionRejectedEvent(id));
     }
 }
