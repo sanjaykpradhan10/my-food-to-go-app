@@ -32,10 +32,11 @@ public class OrderEventListener {
             log.warn("Skipping malformed order event: {}", payload, e);
             return;
         }
-        // order-service's order.events topic carries every Order lifecycle event; this
-        // listener only reacts to the two that concern the kitchen ticket lifecycle.
-        // OrderCreatedEvent's fields are reused for OrderCancelled too — we only read
-        // eventId/orderId from it in that case, which deserialize fine regardless.
+        // order-service's order.events topic carries every Order lifecycle event; this listener
+        // reacts to the four that concern the kitchen ticket lifecycle: creation, cancellation,
+        // and the two revision outcomes. OrderCreatedEvent's fields are reused for all of these
+        // - OrderCancelled only needs eventId/orderId, while the revision cases also read
+        // lineItems to recompute ticket quantities.
         switch (event.eventType()) {
             case "OrderCreated" -> ticketService.handleOrderCreated(event);
             case "OrderCancelled" -> ticketService.handleOrderCancelled(event.eventId(), event.orderId());

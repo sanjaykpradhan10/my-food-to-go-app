@@ -4,7 +4,6 @@ import com.sanjay.ftgo.order.domain.MenuItemNotFoundException;
 import com.sanjay.ftgo.order.domain.Order;
 import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
 import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
-import com.sanjay.ftgo.order.domain.OrderDomainEventPublisher;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderNotFoundException;
 import com.sanjay.ftgo.order.domain.OrderRepository;
@@ -42,9 +41,6 @@ class OrderControllerTest {
 
     @MockitoBean
     private OrderRepository orderRepository;
-
-    @MockitoBean
-    private OrderDomainEventPublisher domainEventPublisher;
 
     @MockitoBean
     private OrderCancellationSagaTrigger cancellationSagaTrigger;

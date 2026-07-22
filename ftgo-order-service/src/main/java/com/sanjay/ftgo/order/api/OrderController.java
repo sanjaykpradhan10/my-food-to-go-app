@@ -5,7 +5,6 @@ import com.sanjay.ftgo.order.domain.Order;
 import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
 import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderDomainEvent;
-import com.sanjay.ftgo.order.domain.OrderDomainEventPublisher;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderNotFoundException;
 import com.sanjay.ftgo.order.domain.OrderRepository;
@@ -33,17 +32,14 @@ public class OrderController {
 
     private final OrderService orderService;
     private final OrderRepository orderRepository;
-    private final OrderDomainEventPublisher domainEventPublisher;
     private final OrderCancellationSagaTrigger cancellationSagaTrigger;
     private final OrderRevisionSagaTrigger revisionSagaTrigger;
 
     public OrderController(OrderService orderService, OrderRepository orderRepository,
-                            OrderDomainEventPublisher domainEventPublisher,
                             OrderCancellationSagaTrigger cancellationSagaTrigger,
                             OrderRevisionSagaTrigger revisionSagaTrigger) {
         this.orderService = orderService;
         this.orderRepository = orderRepository;
-        this.domainEventPublisher = domainEventPublisher;
         this.cancellationSagaTrigger = cancellationSagaTrigger;
         this.revisionSagaTrigger = revisionSagaTrigger;
     }

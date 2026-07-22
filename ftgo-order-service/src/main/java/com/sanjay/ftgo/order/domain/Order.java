@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -132,7 +133,10 @@ public class Order {
             throw new UnsupportedStateTransitionException(status);
         }
         this.status = OrderStatus.APPROVED;
-        this.lineItems = pendingRevisedLineItems;
+        // Copy contents rather than re-homing the same PersistentCollection instance into a
+        // different @ElementCollection-mapped field - Hibernate rejects a shared collection
+        // reference across two mapped roles once this Order is a managed entity.
+        this.lineItems = new ArrayList<>(pendingRevisedLineItems);
         List<OrderDomainEvent> events = List.of(new OrderRevisedEvent(id, pendingRevisedLineItems));
         this.pendingRevisedLineItems = null;
         return events;
