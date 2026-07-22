@@ -78,6 +78,25 @@ public class OrderEventStore {
         return aggregate;
     }
 
+    @Transactional
+    public void appendCompensationRequestedEvent(Long orderId, String triggeringEventId) {
+        OrderAggregate aggregate = replay(orderId).orElse(null);
+        if (aggregate == null || aggregate.getStatus() != com.sanjay.ftgo.order.domain.OrderStatus.REVISION_PENDING) {
+            return;
+        }
+        String eventId = UUID.randomUUID().toString();
+        OrderEvent wireEvent = new OrderEvent(eventId, "OrderRevisionCompensationRequested", orderId,
+                null, null, toWireLineItems(aggregate.getLineItems()));
+        eventRepository.save(new OrderEventEntity(
+                eventId, wireEvent.eventType(), orderId, serializer.toJson(wireEvent), triggeringEventId));
+    }
+
+    private List<OrderEvent.LineItem> toWireLineItems(List<com.sanjay.ftgo.order.domain.OrderLineItem> lineItems) {
+        return lineItems.stream()
+                .map(lineItem -> new OrderEvent.LineItem(lineItem.menuItemId(), lineItem.quantity()))
+                .toList();
+    }
+
     private Optional<OrderAggregate> replay(Long orderId) {
         Optional<OrderSnapshot> snapshotOpt = snapshotRepository.findById(orderId);
         OrderAggregate aggregate;
