@@ -42,4 +42,28 @@ class OrderRepositoryTest {
         assertThat(found.get().getStatus()).isEqualTo(OrderStatus.APPROVED);
         assertThat(found.get().getPendingRevisedLineItems()).isNull();
     }
+
+    @Test
+    void revisesAnOrderWithAnImmutableRevisedLineItemsListLikeOrderControllerProduces() {
+        Order order = new Order(1L, 1L, new ArrayList<>(List.of(new OrderLineItem(10L, 2))), OrderStatus.APPROVED);
+        Order saved = orderRepository.save(order);
+
+        Order toRevise = orderRepository.findById(saved.getId()).orElseThrow();
+
+        // Exact shape OrderController.revise() produces via request.lineItems().stream()
+        //         .map(item -> new OrderLineItem(item.menuItemId(), item.quantity()))
+        //         .toList() - an IMMUTABLE list. This reproduced Hibernate's
+        // UnsupportedOperationException on save() before revise() was fixed to defensively
+        // copy into a mutable list.
+        List<OrderLineItem> revisedLineItems = List.of(new OrderLineItem(10L, 5), new OrderLineItem(20L, 1))
+                .stream()
+                .map(item -> new OrderLineItem(item.menuItemId(), item.quantity()))
+                .toList();
+
+        toRevise.revise(new OrderRevision(revisedLineItems));
+        orderRepository.save(toRevise);
+
+        Order found = orderRepository.findById(saved.getId()).orElseThrow();
+        assertThat(found.getPendingRevisedLineItems()).containsExactlyInAnyOrderElementsOf(revisedLineItems);
+    }
 }

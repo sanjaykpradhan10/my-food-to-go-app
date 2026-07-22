@@ -124,7 +124,11 @@ public class Order {
             throw new UnsupportedStateTransitionException(status);
         }
         this.status = OrderStatus.REVISION_PENDING;
-        this.pendingRevisedLineItems = revision.revisedLineItems();
+        // Defensive copy: OrderController.revise() builds revisedLineItems via Stream.toList(),
+        // which is immutable. Assigning it directly into this @ElementCollection field makes
+        // Hibernate throw UnsupportedOperationException when it clears the collection during
+        // merge on save(). Same fix as applied to confirmRevision() below.
+        this.pendingRevisedLineItems = new ArrayList<>(revision.revisedLineItems());
         return List.of(new OrderRevisionProposedEvent(id, revision.revisedLineItems()));
     }
 
