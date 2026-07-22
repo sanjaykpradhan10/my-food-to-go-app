@@ -2,6 +2,7 @@ package com.sanjay.ftgo.order.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.order.domain.OrderCancelSagaService;
+import com.sanjay.ftgo.order.domain.OrderReviseSagaService;
 import com.sanjay.ftgo.order.domain.OrderSagaService;
 import org.junit.jupiter.api.Test;
 
@@ -14,10 +15,11 @@ class KitchenEventListenerTest {
 
     private final OrderSagaService orderSagaService = mock(OrderSagaService.class);
     private final OrderCancelSagaService orderCancelSagaService = mock(OrderCancelSagaService.class);
+    private final OrderReviseSagaService orderReviseSagaService = mock(OrderReviseSagaService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final KitchenEventListener listener =
-            new KitchenEventListener(orderSagaService, orderCancelSagaService, objectMapper);
+            new KitchenEventListener(orderSagaService, orderCancelSagaService, orderReviseSagaService, objectMapper);
 
     @Test
     void routesTicketConfirmedToApprove() {
@@ -41,5 +43,27 @@ class KitchenEventListenerTest {
         verify(orderCancelSagaService).rejectCancel(42L, "e2");
         verify(orderSagaService, never()).approve(any(), any());
         verify(orderSagaService, never()).reject(any(), any());
+    }
+
+    @Test
+    void handlesTicketRevisionRejectedEvent() {
+        String payload = """
+                {"eventId":"e10","eventType":"TicketRevisionRejected","orderId":42,"reason":"order exceeds kitchen capacity"}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(orderReviseSagaService).rejectRevision(42L, "e10");
+    }
+
+    @Test
+    void handlesTicketRevisionUndoneEvent() {
+        String payload = """
+                {"eventId":"e11","eventType":"TicketRevisionUndone","orderId":42,"totalQuantity":2}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(orderReviseSagaService).finalizeRejectedRevision(42L, "e11");
     }
 }
