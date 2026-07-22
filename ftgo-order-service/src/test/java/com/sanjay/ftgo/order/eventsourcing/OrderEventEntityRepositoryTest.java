@@ -49,9 +49,14 @@ class OrderEventEntityRepositoryTest {
         versionRepository.saveAndFlush(new OrderAggregateVersion(42L, "evt-1"));
         entityManager.clear();
 
+        // Load both copies while the row is still at version 0, then clear the persistence
+        // context so BOTH become independently detached. Detaching only `first` leaves `second`
+        // managed in the context, and Hibernate's merge(first) then silently reuses `second`'s
+        // still-managed instance as its merge target instead of treating them as independent
+        // stale reads - which defeats the whole point of this test.
         OrderAggregateVersion first = versionRepository.findById(42L).orElseThrow();
-        entityManager.detach(first);
         OrderAggregateVersion second = versionRepository.findById(42L).orElseThrow();
+        entityManager.clear();
 
         first.recordEvent("evt-2");
         versionRepository.saveAndFlush(first);
