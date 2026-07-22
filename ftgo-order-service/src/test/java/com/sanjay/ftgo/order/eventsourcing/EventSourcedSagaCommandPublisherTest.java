@@ -35,5 +35,6 @@ class EventSourcedSagaCommandPublisherTest {
         assertThat(pending.get(0).getOrderId()).isEqualTo(42L);
         assertThat(pending.get(0).getTargetTopic()).isEqualTo("kitchen.commands");
         assertThat(pending.get(0).isPublished()).isFalse();
+        assertThat(pending.get(0).getPayload()).contains("\"commandType\":\"CreateTicket\"");
     }
 }
