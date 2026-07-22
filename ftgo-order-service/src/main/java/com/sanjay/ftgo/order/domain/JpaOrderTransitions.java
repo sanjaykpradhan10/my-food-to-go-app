@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 
 @Service
@@ -90,7 +91,11 @@ public class JpaOrderTransitions implements OrderTransitions {
         if (order == null || order.getStatus() != OrderStatus.REVISION_PENDING) {
             return;
         }
-        domainEventPublisher.publishRevisionCompensationRequested(order, eventId);
+        // A fresh id, not the inbound eventId - matches the pre-existing behavior this facade
+        // extracts (OrderReviseSagaService.compensateRevision), which mints its own id for this
+        // outbound pseudo-event since it's a distinct identity from whatever triggered it.
+        String compensationEventId = UUID.randomUUID().toString();
+        domainEventPublisher.publishRevisionCompensationRequested(order, compensationEventId);
     }
 
     private void applyBestEffort(Long orderId, Function<Order, List<OrderDomainEvent>> transition, String description) {

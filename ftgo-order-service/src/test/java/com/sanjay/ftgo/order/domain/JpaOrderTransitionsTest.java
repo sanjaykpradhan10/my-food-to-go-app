@@ -12,6 +12,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -95,5 +96,35 @@ class JpaOrderTransitionsTest {
 
         verify(orderRepository).save(any());
         verify(domainEventPublisher).publish(List.of(new OrderApprovedEvent(42L)));
+    }
+
+    @Test
+    void requestRevisionCompensationSilentlyNoOpsWhenOrderNotFound() {
+        when(orderRepository.findById(42L)).thenReturn(Optional.empty());
+
+        transitions.requestRevisionCompensation(42L, "evt-1");
+
+        verify(domainEventPublisher, never()).publishRevisionCompensationRequested(any(), any());
+    }
+
+    @Test
+    void requestRevisionCompensationSilentlyNoOpsWhenNotRevisionPending() {
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(orderIn(OrderStatus.APPROVED)));
+
+        transitions.requestRevisionCompensation(42L, "evt-1");
+
+        verify(domainEventPublisher, never()).publishRevisionCompensationRequested(any(), any());
+    }
+
+    @Test
+    void requestRevisionCompensationPublishesWithAFreshEventIdWhenRevisionPending() {
+        Order order = orderIn(OrderStatus.REVISION_PENDING);
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(order));
+
+        transitions.requestRevisionCompensation(42L, "evt-1");
+
+        org.mockito.ArgumentCaptor<String> eventIdCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(domainEventPublisher).publishRevisionCompensationRequested(eq(order), eventIdCaptor.capture());
+        assertThat(eventIdCaptor.getValue()).isNotEqualTo("evt-1");
     }
 }
