@@ -135,6 +135,33 @@ class JpaOrderTransitionsTest {
         verify(domainEventPublisher).publish(List.of(new OrderCancelRejectedEvent(42L)));
     }
 
+    // confirmRevision()/rejectRevision() share applyBestEffort's orchestration with the other
+    // transitions (only the Order method reference differs) — dedicated tests are the only place
+    // that would catch the method reference itself being wrong.
+    @Test
+    void confirmRevisionSavesAndPublishesOnSuccess() {
+        Order order = new Order(42L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.REVISION_PENDING,
+                List.of(new OrderLineItem(10L, 8)));
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(order));
+
+        transitions.confirmRevision(42L, "evt-1");
+
+        verify(orderRepository).save(any());
+        verify(domainEventPublisher).publish(List.of(new OrderRevisedEvent(42L, List.of(new OrderLineItem(10L, 8)))));
+    }
+
+    @Test
+    void rejectRevisionSavesAndPublishesOnSuccess() {
+        Order order = new Order(42L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.REVISION_PENDING,
+                List.of(new OrderLineItem(10L, 8)));
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(order));
+
+        transitions.rejectRevision(42L, "evt-1");
+
+        verify(orderRepository).save(any());
+        verify(domainEventPublisher).publish(List.of(new OrderRevisionRejectedEvent(42L)));
+    }
+
     @Test
     void requestRevisionCompensationSilentlyNoOpsWhenOrderNotFound() {
         when(orderRepository.findById(42L)).thenReturn(Optional.empty());

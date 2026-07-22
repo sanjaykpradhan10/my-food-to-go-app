@@ -117,4 +117,18 @@ class EventSourcedOrderTransitionsTest {
         // together without throwing. A read-based assertion on the post-confirm state is added
         // in Task 17 once OrderTransitions.findById exists.
     }
+
+    @Test
+    void reviseThenRejectRevisionSucceedsWithoutError() {
+        var created = transitions.create(1L, 1L, List.of(new OrderLineItem(10L, 2)), "evt-1");
+        transitions.approve(created.getId(), "evt-2");
+
+        TransitionResult revised = transitions.revise(created.getId(),
+                new OrderRevision(List.of(new OrderLineItem(10L, 5))), "evt-3");
+        assertThat(revised.order().getStatus()).isEqualTo(OrderStatus.REVISION_PENDING);
+
+        transitions.rejectRevision(created.getId(), "evt-4");
+        // Same rationale as reviseThenConfirmRevisionSucceedsWithoutError above, but for the
+        // distinct RejectReviseOrderCommand path (Order::rejectRevision, not Order::confirmRevision).
+    }
 }
