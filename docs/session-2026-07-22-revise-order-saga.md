@@ -103,12 +103,12 @@ e304b90 feat(order-service): add publishRevisionCompensationRequested
 54be11f feat(order-service): persist pendingRevisedLineItems, change confirmRevision to no-arg
 ```
 
-PR pending — to be opened after this documentation commit.
+PR #14 (https://github.com/sanjaykpradhan10/my-food-to-go-app/pull/14) reviewed and merged to `main` via merge commit `b37d8b6`. Worktree left in place (not superpowers-created — harness-managed).
 
 ## Next actions
 
-- [ ] Open PR, merge.
 - [ ] Still-deferred from earlier sessions: consider a Spring Boot 4.x migration now that 3.5.x is permanently frozen (no more OSS patches). Not part of any recent session's scope.
+- [ ] Chapter 6 (event sourcing) — not started, no session yet.
 - [ ] Chapter 6 (event sourcing) — not started, no session yet.
 
 ---
