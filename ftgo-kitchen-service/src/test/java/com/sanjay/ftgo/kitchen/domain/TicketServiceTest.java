@@ -114,6 +114,20 @@ class TicketServiceTest {
     }
 
     @Test
+    void ignoresIrrelevantAccountingEventTypesWithoutMutatingTicket() {
+        Ticket ticket = Ticket.createTicket(42L, 2).ticket();
+        ticket.confirm();
+        when(processedEventRepository.existsById("acct-event-3")).thenReturn(false);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+
+        ticketService.handleAccountingEvent("acct-event-3", 42L, "AuthorizationRevised");
+
+        assertThat(ticket.getState()).isEqualTo(TicketState.AWAITING_ACCEPTANCE);
+        verify(ticketRepository, never()).save(any());
+        verify(domainEventPublisher, never()).publish(any(), any());
+    }
+
+    @Test
     void cancelsExistingTicketWhenConsumerVerificationFails() {
         Ticket ticket = Ticket.createTicket(42L, 2).ticket();
         when(processedEventRepository.existsById("cons-event-1")).thenReturn(false);

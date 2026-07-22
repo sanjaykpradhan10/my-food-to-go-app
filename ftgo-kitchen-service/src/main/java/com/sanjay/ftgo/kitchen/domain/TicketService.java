@@ -75,7 +75,14 @@ public class TicketService {
             return;
         }
 
-        List<TicketDomainEvent> events = "CardAuthorized".equals(eventType) ? ticket.confirm() : ticket.cancel();
+        List<TicketDomainEvent> events = switch (eventType) {
+            case "CardAuthorized" -> ticket.confirm();
+            case "CardAuthorizationFailed" -> ticket.cancel();
+            default -> null;
+        };
+        if (events == null) {
+            return;
+        }
         ticketRepository.save(ticket);
         domainEventPublisher.publish(ticket, events);
     }
