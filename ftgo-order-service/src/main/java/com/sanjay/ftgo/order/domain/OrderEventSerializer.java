@@ -82,4 +82,20 @@ public class OrderEventSerializer {
                 .map(lineItem -> new OrderLineItem(lineItem.menuItemId(), lineItem.quantity()))
                 .toList();
     }
+
+    public String writeSnapshotData(com.sanjay.ftgo.order.eventsourcing.OrderSnapshotData data) {
+        try {
+            return objectMapper.writeValueAsString(data);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize order snapshot", e);
+        }
+    }
+
+    public com.sanjay.ftgo.order.eventsourcing.OrderSnapshotData readSnapshotData(String json) {
+        try {
+            return objectMapper.readValue(json, com.sanjay.ftgo.order.eventsourcing.OrderSnapshotData.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to deserialize order snapshot", e);
+        }
+    }
 }
