@@ -9,7 +9,7 @@
   "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
   "schema.history.internal.kafka.topic": "schema-changes.ftgo_order",
   "database.include.list": "ftgo_order",
-  "table.include.list": "ftgo_order.outbox_events",
+  "table.include.list": "ftgo_order.outbox_events,ftgo_order.order_events",
   "snapshot.mode": "no_data",
   "key.converter": "org.apache.kafka.connect.storage.StringConverter",
   "value.converter": "org.apache.kafka.connect.storage.StringConverter",
