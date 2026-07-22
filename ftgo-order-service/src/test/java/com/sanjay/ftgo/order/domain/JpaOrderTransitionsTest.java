@@ -98,6 +98,20 @@ class JpaOrderTransitionsTest {
         verify(domainEventPublisher).publish(List.of(new OrderApprovedEvent(42L)));
     }
 
+    // reject() shares applyBestEffort's orchestration with approve() (only the Order method
+    // reference differs), but that sharing is exactly why a dedicated test matters here - it's
+    // the only place that would catch the method reference itself being wrong (e.g. accidentally
+    // wired to Order::noteApproved instead of Order::noteRejected).
+    @Test
+    void rejectSavesAndPublishesOnSuccess() {
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(orderIn(OrderStatus.APPROVAL_PENDING)));
+
+        transitions.reject(42L, "evt-1");
+
+        verify(orderRepository).save(any());
+        verify(domainEventPublisher).publish(List.of(new OrderRejectedEvent(42L)));
+    }
+
     @Test
     void requestRevisionCompensationSilentlyNoOpsWhenOrderNotFound() {
         when(orderRepository.findById(42L)).thenReturn(Optional.empty());
