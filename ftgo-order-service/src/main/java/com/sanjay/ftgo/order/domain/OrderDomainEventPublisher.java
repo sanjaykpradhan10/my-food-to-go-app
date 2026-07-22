@@ -26,6 +26,15 @@ public class OrderDomainEventPublisher {
         save(eventId, wireEvent);
     }
 
+    // Order itself doesn't transition here (it stays REVISION_PENDING until kitchen's undo is
+    // confirmed), so this bypasses the OrderDomainEvent sealed interface entirely, same as
+    // publishOrderCreated does for its own one-off case.
+    public void publishRevisionCompensationRequested(Order order, String eventId) {
+        OrderEvent wireEvent = new OrderEvent(eventId, "OrderRevisionCompensationRequested", order.getId(),
+                null, null, toWireLineItems(order.getLineItems()));
+        save(eventId, wireEvent);
+    }
+
     public void publish(List<OrderDomainEvent> events) {
         events.forEach(this::publishEvent);
     }

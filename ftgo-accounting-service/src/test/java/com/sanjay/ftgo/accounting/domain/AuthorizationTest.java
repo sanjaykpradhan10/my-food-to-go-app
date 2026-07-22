@@ -11,7 +11,7 @@ class AuthorizationTest {
 
     @Test
     void authorizeStartsInAuthorizedAndEmitsCardAuthorized() {
-        AuthorizationResult result = Authorization.authorize(42L);
+        AuthorizationResult result = Authorization.authorize(42L, 3);
 
         assertThat(result.authorization().getStatus()).isEqualTo(AuthorizationStatus.AUTHORIZED);
         assertThat(result.authorization().getOrderId()).isEqualTo(42L);
@@ -20,7 +20,7 @@ class AuthorizationTest {
 
     @Test
     void declineStartsInDeclinedAndEmitsCardAuthorizationDeclined() {
-        AuthorizationResult result = Authorization.decline(42L, "order quantity exceeds authorization limit");
+        AuthorizationResult result = Authorization.decline(42L, "order quantity exceeds authorization limit", 3);
 
         assertThat(result.authorization().getStatus()).isEqualTo(AuthorizationStatus.DECLINED);
         assertThat(result.events()).containsExactly(
@@ -29,7 +29,7 @@ class AuthorizationTest {
 
     @Test
     void reverseMovesFromAuthorizedToReversed() {
-        Authorization authorization = Authorization.authorize(42L).authorization();
+        Authorization authorization = Authorization.authorize(42L, 3).authorization();
 
         List<AuthorizationDomainEvent> events = authorization.reverse();
 
@@ -39,16 +39,44 @@ class AuthorizationTest {
 
     @Test
     void reverseFromDeclinedThrows() {
-        Authorization authorization = Authorization.decline(42L, "reason").authorization();
+        Authorization authorization = Authorization.decline(42L, "reason", 3).authorization();
 
         assertThatThrownBy(authorization::reverse).isInstanceOf(UnsupportedStateTransitionException.class);
     }
 
     @Test
     void reverseFromAlreadyReversedThrows() {
-        Authorization authorization = Authorization.authorize(42L).authorization();
+        Authorization authorization = Authorization.authorize(42L, 3).authorization();
         authorization.reverse();
 
         assertThatThrownBy(authorization::reverse).isInstanceOf(UnsupportedStateTransitionException.class);
+    }
+
+    @Test
+    void reviseAuthorizationUpdatesStoredTotalQuantity() {
+        Authorization authorization = Authorization.authorize(42L, 3).authorization();
+
+        List<AuthorizationDomainEvent> events = authorization.reviseAuthorization(8);
+
+        assertThat(authorization.getTotalQuantity()).isEqualTo(8);
+        assertThat(authorization.getStatus()).isEqualTo(AuthorizationStatus.AUTHORIZED);
+        assertThat(events).containsExactly(new AuthorizationRevisedEvent(42L, 8));
+    }
+
+    @Test
+    void reviseAuthorizationFromDeclinedThrows() {
+        Authorization authorization = Authorization.decline(42L, "reason", 3).authorization();
+
+        assertThatThrownBy(() -> authorization.reviseAuthorization(8))
+                .isInstanceOf(UnsupportedStateTransitionException.class);
+    }
+
+    @Test
+    void reviseAuthorizationFromReversedThrows() {
+        Authorization authorization = Authorization.authorize(42L, 3).authorization();
+        authorization.reverse();
+
+        assertThatThrownBy(() -> authorization.reviseAuthorization(8))
+                .isInstanceOf(UnsupportedStateTransitionException.class);
     }
 }

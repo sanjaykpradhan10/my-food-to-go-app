@@ -3,6 +3,7 @@ package com.sanjay.ftgo.accounting.infrastructure;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.accounting.domain.AccountingCommand;
 import com.sanjay.ftgo.accounting.domain.AuthorizationCancelService;
+import com.sanjay.ftgo.accounting.domain.AuthorizationReviseService;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,13 +19,16 @@ public class AccountingCommandListener {
 
     private final SagaJoinService sagaJoinService;
     private final AuthorizationCancelService authorizationCancelService;
+    private final AuthorizationReviseService authorizationReviseService;
     private final ObjectMapper objectMapper;
 
     public AccountingCommandListener(SagaJoinService sagaJoinService,
                                       AuthorizationCancelService authorizationCancelService,
+                                      AuthorizationReviseService authorizationReviseService,
                                       ObjectMapper objectMapper) {
         this.sagaJoinService = sagaJoinService;
         this.authorizationCancelService = authorizationCancelService;
+        this.authorizationReviseService = authorizationReviseService;
         this.objectMapper = objectMapper;
     }
 
@@ -42,6 +46,8 @@ public class AccountingCommandListener {
                     sagaJoinService.handleAuthorizeCardCommand(command.eventId(), command.orderId(), command.totalQuantity());
             case "ReverseAuthorization" ->
                     authorizationCancelService.reverseForCommand(command.eventId(), command.orderId(), command.sagaType());
+            case "ReviseAuthorization" ->
+                    authorizationReviseService.reviseForCommand(command.eventId(), command.orderId(), command.totalQuantity(), command.sagaType());
             default -> log.warn("Unknown accounting command type: {}", command.commandType());
         }
     }

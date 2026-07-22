@@ -147,10 +147,11 @@ class OrderTest {
 
     @Test
     void confirmRevisionMovesFromRevisionPendingToApprovedAndAppliesLineItems() {
-        Order order = orderIn(OrderStatus.REVISION_PENDING);
+        Order order = orderIn(OrderStatus.APPROVED);
         OrderRevision revision = new OrderRevision(List.of(new OrderLineItem(10L, 5)));
+        order.revise(revision);
 
-        List<OrderDomainEvent> events = order.confirmRevision(revision);
+        List<OrderDomainEvent> events = order.confirmRevision();
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.APPROVED);
         assertThat(order.getLineItems()).isEqualTo(revision.revisedLineItems());
@@ -160,10 +161,33 @@ class OrderTest {
     @Test
     void confirmRevisionFromWrongStatusThrows() {
         Order order = orderIn(OrderStatus.APPROVED);
+
+        assertThatThrownBy(order::confirmRevision)
+                .isInstanceOf(UnsupportedStateTransitionException.class);
+    }
+
+    @Test
+    void reviseThenConfirmExposesPendingRevisedLineItemsUntilConfirmed() {
+        Order order = orderIn(OrderStatus.APPROVED);
         OrderRevision revision = new OrderRevision(List.of(new OrderLineItem(10L, 5)));
 
-        assertThatThrownBy(() -> order.confirmRevision(revision))
-                .isInstanceOf(UnsupportedStateTransitionException.class);
+        order.revise(revision);
+
+        assertThat(order.getPendingRevisedLineItems()).isEqualTo(revision.revisedLineItems());
+
+        order.confirmRevision();
+
+        assertThat(order.getPendingRevisedLineItems()).isNull();
+    }
+
+    @Test
+    void rejectRevisionClearsPendingRevisedLineItems() {
+        Order order = orderIn(OrderStatus.APPROVED);
+        order.revise(new OrderRevision(List.of(new OrderLineItem(10L, 5))));
+
+        order.rejectRevision();
+
+        assertThat(order.getPendingRevisedLineItems()).isNull();
     }
 
     @Test

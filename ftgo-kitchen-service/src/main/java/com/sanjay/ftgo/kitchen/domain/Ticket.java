@@ -26,6 +26,8 @@ public class Ticket {
 
     private ZonedDateTime readyBy;
 
+    private int totalQuantity;
+
     protected Ticket() {
     }
 
@@ -36,6 +38,7 @@ public class Ticket {
 
     public static TicketCreationResult createTicket(Long orderId, int totalQuantity) {
         Ticket ticket = new Ticket(orderId, TicketState.CREATE_PENDING);
+        ticket.totalQuantity = totalQuantity;
         return new TicketCreationResult(ticket, List.of(new TicketCreatedEvent(orderId, totalQuantity)));
     }
 
@@ -53,6 +56,10 @@ public class Ticket {
 
     public TicketState getState() {
         return state;
+    }
+
+    public int getTotalQuantity() {
+        return totalQuantity;
     }
 
     public List<TicketDomainEvent> confirm() {
@@ -105,5 +112,27 @@ public class Ticket {
             case READY_FOR_PICKUP -> throw new TicketCannotBeCancelledException(orderId);
             case PREPARING, PICKED_UP, CANCELLED -> throw new UnsupportedStateTransitionException(state);
         };
+    }
+
+    // No two-tier exception split here, unlike cancel() - that distinction is specific to the
+    // book's cancel example, not a pattern every guarded transition needs.
+    public List<TicketDomainEvent> reviseQuantity(int newTotalQuantity) {
+        return switch (state) {
+            case CREATE_PENDING, AWAITING_ACCEPTANCE, ACCEPTED, PREPARING -> {
+                this.totalQuantity = newTotalQuantity;
+                yield List.of(new TicketQuantityRevisedEvent(orderId, newTotalQuantity));
+            }
+            case READY_FOR_PICKUP, PICKED_UP, CANCELLED -> throw new UnsupportedStateTransitionException(state);
+        };
+    }
+
+    // No state restriction beyond CANCELLED - this undoes a change this same saga just made,
+    // so reverting to a previously-valid quantity is always legal from any other state.
+    public List<TicketDomainEvent> undoRevision(int originalTotalQuantity) {
+        if (state == TicketState.CANCELLED) {
+            throw new UnsupportedStateTransitionException(state);
+        }
+        this.totalQuantity = originalTotalQuantity;
+        return List.of(new TicketRevisionUndoneEvent(orderId, originalTotalQuantity));
     }
 }

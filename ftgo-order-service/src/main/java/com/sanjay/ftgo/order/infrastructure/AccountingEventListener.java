@@ -3,6 +3,7 @@ package com.sanjay.ftgo.order.infrastructure;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.order.domain.AccountingEvent;
 import com.sanjay.ftgo.order.domain.OrderCancelSagaService;
+import com.sanjay.ftgo.order.domain.OrderReviseSagaService;
 import com.sanjay.ftgo.order.domain.OrderSagaService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,13 +19,16 @@ public class AccountingEventListener {
 
     private final OrderSagaService orderSagaService;
     private final OrderCancelSagaService orderCancelSagaService;
+    private final OrderReviseSagaService orderReviseSagaService;
     private final ObjectMapper objectMapper;
 
     public AccountingEventListener(OrderSagaService orderSagaService,
                                     OrderCancelSagaService orderCancelSagaService,
+                                    OrderReviseSagaService orderReviseSagaService,
                                     ObjectMapper objectMapper) {
         this.orderSagaService = orderSagaService;
         this.orderCancelSagaService = orderCancelSagaService;
+        this.orderReviseSagaService = orderReviseSagaService;
         this.objectMapper = objectMapper;
     }
 
@@ -40,6 +44,8 @@ public class AccountingEventListener {
         switch (event.eventType()) {
             case "CardAuthorizationFailed" -> orderSagaService.reject(event.orderId(), event.eventId());
             case "AuthorizationReversed" -> orderCancelSagaService.confirmCancel(event.orderId(), event.eventId());
+            case "AuthorizationRevised" -> orderReviseSagaService.confirmRevision(event.orderId(), event.eventId());
+            case "AuthorizationRevisionRejected" -> orderReviseSagaService.compensateRevision(event.orderId(), event.eventId());
             default -> { }
         }
     }

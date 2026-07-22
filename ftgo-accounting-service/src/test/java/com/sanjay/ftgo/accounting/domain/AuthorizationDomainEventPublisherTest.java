@@ -42,4 +42,21 @@ class AuthorizationDomainEventPublisherTest {
         verify(outboxEventRepository).save(argThat(row ->
                 "AuthorizationReversed".equals(row.getEventType()) && row.getAggregateId().equals(42L)));
     }
+
+    @Test
+    void publishesAuthorizationRevised() {
+        publisher.publish(List.of(new AuthorizationRevisedEvent(42L, 8)));
+
+        verify(outboxEventRepository).save(argThat(row ->
+                "AuthorizationRevised".equals(row.getEventType()) && row.getAggregateId().equals(42L)));
+    }
+
+    @Test
+    void publishesAuthorizationRevisionRejectedWithReason() {
+        publisher.publish(List.of(new AuthorizationRevisionRejectedEvent(42L, "order quantity exceeds authorization limit")));
+
+        verify(outboxEventRepository).save(argThat(row ->
+                "AuthorizationRevisionRejected".equals(row.getEventType())
+                        && row.getPayload().contains("order quantity exceeds authorization limit")));
+    }
 }

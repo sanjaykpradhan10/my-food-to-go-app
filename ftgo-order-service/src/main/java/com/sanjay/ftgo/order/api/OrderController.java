@@ -5,11 +5,11 @@ import com.sanjay.ftgo.order.domain.Order;
 import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
 import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderDomainEvent;
-import com.sanjay.ftgo.order.domain.OrderDomainEventPublisher;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderNotFoundException;
 import com.sanjay.ftgo.order.domain.OrderRepository;
 import com.sanjay.ftgo.order.domain.OrderRevision;
+import com.sanjay.ftgo.order.domain.OrderRevisionSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderService;
 import com.sanjay.ftgo.order.domain.RestaurantNotFoundException;
 import com.sanjay.ftgo.order.domain.RestaurantServiceUnavailableException;
@@ -32,16 +32,16 @@ public class OrderController {
 
     private final OrderService orderService;
     private final OrderRepository orderRepository;
-    private final OrderDomainEventPublisher domainEventPublisher;
     private final OrderCancellationSagaTrigger cancellationSagaTrigger;
+    private final OrderRevisionSagaTrigger revisionSagaTrigger;
 
     public OrderController(OrderService orderService, OrderRepository orderRepository,
-                            OrderDomainEventPublisher domainEventPublisher,
-                            OrderCancellationSagaTrigger cancellationSagaTrigger) {
+                            OrderCancellationSagaTrigger cancellationSagaTrigger,
+                            OrderRevisionSagaTrigger revisionSagaTrigger) {
         this.orderService = orderService;
         this.orderRepository = orderRepository;
-        this.domainEventPublisher = domainEventPublisher;
         this.cancellationSagaTrigger = cancellationSagaTrigger;
+        this.revisionSagaTrigger = revisionSagaTrigger;
     }
 
     @PostMapping
@@ -81,17 +81,14 @@ public class OrderController {
         List<OrderLineItem> revisedLineItems = request.lineItems().stream()
                 .map(item -> new OrderLineItem(item.menuItemId(), item.quantity()))
                 .toList();
-        apply(order, order.revise(new OrderRevision(revisedLineItems)));
+        List<OrderDomainEvent> events = order.revise(new OrderRevision(revisedLineItems));
+        orderRepository.save(order);
+        revisionSagaTrigger.onOrderRevised(order, events);
         return ResponseEntity.ok(OrderResponse.from(order));
     }
 
     private Order findOrder(Long id) {
         return orderRepository.findById(id).orElseThrow(() -> new OrderNotFoundException(id));
-    }
-
-    private void apply(Order order, List<OrderDomainEvent> events) {
-        orderRepository.save(order);
-        domainEventPublisher.publish(events);
     }
 
     @ExceptionHandler({RestaurantNotFoundException.class, MenuItemNotFoundException.class, OrderNotFoundException.class})

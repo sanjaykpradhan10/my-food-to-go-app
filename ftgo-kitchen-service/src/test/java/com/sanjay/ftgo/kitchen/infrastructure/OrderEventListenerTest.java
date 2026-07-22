@@ -6,6 +6,7 @@ import com.sanjay.ftgo.kitchen.domain.TicketService;
 import org.junit.jupiter.api.Test;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -56,5 +57,29 @@ class OrderEventListenerTest {
         listener.onMessage(payload);
 
         verify(ticketService).handleOrderCancelled("e3", 42L);
+    }
+
+    @Test
+    void handlesOrderRevisionProposedEvent() {
+        String payload = """
+                {"eventId":"e10","eventType":"OrderRevisionProposed","orderId":42,"lineItems":[{"menuItemId":10,"quantity":8}]}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(ticketService).handleOrderRevisionProposed(argThat(event ->
+                "e10".equals(event.eventId()) && event.orderId().equals(42L)));
+    }
+
+    @Test
+    void handlesOrderRevisionCompensationRequestedEvent() {
+        String payload = """
+                {"eventId":"e11","eventType":"OrderRevisionCompensationRequested","orderId":42,"lineItems":[{"menuItemId":10,"quantity":2}]}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(ticketService).handleOrderRevisionRejected(argThat(event ->
+                "e11".equals(event.eventId()) && event.orderId().equals(42L)));
     }
 }

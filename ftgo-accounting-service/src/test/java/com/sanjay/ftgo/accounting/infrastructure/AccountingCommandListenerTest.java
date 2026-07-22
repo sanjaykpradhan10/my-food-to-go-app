@@ -2,6 +2,7 @@ package com.sanjay.ftgo.accounting.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.accounting.domain.AuthorizationCancelService;
+import com.sanjay.ftgo.accounting.domain.AuthorizationReviseService;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
 import org.junit.jupiter.api.Test;
 
@@ -14,10 +15,11 @@ class AccountingCommandListenerTest {
 
     private final SagaJoinService sagaJoinService = mock(SagaJoinService.class);
     private final AuthorizationCancelService authorizationCancelService = mock(AuthorizationCancelService.class);
+    private final AuthorizationReviseService authorizationReviseService = mock(AuthorizationReviseService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final AccountingCommandListener listener =
-            new AccountingCommandListener(sagaJoinService, authorizationCancelService, objectMapper);
+            new AccountingCommandListener(sagaJoinService, authorizationCancelService, authorizationReviseService, objectMapper);
 
     @Test
     void routesAuthorizeCardToSagaJoinService() {
@@ -41,5 +43,16 @@ class AccountingCommandListenerTest {
 
         verify(authorizationCancelService).reverseForCommand("e2", 42L, "CancelOrder");
         verify(sagaJoinService, never()).handleAuthorizeCardCommand(any(), any(), any());
+    }
+
+    @Test
+    void dispatchesReviseAuthorizationCommand() {
+        String payload = """
+                {"eventId":"c10","commandType":"ReviseAuthorization","orderId":42,"totalQuantity":8,"sagaType":"ReviseOrder"}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(authorizationReviseService).reviseForCommand("c10", 42L, 8, "ReviseOrder");
     }
 }

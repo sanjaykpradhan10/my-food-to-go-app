@@ -66,4 +66,40 @@ class TicketDomainEventPublisherTest {
                         && "kitchen.events".equals(row.getTopic())
                         && row.getPayload().contains("cannot cancel once ready for pickup")));
     }
+
+    @Test
+    void publishesTicketQuantityRevisedWithNewTotalQuantity() {
+        Ticket ticket = Ticket.createTicket(42L, 3).ticket();
+
+        publisher.publish(ticket, List.of(new TicketQuantityRevisedEvent(42L, 8)));
+
+        verify(outboxEventRepository).save(argThat((OutboxEvent row) ->
+                "TicketQuantityRevised".equals(row.getEventType())
+                        && "kitchen.events".equals(row.getTopic())
+                        && row.getPayload().contains("\"totalQuantity\":8")));
+    }
+
+    @Test
+    void publishesTicketRevisionRejectedWithReason() {
+        Ticket ticket = Ticket.createTicket(42L, 3).ticket();
+
+        publisher.publish(ticket, List.of(new TicketRevisionRejectedEvent(42L, "order exceeds kitchen capacity")));
+
+        verify(outboxEventRepository).save(argThat((OutboxEvent row) ->
+                "TicketRevisionRejected".equals(row.getEventType())
+                        && "kitchen.events".equals(row.getTopic())
+                        && row.getPayload().contains("order exceeds kitchen capacity")));
+    }
+
+    @Test
+    void publishesTicketRevisionUndoneWithOriginalTotalQuantity() {
+        Ticket ticket = Ticket.createTicket(42L, 3).ticket();
+
+        publisher.publish(ticket, List.of(new TicketRevisionUndoneEvent(42L, 3)));
+
+        verify(outboxEventRepository).save(argThat((OutboxEvent row) ->
+                "TicketRevisionUndone".equals(row.getEventType())
+                        && "kitchen.events".equals(row.getTopic())
+                        && row.getPayload().contains("\"totalQuantity\":3")));
+    }
 }

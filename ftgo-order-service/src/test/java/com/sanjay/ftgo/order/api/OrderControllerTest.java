@@ -4,10 +4,10 @@ import com.sanjay.ftgo.order.domain.MenuItemNotFoundException;
 import com.sanjay.ftgo.order.domain.Order;
 import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
 import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
-import com.sanjay.ftgo.order.domain.OrderDomainEventPublisher;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderNotFoundException;
 import com.sanjay.ftgo.order.domain.OrderRepository;
+import com.sanjay.ftgo.order.domain.OrderRevisionSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderService;
 import com.sanjay.ftgo.order.domain.OrderStatus;
 import com.sanjay.ftgo.order.domain.RestaurantNotFoundException;
@@ -43,10 +43,10 @@ class OrderControllerTest {
     private OrderRepository orderRepository;
 
     @MockitoBean
-    private OrderDomainEventPublisher domainEventPublisher;
+    private OrderCancellationSagaTrigger cancellationSagaTrigger;
 
     @MockitoBean
-    private OrderCancellationSagaTrigger cancellationSagaTrigger;
+    private OrderRevisionSagaTrigger revisionSagaTrigger;
 
     @Test
     void createsOrderSuccessfully() throws Exception {
@@ -173,6 +173,8 @@ class OrderControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REVISION_PENDING"));
+
+        verify(revisionSagaTrigger).onOrderRevised(eq(order), any());
     }
 
     @Test

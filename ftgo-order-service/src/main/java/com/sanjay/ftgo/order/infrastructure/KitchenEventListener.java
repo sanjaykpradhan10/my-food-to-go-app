@@ -3,6 +3,7 @@ package com.sanjay.ftgo.order.infrastructure;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.order.domain.KitchenEvent;
 import com.sanjay.ftgo.order.domain.OrderCancelSagaService;
+import com.sanjay.ftgo.order.domain.OrderReviseSagaService;
 import com.sanjay.ftgo.order.domain.OrderSagaService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,13 +19,16 @@ public class KitchenEventListener {
 
     private final OrderSagaService orderSagaService;
     private final OrderCancelSagaService orderCancelSagaService;
+    private final OrderReviseSagaService orderReviseSagaService;
     private final ObjectMapper objectMapper;
 
     public KitchenEventListener(OrderSagaService orderSagaService,
                                  OrderCancelSagaService orderCancelSagaService,
+                                 OrderReviseSagaService orderReviseSagaService,
                                  ObjectMapper objectMapper) {
         this.orderSagaService = orderSagaService;
         this.orderCancelSagaService = orderCancelSagaService;
+        this.orderReviseSagaService = orderReviseSagaService;
         this.objectMapper = objectMapper;
     }
 
@@ -41,6 +45,8 @@ public class KitchenEventListener {
             case "TicketConfirmed" -> orderSagaService.approve(event.orderId(), event.eventId());
             case "TicketCreationFailed" -> orderSagaService.reject(event.orderId(), event.eventId());
             case "TicketCancellationRejected" -> orderCancelSagaService.rejectCancel(event.orderId(), event.eventId());
+            case "TicketRevisionRejected" -> orderReviseSagaService.rejectRevision(event.orderId(), event.eventId());
+            case "TicketRevisionUndone" -> orderReviseSagaService.finalizeRejectedRevision(event.orderId(), event.eventId());
             default -> { }
         }
     }

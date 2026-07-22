@@ -2,6 +2,7 @@ package com.sanjay.ftgo.accounting.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.accounting.domain.AuthorizationCancelService;
+import com.sanjay.ftgo.accounting.domain.AuthorizationReviseService;
 import com.sanjay.ftgo.accounting.domain.KitchenEvent;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
 import org.slf4j.Logger;
@@ -18,13 +19,16 @@ public class KitchenEventListener {
 
     private final SagaJoinService sagaJoinService;
     private final AuthorizationCancelService authorizationCancelService;
+    private final AuthorizationReviseService authorizationReviseService;
     private final ObjectMapper objectMapper;
 
     public KitchenEventListener(SagaJoinService sagaJoinService,
                                  AuthorizationCancelService authorizationCancelService,
+                                 AuthorizationReviseService authorizationReviseService,
                                  ObjectMapper objectMapper) {
         this.sagaJoinService = sagaJoinService;
         this.authorizationCancelService = authorizationCancelService;
+        this.authorizationReviseService = authorizationReviseService;
         this.objectMapper = objectMapper;
     }
 
@@ -41,6 +45,8 @@ public class KitchenEventListener {
             case "TicketCreated", "TicketCreationFailed" ->
                     sagaJoinService.handleKitchenEvent(event.eventId(), event.orderId(), event.eventType(), event.totalQuantity());
             case "TicketCancelled" -> authorizationCancelService.reverseForChoreography(event.eventId(), event.orderId());
+            case "TicketQuantityRevised" ->
+                    authorizationReviseService.reviseForChoreography(event.eventId(), event.orderId(), event.totalQuantity());
             default -> { }
         }
     }

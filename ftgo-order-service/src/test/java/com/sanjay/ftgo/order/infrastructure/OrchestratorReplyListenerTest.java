@@ -3,6 +3,7 @@ package com.sanjay.ftgo.order.infrastructure;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.order.domain.CancelOrderSagaOrchestrator;
 import com.sanjay.ftgo.order.domain.CreateOrderSagaOrchestrator;
+import com.sanjay.ftgo.order.domain.ReviseOrderSagaOrchestrator;
 import org.junit.jupiter.api.Test;
 
 import static org.mockito.Mockito.mock;
@@ -13,10 +14,11 @@ class OrchestratorReplyListenerTest {
 
     private final CreateOrderSagaOrchestrator createOrderSagaOrchestrator = mock(CreateOrderSagaOrchestrator.class);
     private final CancelOrderSagaOrchestrator cancelOrderSagaOrchestrator = mock(CancelOrderSagaOrchestrator.class);
+    private final ReviseOrderSagaOrchestrator reviseOrderSagaOrchestrator = mock(ReviseOrderSagaOrchestrator.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final OrchestratorReplyListener listener = new OrchestratorReplyListener(
-            createOrderSagaOrchestrator, cancelOrderSagaOrchestrator, objectMapper);
+            createOrderSagaOrchestrator, cancelOrderSagaOrchestrator, reviseOrderSagaOrchestrator, objectMapper);
 
     @Test
     void routesCreateOrderReplyToCreateOrderSagaOrchestrator() {
@@ -48,5 +50,16 @@ class OrchestratorReplyListenerTest {
 
         verifyNoInteractions(createOrderSagaOrchestrator);
         verifyNoInteractions(cancelOrderSagaOrchestrator);
+    }
+
+    @Test
+    void routesReviseOrderReplyToReviseOrderSagaOrchestrator() {
+        String payload = """
+                {"eventId":"e5","participant":"kitchen","eventType":"TicketQuantityRevised","orderId":42,"sagaType":"ReviseOrder"}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(reviseOrderSagaOrchestrator).handleReply("e5", "kitchen", "TicketQuantityRevised", 42L, null);
     }
 }

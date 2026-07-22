@@ -55,6 +55,12 @@ public class TicketDomainEventPublisher {
                     new KitchenEvent(eventId, "TicketPickedUp", e.orderId(), ticketId, null, null);
             case TicketCancellationRejectedEvent e ->
                     new KitchenEvent(eventId, "TicketCancellationRejected", e.orderId(), ticketId, null, e.reason());
+            case TicketQuantityRevisedEvent e ->
+                    new KitchenEvent(eventId, "TicketQuantityRevised", e.orderId(), ticketId, e.totalQuantity(), null);
+            case TicketRevisionRejectedEvent e ->
+                    new KitchenEvent(eventId, "TicketRevisionRejected", e.orderId(), ticketId, null, e.reason());
+            case TicketRevisionUndoneEvent e ->
+                    new KitchenEvent(eventId, "TicketRevisionUndone", e.orderId(), ticketId, e.totalQuantity(), null);
         };
     }
 

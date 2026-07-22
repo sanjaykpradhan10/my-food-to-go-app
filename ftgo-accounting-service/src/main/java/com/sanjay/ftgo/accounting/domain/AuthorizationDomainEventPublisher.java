@@ -37,6 +37,9 @@ public class AuthorizationDomainEventPublisher {
             case CardAuthorizationDeclinedEvent e ->
                     new AccountingEvent(eventId, "CardAuthorizationFailed", e.orderId(), e.reason());
             case AuthorizationReversedEvent e -> new AccountingEvent(eventId, "AuthorizationReversed", e.orderId(), null);
+            case AuthorizationRevisedEvent e -> new AccountingEvent(eventId, "AuthorizationRevised", e.orderId(), null);
+            case AuthorizationRevisionRejectedEvent e ->
+                    new AccountingEvent(eventId, "AuthorizationRevisionRejected", e.orderId(), e.reason());
         };
     }
 

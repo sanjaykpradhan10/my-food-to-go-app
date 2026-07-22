@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -31,6 +32,13 @@ public class Order {
 
     @Enumerated(EnumType.STRING)
     private OrderStatus status;
+
+    // Only populated between revise() and confirmRevision()/rejectRevision() - the confirming
+    // reply arrives in a different transaction than the original /revise request, so the
+    // OrderRevision object itself no longer exists to pass back in.
+    @ElementCollection
+    @CollectionTable(name = "order_pending_revised_line_items", joinColumns = @JoinColumn(name = "order_id"))
+    private List<OrderLineItem> pendingRevisedLineItems;
 
     protected Order() {
     }
@@ -65,6 +73,10 @@ public class Order {
 
     public OrderStatus getStatus() {
         return status;
+    }
+
+    public List<OrderLineItem> getPendingRevisedLineItems() {
+        return pendingRevisedLineItems;
     }
 
     public List<OrderDomainEvent> noteApproved() {
@@ -112,16 +124,26 @@ public class Order {
             throw new UnsupportedStateTransitionException(status);
         }
         this.status = OrderStatus.REVISION_PENDING;
+        // Defensive copy: OrderController.revise() builds revisedLineItems via Stream.toList(),
+        // which is immutable. Assigning it directly into this @ElementCollection field makes
+        // Hibernate throw UnsupportedOperationException when it clears the collection during
+        // merge on save(). Same fix as applied to confirmRevision() below.
+        this.pendingRevisedLineItems = new ArrayList<>(revision.revisedLineItems());
         return List.of(new OrderRevisionProposedEvent(id, revision.revisedLineItems()));
     }
 
-    public List<OrderDomainEvent> confirmRevision(OrderRevision revision) {
+    public List<OrderDomainEvent> confirmRevision() {
         if (status != OrderStatus.REVISION_PENDING) {
             throw new UnsupportedStateTransitionException(status);
         }
         this.status = OrderStatus.APPROVED;
-        this.lineItems = revision.revisedLineItems();
-        return List.of(new OrderRevisedEvent(id, revision.revisedLineItems()));
+        // Copy contents rather than re-homing the same PersistentCollection instance into a
+        // different @ElementCollection-mapped field - Hibernate rejects a shared collection
+        // reference across two mapped roles once this Order is a managed entity.
+        this.lineItems = new ArrayList<>(pendingRevisedLineItems);
+        List<OrderDomainEvent> events = List.of(new OrderRevisedEvent(id, pendingRevisedLineItems));
+        this.pendingRevisedLineItems = null;
+        return events;
     }
 
     public List<OrderDomainEvent> rejectRevision() {
@@ -129,6 +151,7 @@ public class Order {
             throw new UnsupportedStateTransitionException(status);
         }
         this.status = OrderStatus.APPROVED;
+        this.pendingRevisedLineItems = null;
         return List.of(new OrderRevisionRejectedEvent(id));
     }
 }

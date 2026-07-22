@@ -45,9 +45,7 @@ public class TicketService {
         }
         processedEventRepository.save(new ProcessedEvent(event.eventId()));
 
-        int totalQuantity = event.lineItems().stream()
-                .mapToInt(OrderCreatedEvent.LineItem::quantity)
-                .sum();
+        int totalQuantity = totalQuantity(event.lineItems());
 
         if (failedOrderRepository.existsById(event.orderId())) {
             ticketRepository.save(Ticket.createCancelled(event.orderId()));
@@ -77,7 +75,14 @@ public class TicketService {
             return;
         }
 
-        List<TicketDomainEvent> events = "CardAuthorized".equals(eventType) ? ticket.confirm() : ticket.cancel();
+        List<TicketDomainEvent> events = switch (eventType) {
+            case "CardAuthorized" -> ticket.confirm();
+            case "CardAuthorizationFailed" -> ticket.cancel();
+            default -> null;
+        };
+        if (events == null) {
+            return;
+        }
         ticketRepository.save(ticket);
         domainEventPublisher.publish(ticket, events);
     }
@@ -173,6 +178,101 @@ public class TicketService {
         } catch (TicketCannotBeCancelledException | UnsupportedStateTransitionException e) {
             domainEventPublisher.publish(ticket, List.of(new TicketCancellationRejectedEvent(orderId, e.getMessage())));
         }
+    }
+
+    @Transactional
+    public void handleOrderRevisionProposed(OrderCreatedEvent event) {
+        if (processedEventRepository.existsById(event.eventId())) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(event.eventId()));
+
+        Ticket ticket = ticketRepository.findByOrderId(event.orderId()).orElse(null);
+        if (ticket == null) {
+            return;
+        }
+
+        int newTotalQuantity = totalQuantity(event.lineItems());
+        if (!isWithinCapacity(newTotalQuantity)) {
+            domainEventPublisher.publish(ticket, List.of(
+                    new TicketRevisionRejectedEvent(event.orderId(), "order exceeds kitchen capacity")));
+            return;
+        }
+
+        List<TicketDomainEvent> events = ticket.reviseQuantity(newTotalQuantity);
+        ticketRepository.save(ticket);
+        domainEventPublisher.publish(ticket, events);
+    }
+
+    @Transactional
+    public void handleOrderRevisionRejected(OrderCreatedEvent event) {
+        if (processedEventRepository.existsById(event.eventId())) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(event.eventId()));
+
+        Ticket ticket = ticketRepository.findByOrderId(event.orderId()).orElse(null);
+        if (ticket == null) {
+            return;
+        }
+
+        int originalTotalQuantity = totalQuantity(event.lineItems());
+        List<TicketDomainEvent> events = ticket.undoRevision(originalTotalQuantity);
+        ticketRepository.save(ticket);
+        domainEventPublisher.publish(ticket, events);
+    }
+
+    @Transactional
+    public void handleReviseTicketCommand(String eventId, Long orderId, Integer newTotalQuantity) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
+        if (ticket == null) {
+            return;
+        }
+
+        if (newTotalQuantity == null) {
+            publishReply("TicketRevisionRejected", orderId, "totalQuantity is required", "ReviseOrder");
+            return;
+        }
+
+        if (!isWithinCapacity(newTotalQuantity)) {
+            publishReply("TicketRevisionRejected", orderId, "order exceeds kitchen capacity", "ReviseOrder");
+            return;
+        }
+
+        ticket.reviseQuantity(newTotalQuantity);
+        ticketRepository.save(ticket);
+        publishReply("TicketQuantityRevised", orderId, null, "ReviseOrder");
+    }
+
+    @Transactional
+    public void handleUndoReviseTicketCommand(String eventId, Long orderId, Integer originalTotalQuantity) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        if (originalTotalQuantity == null) {
+            publishReply("TicketRevisionRejected", orderId, "originalTotalQuantity is required", "ReviseOrder");
+            return;
+        }
+
+        Ticket ticket = ticketRepository.findByOrderId(orderId).orElse(null);
+        if (ticket == null) {
+            return;
+        }
+
+        ticket.undoRevision(originalTotalQuantity);
+        ticketRepository.save(ticket);
+        publishReply("TicketRevisionUndone", orderId, null, "ReviseOrder");
+    }
+
+    private int totalQuantity(List<OrderCreatedEvent.LineItem> lineItems) {
+        return lineItems.stream().mapToInt(OrderCreatedEvent.LineItem::quantity).sum();
     }
 
     private boolean isWithinCapacity(int totalQuantity) {
