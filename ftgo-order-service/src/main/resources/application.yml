@@ -32,6 +32,9 @@ eureka:
   instance:
     prefer-ip-address: true
 
+persistence:
+  mode: jpa
+
 saga:
   mode: choreography
 

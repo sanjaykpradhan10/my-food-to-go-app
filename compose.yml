@@ -130,6 +130,7 @@ services:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       OUTBOX_PUBLISH_MODE: ${OUTBOX_PUBLISH_MODE:-polling}
       SAGA_MODE: ${SAGA_MODE:-choreography}
+      PERSISTENCE_MODE: ${PERSISTENCE_MODE:-jpa}
 
   kitchen-service:
     build:

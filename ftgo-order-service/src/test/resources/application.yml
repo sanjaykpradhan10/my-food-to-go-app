@@ -27,6 +27,9 @@ eureka:
   client:
     enabled: false
 
+persistence:
+  mode: jpa
+
 resilience4j:
   circuitbreaker:
     instances:
