@@ -2,6 +2,7 @@ package com.sanjay.ftgo.accounting.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.accounting.domain.AuthorizationCancelService;
+import com.sanjay.ftgo.accounting.domain.AuthorizationReviseService;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
 import org.junit.jupiter.api.Test;
 
@@ -14,10 +15,11 @@ class KitchenEventListenerTest {
 
     private final SagaJoinService sagaJoinService = mock(SagaJoinService.class);
     private final AuthorizationCancelService authorizationCancelService = mock(AuthorizationCancelService.class);
+    private final AuthorizationReviseService authorizationReviseService = mock(AuthorizationReviseService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final KitchenEventListener listener =
-            new KitchenEventListener(sagaJoinService, authorizationCancelService, objectMapper);
+            new KitchenEventListener(sagaJoinService, authorizationCancelService, authorizationReviseService, objectMapper);
 
     @Test
     void routesTicketCreatedToSagaJoinService() {
@@ -53,5 +55,16 @@ class KitchenEventListenerTest {
 
         verify(sagaJoinService, never()).handleKitchenEvent(any(), any(), any(), any());
         verify(authorizationCancelService, never()).reverseForChoreography(any(), any());
+    }
+
+    @Test
+    void dispatchesTicketQuantityRevisedToAuthorizationReviseService() {
+        String payload = """
+                {"eventId":"e10","eventType":"TicketQuantityRevised","orderId":42,"ticketId":1,"totalQuantity":8}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(authorizationReviseService).reviseForChoreography("e10", 42L, 8);
     }
 }
