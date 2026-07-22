@@ -87,4 +87,16 @@ class OrderReviseSagaServiceTest {
 
         verify(orderRepository, never()).findById(any());
     }
+
+    @Test
+    void ignoresConfirmRevisionForAnAlreadyResolvedOrder() {
+        Order order = new Order(42L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
+        when(processedEventRepository.existsById("e1")).thenReturn(false);
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(order));
+
+        service.confirmRevision(42L, "e1");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.APPROVED);
+        verify(orderRepository, never()).save(any());
+    }
 }
