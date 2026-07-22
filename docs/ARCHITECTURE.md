@@ -56,7 +56,9 @@ This combination means a service crash at any point (before/during/after publish
 | `accounting.commands` | order-service | accounting-service | orchestration |
 | `saga.replies` | consumer-service, kitchen-service, accounting-service | order-service | orchestration |
 
-Choreography topics carry domain events (things that already happened: `OrderCreated`, `TicketCreated`, ...). Orchestration topics carry either commands (imperatives: `VerifyConsumerCommand`, `KitchenCommand{commandType=CreateTicket}`, ...) or replies (a single shared `SagaReply{participant, eventType, ...}` shape, discriminated by the `participant` field).
+Choreography topics carry domain events (things that already happened: `OrderCreated`, `TicketCreated`, ...). Orchestration topics carry either commands (imperatives: `VerifyConsumerCommand`, `KitchenCommand{commandType=CreateTicket}`, ...) or replies (a single shared `SagaReply{participant, eventType, sagaType, ...}` shape, discriminated by `participant` then `sagaType` — see "Multi-saga routing" below).
+
+None of these 8 topics grew new members as Cancel Order and Revise Order were added — each carries more `eventType`/`commandType` values on the *same* topics (`order.events` also carries `OrderCancelled`/`OrderRevisionProposed`/etc., `kitchen.commands` also carries `CancelTicket`/`ReviseTicket`/`UndoReviseTicket`, and so on), rather than dedicated topics per saga.
 
 ## The `SAGA_MODE` switch
 
@@ -246,7 +248,213 @@ sequenceDiagram
     K-->>K: Ticket{CANCELLED}
 ```
 
-## Choreography vs. orchestration — what actually differs
+## Multi-saga routing (`sagaType`)
+
+Three independent sagas (Create Order, Cancel Order, Revise Order) all run through order-service, and in orchestration mode all three share the same `kitchen.commands`/`accounting.commands`/`saga.replies` topics rather than getting dedicated ones each. `SagaReply`, `KitchenCommand`, and `AccountingCommand` each carry a `sagaType` field (`"CreateOrder"` / `"CancelOrder"` / `"ReviseOrder"`) so:
+
+- order-service's one shared `OrchestratorReplyListener` (on `saga.replies`) routes each reply to the correct one of the three orchestrators (`CreateOrderSagaOrchestrator`, `CancelOrderSagaOrchestrator`, `ReviseOrderSagaOrchestrator`) before that orchestrator's own `handleReply` is ever called — no orchestrator has to guess which saga a message belongs to.
+- A command type shared by more than one saga stays unambiguous. `KitchenCommand{commandType=CancelTicket}` is sent by both Create Order's compensation path (`CreateOrderSagaOrchestrator.sendCancelTicket`) and Cancel Order's primary flow (`CancelOrderSagaOrchestrator.start`) — the same `TicketService.handleCancelTicketCommand` handles both, and echoes the inbound `sagaType` back into its reply unchanged, since it cannot infer which saga's request it's servicing from `commandType` alone.
+
+`CancelOrderSagaOrchestrator` and `ReviseOrderSagaOrchestrator` are both deliberately stateless (no persisted saga-instance table, unlike `CreateOrderSagaOrchestrator`'s `CreateOrderSagaInstance`) — both are strict linear pipelines with no parallel replies to join, so `Order`'s own `status` (and, for Revise, its `lineItems`/`pendingRevisedLineItems`) is sufficient saga state on its own.
+
+## Cancel Order saga — choreography
+
+`Order.cancel()` is only legal from `APPROVED`, meaning the `Ticket` has already been confirmed and may be anywhere from `AWAITING_ACCEPTANCE` through `PICKED_UP` — cancellation isn't guaranteed to succeed. The saga asks kitchen first; accounting's authorization reversal only happens if kitchen confirms the ticket cancellable.
+
+### Happy path
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    C->>O: POST /orders/{id}/cancel
+    O-->>O: Order{CANCEL_PENDING}
+    O-)K: OrderCancelled (order.events)
+    K-->>K: Ticket.cancel() succeeds
+    K-)A: TicketCancelled (kitchen.events)
+    A-->>A: Authorization.reverse()
+    A-)O: AuthorizationReversed (accounting.events)
+    O-->>O: Order{CANCELLED}
+```
+
+### Rejection — ticket already too far along
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    O-)K: OrderCancelled (order.events)
+    K-->>K: Ticket.cancel() throws<br/>(READY_FOR_PICKUP or later)
+    K-)O: TicketCancellationRejected (kitchen.events)
+    O-->>O: Order{APPROVED} (undoCancel)
+    Note over A: never contacted — nothing was ever<br/>reversed, so no re-authorization is needed
+```
+
+## Cancel Order saga — orchestration
+
+Stateless `CancelOrderSagaOrchestrator`, driven purely by `saga.replies` (`sagaType=CancelOrder`), using `Order`'s own status as the implicit saga state.
+
+### Happy path
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    C->>O: POST /orders/{id}/cancel
+    O-->>O: Order{CANCEL_PENDING}
+    O-)K: CancelTicket (kitchen.commands, sagaType=CancelOrder)
+    K-->>K: Ticket.cancel() succeeds
+    K-)O: TicketCancelled (saga.replies, sagaType=CancelOrder)
+    O-)A: ReverseAuthorization (accounting.commands, sagaType=CancelOrder)
+    A-->>A: Authorization.reverse()
+    A-)O: AuthorizationReversed (saga.replies, sagaType=CancelOrder)
+    O-->>O: Order{CANCELLED}
+```
+
+### Rejection — ticket already too far along
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    O-)K: CancelTicket (kitchen.commands, sagaType=CancelOrder)
+    K-->>K: Ticket.cancel() throws
+    K-)O: TicketCancellationRejected (saga.replies, sagaType=CancelOrder)
+    O-->>O: Order{APPROVED} (undoCancel)
+    Note over A: never contacted
+```
+
+## Revise Order saga — choreography
+
+Same sequential, kitchen-gates-accounting shape as Cancel Order, but with a genuinely new wrinkle: kitchen *provisionally applies* the revised quantity before accounting is ever asked, since `Authorization.reviseAuthorization()` (unlike `reverse()`) is a real guarded threshold check that accounting can decline. That makes a real compensation path necessary — something Cancel Order never needed, because `reverse()` is unconditional.
+
+### Happy path
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    C->>O: POST /orders/{id}/revise
+    O-->>O: Order{REVISION_PENDING}<br/>pendingRevisedLineItems set
+    O-)K: OrderRevisionProposed (order.events)
+    K-->>K: within capacity → reviseQuantity()
+    K-)A: TicketQuantityRevised (kitchen.events)
+    A-->>A: within threshold → reviseAuthorization()
+    A-)O: AuthorizationRevised (accounting.events)
+    O-->>O: Order{APPROVED} (confirmRevision)<br/>lineItems = pendingRevisedLineItems
+```
+
+### Case A — kitchen rejects outright (over capacity)
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    O-)K: OrderRevisionProposed (order.events)
+    K-->>K: totalQuantity > capacity limit
+    K-)O: TicketRevisionRejected (kitchen.events)
+    O-->>O: Order{APPROVED} (rejectRevision)<br/>original lineItems, nothing ever applied
+    Note over A: never contacted
+```
+
+### Case B — kitchen confirms, accounting declines (real compensation)
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    O-)K: OrderRevisionProposed (order.events)
+    K-->>K: within capacity → reviseQuantity()<br/>(provisional — accounting hasn't agreed yet)
+    K-)A: TicketQuantityRevised (kitchen.events)
+    A-->>A: totalQuantity > authorization limit
+    A-)O: AuthorizationRevisionRejected (accounting.events)
+    Note over O: Order stays REVISION_PENDING —<br/>the reply only triggers compensation,<br/>not a state transition
+    O-)K: OrderRevisionCompensationRequested (order.events)<br/>carries the original, still-untouched lineItems
+    K-->>K: undoRevision() — reverts to original quantity
+    K-)O: TicketRevisionUndone (kitchen.events)
+    O-->>O: Order{APPROVED} (rejectRevision)<br/>original lineItems
+```
+
+`"OrderRevisionCompensationRequested"` is deliberately a distinct wire event from the terminal `"OrderRevisionRejected"` (Case A's outcome) — conflating them would make kitchen try to undo a revision that was rejected outright, with nothing ever applied to undo.
+
+## Revise Order saga — orchestration
+
+Stateless `ReviseOrderSagaOrchestrator`, driven by `saga.replies` (`sagaType=ReviseOrder`). Being stateless, it recomputes both the pending revised quantity and the original quantity by reloading `Order` fresh rather than caching them across the round trip — `Order.getPendingRevisedLineItems()` for the forward step, `Order.getLineItems()` (still untouched pre-revision) for the compensation step.
+
+### Happy path
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    C->>O: POST /orders/{id}/revise
+    O-->>O: Order{REVISION_PENDING}
+    O-)K: ReviseTicket (kitchen.commands, sagaType=ReviseOrder)
+    K-->>K: within capacity → reviseQuantity()
+    K-)O: TicketQuantityRevised (saga.replies, sagaType=ReviseOrder)
+    O-)A: ReviseAuthorization (accounting.commands, sagaType=ReviseOrder)
+    A-->>A: within threshold → reviseAuthorization()
+    A-)O: AuthorizationRevised (saga.replies, sagaType=ReviseOrder)
+    O-->>O: Order{APPROVED} (confirmRevision)
+```
+
+### Case A — kitchen rejects outright (over capacity)
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    O-)K: ReviseTicket (kitchen.commands, sagaType=ReviseOrder)
+    K-->>K: totalQuantity > capacity limit
+    K-)O: TicketRevisionRejected (saga.replies, sagaType=ReviseOrder)
+    O-->>O: Order{APPROVED} (rejectRevision)
+    Note over A: never contacted
+```
+
+### Case B — kitchen confirms, accounting declines (real compensation)
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+
+    O-)K: ReviseTicket (kitchen.commands, sagaType=ReviseOrder)
+    K-->>K: reviseQuantity() (provisional)
+    K-)O: TicketQuantityRevised (saga.replies, sagaType=ReviseOrder)
+    O-)A: ReviseAuthorization (accounting.commands, sagaType=ReviseOrder)
+    A-->>A: totalQuantity > authorization limit
+    A-)O: AuthorizationRevisionRejected (saga.replies, sagaType=ReviseOrder)
+    Note over O: Order stays REVISION_PENDING
+    O-)K: UndoReviseTicket (kitchen.commands, sagaType=ReviseOrder)<br/>totalQuantity = original quantity, recomputed from Order.lineItems
+    K-->>K: undoRevision()
+    K-)O: TicketRevisionUndone (saga.replies, sagaType=ReviseOrder)
+    O-->>O: Order{APPROVED} (rejectRevision)
+```
+
+## Choreography vs. orchestration — what actually differs (Create Order saga)
 
 | | Choreography | Orchestration |
 |---|---|---|
@@ -259,3 +467,5 @@ sequenceDiagram
 | Final observable outcome | Identical `Order`/`Ticket`/`Authorization` end states for all 4 scenarios | Identical `Order`/`Ticket`/`Authorization` end states for all 4 scenarios |
 
 Both styles reach the exact same end states for the happy path and all three compensation cases — verified by running the identical manual test scenarios against both. The difference is entirely in *how* that consistency is achieved: distributed reactive logic vs. centralized explicit coordination.
+
+Cancel Order and Revise Order are simpler on this axis: both are strict linear pipelines (kitchen replies, then conditionally accounting replies) rather than a parallel join, so **neither ever needed a `SagaJoinState`/`FailedOrder`-style local state table in either saga mode**, and their orchestrators (`CancelOrderSagaOrchestrator`, `ReviseOrderSagaOrchestrator`) are stateless — no `*SagaInstance` table either. The choreography/orchestration contrast for those two sagas is almost entirely about *how a step is triggered* (reacting to a domain event vs. receiving an explicit command), not about coordination complexity, since there's no join to centralize away.
