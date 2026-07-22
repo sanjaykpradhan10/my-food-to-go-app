@@ -23,15 +23,24 @@ class OrderServiceTest {
     private final RestaurantServicePort fakePort = restaurantId ->
             restaurantId.equals(1L) ? restaurant : null;
 
-    private final OrderRepository orderRepository = mock(OrderRepository.class);
+    private final OrderTransitions orderTransitions = mock(OrderTransitions.class);
     private final OrderCreationSagaTrigger orderCreationSagaTrigger = mock(OrderCreationSagaTrigger.class);
 
     private final OrderService orderService =
-            new OrderService(fakePort, orderRepository, orderCreationSagaTrigger);
+            new OrderService(fakePort, orderTransitions, orderCreationSagaTrigger);
+
+    @SuppressWarnings("unchecked")
+    private static void stubCreateToConstructOrder(OrderTransitions orderTransitions) {
+        when(orderTransitions.create(any(), any(), any(), any())).thenAnswer(invocation -> new Order(
+                invocation.getArgument(0),
+                invocation.getArgument(1),
+                (List<OrderLineItem>) invocation.getArgument(2),
+                OrderStatus.APPROVAL_PENDING));
+    }
 
     @Test
     void createsOrderInApprovalPendingWhenRestaurantAndMenuItemsAreValid() {
-        when(orderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        stubCreateToConstructOrder(orderTransitions);
 
         Order order = orderService.createOrder(1L, 1L, List.of(new OrderLineItem(10L, 2)));
 
@@ -43,7 +52,7 @@ class OrderServiceTest {
 
     @Test
     void triggersSagaWhenOrderIsCreated() {
-        when(orderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        stubCreateToConstructOrder(orderTransitions);
 
         orderService.createOrder(1L, 1L, List.of(new OrderLineItem(10L, 2)));
 
