@@ -105,10 +105,16 @@ e304b90 feat(order-service): add publishRevisionCompensationRequested
 
 PR #14 (https://github.com/sanjaykpradhan10/my-food-to-go-app/pull/14) reviewed and merged to `main` via merge commit `b37d8b6`. Worktree left in place (not superpowers-created — harness-managed).
 
+### Post-merge: documentation sweep
+
+Reviewing/merging the PR surfaced a gap: `docs/ARCHITECTURE.md` only ever documented the Create Order saga, and the three per-service `README.md`s (order/kitchen/accounting) were stale going back to before the `Order` aggregate refactor — neither is touched by every change that should update them, so they'd silently drifted across three sessions (Order aggregate, Cancel Order saga, Revise Order saga) without anyone doing a full pass. Fixed directly on `main` (not through a PR, since this is docs-only and the feature work was already merged):
+
+- `eefc721` — added full Cancel Order + Revise Order sections to `docs/ARCHITECTURE.md` (sequence diagrams matching the existing Create Order style, both saga modes, happy path + every compensation case) plus a new section on the `sagaType` discriminator; rewrote all three per-service READMEs for full API/events/domain-model parity with current code; fixed two stale "not yet applied"/"open question" notes in `CONTEXT.md`'s Concept Understanding section.
+- `f82477f` — codified a new standing rule directly in `CLAUDE.md` ("Full sweep at chapter completion"): whenever a chapter flips to Done, do a full doc sweep across `ARCHITECTURE.md`/per-service READMEs/`CONTEXT.md`'s concept-understanding section, not just whatever the triggering change happens to touch. Also saved as a memory (`feedback_chapter_completion_docs`) as a backstop.
+
 ## Next actions
 
 - [ ] Still-deferred from earlier sessions: consider a Spring Boot 4.x migration now that 3.5.x is permanently frozen (no more OSS patches). Not part of any recent session's scope.
-- [ ] Chapter 6 (event sourcing) — not started, no session yet.
 - [ ] Chapter 6 (event sourcing) — not started, no session yet.
 
 ---
