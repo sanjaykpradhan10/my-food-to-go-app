@@ -112,6 +112,29 @@ class JpaOrderTransitionsTest {
         verify(domainEventPublisher).publish(List.of(new OrderRejectedEvent(42L)));
     }
 
+    // noteCancelled()/undoCancel() share applyBestEffort's orchestration with approve()/reject()
+    // (only the Order method reference differs) — dedicated tests are the only place that would
+    // catch the method reference itself being wrong.
+    @Test
+    void noteCancelledSavesAndPublishesOnSuccess() {
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(orderIn(OrderStatus.CANCEL_PENDING)));
+
+        transitions.noteCancelled(42L, "evt-1");
+
+        verify(orderRepository).save(any());
+        verify(domainEventPublisher).publish(List.of(new OrderCancelConfirmedEvent(42L)));
+    }
+
+    @Test
+    void undoCancelSavesAndPublishesOnSuccess() {
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(orderIn(OrderStatus.CANCEL_PENDING)));
+
+        transitions.undoCancel(42L, "evt-1");
+
+        verify(orderRepository).save(any());
+        verify(domainEventPublisher).publish(List.of(new OrderCancelRejectedEvent(42L)));
+    }
+
     @Test
     void requestRevisionCompensationSilentlyNoOpsWhenOrderNotFound() {
         when(orderRepository.findById(42L)).thenReturn(Optional.empty());

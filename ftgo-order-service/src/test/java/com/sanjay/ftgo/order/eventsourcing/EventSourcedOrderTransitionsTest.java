@@ -80,6 +80,28 @@ class EventSourcedOrderTransitionsTest {
     }
 
     @Test
+    void noteCancelledMovesOrderToCancelledWithoutError() {
+        var created = transitions.create(1L, 1L, List.of(new OrderLineItem(10L, 2)), "evt-1");
+        transitions.approve(created.getId(), "evt-2");
+        transitions.cancel(created.getId(), "evt-3");
+
+        transitions.noteCancelled(created.getId(), "evt-4");
+        // Matches JpaOrderTransitionsTest.noteCancelledSavesAndPublishesOnSuccess's coverage of the
+        // same distinct command path (NoteOrderCancelledCommand, not Approve/RejectOrderCommand).
+    }
+
+    @Test
+    void undoCancelMovesOrderBackToApprovedWithoutError() {
+        var created = transitions.create(1L, 1L, List.of(new OrderLineItem(10L, 2)), "evt-1");
+        transitions.approve(created.getId(), "evt-2");
+        transitions.cancel(created.getId(), "evt-3");
+
+        transitions.undoCancel(created.getId(), "evt-4");
+        // Matches JpaOrderTransitionsTest.undoCancelSavesAndPublishesOnSuccess's coverage of the
+        // same distinct command path (UndoCancelCommand, not Approve/RejectOrderCommand).
+    }
+
+    @Test
     void reviseThenConfirmRevisionSucceedsWithoutError() {
         var created = transitions.create(1L, 1L, List.of(new OrderLineItem(10L, 2)), "evt-1");
         transitions.approve(created.getId(), "evt-2");
