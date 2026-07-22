@@ -31,6 +31,11 @@ public class JpaOrderTransitions implements OrderTransitions {
     }
 
     @Override
+    public java.util.Optional<Order> findById(Long orderId) {
+        return orderRepository.findById(orderId);
+    }
+
+    @Override
     @Transactional
     public TransitionResult cancel(Long orderId, String eventId) {
         Order order = findOrThrow(orderId);

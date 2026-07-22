@@ -44,6 +44,13 @@ class JpaOrderTransitionsTest {
     }
 
     @Test
+    void findByIdReturnsEmptyWhenNotFound() {
+        when(orderRepository.findById(42L)).thenReturn(Optional.empty());
+
+        assertThat(transitions.findById(42L)).isEmpty();
+    }
+
+    @Test
     void cancelThrowsWhenOrderNotFound() {
         when(orderRepository.findById(42L)).thenReturn(Optional.empty());
 

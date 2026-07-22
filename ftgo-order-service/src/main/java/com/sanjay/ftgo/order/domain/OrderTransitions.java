@@ -1,10 +1,13 @@
 package com.sanjay.ftgo.order.domain;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface OrderTransitions {
 
     Order create(Long consumerId, Long restaurantId, List<OrderLineItem> lineItems, String eventId);
+
+    Optional<Order> findById(Long orderId);
 
     TransitionResult cancel(Long orderId, String eventId);
 

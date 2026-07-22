@@ -32,6 +32,15 @@ public class EventSourcedOrderTransitions implements OrderTransitions {
     }
 
     @Override
+    public java.util.Optional<Order> findById(Long orderId) {
+        try {
+            return java.util.Optional.of(toOrder(eventStore.find(orderId)));
+        } catch (com.sanjay.ftgo.order.domain.OrderNotFoundException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    @Override
     public TransitionResult cancel(Long orderId, String eventId) {
         OrderAggregate aggregate =
                 eventStore.update(orderId, a -> a.process(new CancelOrderCommand()), eventId);

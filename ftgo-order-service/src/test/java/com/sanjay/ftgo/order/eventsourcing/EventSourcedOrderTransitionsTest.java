@@ -57,6 +57,18 @@ class EventSourcedOrderTransitionsTest {
     }
 
     @Test
+    void findByIdReturnsEmptyWhenNotFound() {
+        assertThat(transitions.findById(999L)).isEmpty();
+    }
+
+    @Test
+    void findByIdReturnsOrderAfterCreate() {
+        var created = transitions.create(1L, 1L, List.of(new OrderLineItem(10L, 2)), "evt-1");
+
+        assertThat(transitions.findById(created.getId())).isPresent();
+    }
+
+    @Test
     void cancelThrowsWhenWrongState() {
         var created = transitions.create(1L, 1L, List.of(new OrderLineItem(10L, 2)), "evt-1");
 
