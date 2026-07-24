@@ -1,1 +1,4 @@
-// Service-specific dependencies added per chapter
+dependencies {
+    // spring-kafka comes transitively via ftgo-common's `api` dependency
+    implementation project(':ftgo-common')
+}
