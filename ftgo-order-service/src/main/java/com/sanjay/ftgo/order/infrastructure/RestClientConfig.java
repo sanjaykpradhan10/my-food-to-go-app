@@ -31,4 +31,17 @@ public class RestClientConfig {
                 .requestFactory(requestFactory)
                 .build();
     }
+
+    @Bean
+    public RestClient kitchenServiceRestClient(@LoadBalanced RestClient.Builder loadBalancedRestClientBuilder) {
+        ClientHttpRequestFactorySettings settings = ClientHttpRequestFactorySettings.defaults()
+                .withConnectTimeout(Duration.ofSeconds(2))
+                .withReadTimeout(Duration.ofSeconds(2));
+        ClientHttpRequestFactory requestFactory = ClientHttpRequestFactoryBuilder.detect().build(settings);
+
+        return loadBalancedRestClientBuilder
+                .baseUrl("http://ftgo-kitchen-service")
+                .requestFactory(requestFactory)
+                .build();
+    }
 }
