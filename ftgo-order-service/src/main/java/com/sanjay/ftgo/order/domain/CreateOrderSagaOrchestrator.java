@@ -38,6 +38,10 @@ public class CreateOrderSagaOrchestrator {
         String createTicketEventId = UUID.randomUUID().toString();
         sagaCommandPublisher.publish("kitchen.commands", createTicketEventId, "CreateTicket", order.getId(),
                 new KitchenCommand(createTicketEventId, "CreateTicket", order.getId(), totalQuantity, "CreateOrder"));
+
+        String scheduleDeliveryEventId = UUID.randomUUID().toString();
+        sagaCommandPublisher.publish("delivery.commands", scheduleDeliveryEventId, "ScheduleDelivery", order.getId(),
+                new DeliveryCommand(scheduleDeliveryEventId, "ScheduleDelivery", order.getId(), order.getRestaurantId(), "CreateOrder"));
     }
 
     @Transactional
@@ -53,8 +57,13 @@ public class CreateOrderSagaOrchestrator {
         }
 
         if (instance.isFailed()) {
+            // Late-arriving success replies after this instance already failed still need their
+            // own compensation, since fail() only compensates whichever legs it already knew
+            // about at the moment it ran.
             if ("kitchen".equals(participant) && "TicketCreated".equals(eventType)) {
                 sendCancelTicket(orderId);
+            } else if ("delivery".equals(participant) && "DeliveryScheduled".equals(eventType)) {
+                sendReleaseDelivery(orderId);
             }
             return;
         }
@@ -62,6 +71,7 @@ public class CreateOrderSagaOrchestrator {
         switch (participant) {
             case "consumer" -> handleConsumerReply(instance, eventType);
             case "kitchen" -> handleKitchenReply(instance, eventType);
+            case "delivery" -> handleDeliveryReply(instance, eventType);
             case "accounting" -> handleAccountingReply(instance, eventType);
             default -> { }
         }
@@ -87,6 +97,16 @@ public class CreateOrderSagaOrchestrator {
         tryAuthorize(instance);
     }
 
+    private void handleDeliveryReply(CreateOrderSagaInstance instance, String eventType) {
+        if ("DeliverySchedulingFailed".equals(eventType)) {
+            fail(instance);
+            return;
+        }
+        instance.markDeliveryScheduled();
+        sagaInstanceRepository.save(instance);
+        tryAuthorize(instance);
+    }
+
     private void handleAccountingReply(CreateOrderSagaInstance instance, String eventType) {
         Long orderId = instance.getOrderId();
         if ("CardAuthorized".equals(eventType)) {
@@ -97,11 +117,12 @@ public class CreateOrderSagaOrchestrator {
         } else {
             orderTransitions.reject(orderId, UUID.randomUUID().toString());
             sendCancelTicket(orderId);
+            sendReleaseDelivery(orderId);
         }
     }
 
     private void tryAuthorize(CreateOrderSagaInstance instance) {
-        if (!instance.isConsumerVerified() || !instance.isTicketCreated()) {
+        if (!instance.isConsumerVerified() || !instance.isTicketCreated() || !instance.isDeliveryScheduled()) {
             return;
         }
         String eventId = UUID.randomUUID().toString();
@@ -118,12 +139,21 @@ public class CreateOrderSagaOrchestrator {
         if (instance.isTicketCreated()) {
             sendCancelTicket(instance.getOrderId());
         }
+        if (instance.isDeliveryScheduled()) {
+            sendReleaseDelivery(instance.getOrderId());
+        }
     }
 
     private void sendCancelTicket(Long orderId) {
         String eventId = UUID.randomUUID().toString();
         sagaCommandPublisher.publish("kitchen.commands", eventId, "CancelTicket", orderId,
                 new KitchenCommand(eventId, "CancelTicket", orderId, null, "CreateOrder"));
+    }
+
+    private void sendReleaseDelivery(Long orderId) {
+        String eventId = UUID.randomUUID().toString();
+        sagaCommandPublisher.publish("delivery.commands", eventId, "ReleaseDelivery", orderId,
+                new DeliveryCommand(eventId, "ReleaseDelivery", orderId, null, "CreateOrder"));
     }
 
     private int totalQuantity(List<OrderLineItem> lineItems) {

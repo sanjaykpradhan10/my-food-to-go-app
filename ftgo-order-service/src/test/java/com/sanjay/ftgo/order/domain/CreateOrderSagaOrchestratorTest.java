@@ -26,8 +26,22 @@ class CreateOrderSagaOrchestratorTest {
         return new Order(42L, 1L, 1L, java.util.List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
     }
 
+    private CreateOrderSagaInstance instanceWith(Long orderId, boolean ticketCreated, boolean consumerVerified, boolean deliveryScheduled) {
+        CreateOrderSagaInstance instance = new CreateOrderSagaInstance(orderId, 5);
+        if (ticketCreated) {
+            instance.markTicketCreated();
+        }
+        if (consumerVerified) {
+            instance.markConsumerVerified();
+        }
+        if (deliveryScheduled) {
+            instance.markDeliveryScheduled();
+        }
+        return instance;
+    }
+
     @Test
-    void startSendsVerifyConsumerAndCreateTicketCommands() {
+    void startSendsThreeParallelCommands() {
         when(sagaInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         orchestrator.start(pendingOrder());
@@ -35,32 +49,84 @@ class CreateOrderSagaOrchestratorTest {
         verify(sagaInstanceRepository).save(any());
         verify(sagaCommandPublisher).publish(eq("consumer.commands"), any(), eq("VerifyConsumerCommand"), eq(42L), any());
         verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CreateTicket"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ScheduleDelivery"), eq(42L), any());
     }
 
     @Test
-    void authorizesOnceBothConsumerVerifiedAndTicketCreatedRegardlessOfOrder() {
-        CreateOrderSagaInstance instance = new CreateOrderSagaInstance(42L, 5);
+    void authorizesOnlyAfterAllThreeReplies() {
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(sagaInstanceRepository.findById(42L)).thenReturn(Optional.of(instance));
+        when(sagaInstanceRepository.findById(42L)).thenReturn(Optional.of(instanceWith(42L, false, false, false)));
         when(sagaInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         orchestrator.handleReply("e1", "consumer", "ConsumerVerified", 42L, null);
         orchestrator.handleReply("e2", "kitchen", "TicketCreated", 42L, null);
+        verify(sagaCommandPublisher, never()).publish(eq("accounting.commands"), any(), any(), any(), any());
 
+        orchestrator.handleReply("e3", "delivery", "DeliveryScheduled", 42L, null);
         verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("AuthorizeCard"), eq(42L), any());
     }
 
     @Test
     void authorizesRegardlessOfReplyOrder() {
+        when(processedEventRepository.existsById(any())).thenReturn(false);
+        when(sagaInstanceRepository.findById(42L)).thenReturn(Optional.of(instanceWith(42L, false, false, false)));
+        when(sagaInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        orchestrator.handleReply("e1", "kitchen", "TicketCreated", 42L, null);
+        orchestrator.handleReply("e2", "delivery", "DeliveryScheduled", 42L, null);
+        orchestrator.handleReply("e3", "consumer", "ConsumerVerified", 42L, null);
+
+        verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("AuthorizeCard"), eq(42L), any());
+    }
+
+    @Test
+    void deliverySchedulingFailedCompensatesTicketIfCreated() {
+        when(processedEventRepository.existsById(any())).thenReturn(false);
+        when(sagaInstanceRepository.findById(42L)).thenReturn(Optional.of(instanceWith(42L, true, true, false)));
+        when(sagaInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        orchestrator.handleReply("e1", "delivery", "DeliverySchedulingFailed", 42L, "no courier available");
+
+        verify(orderTransitions).reject(eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
+    }
+
+    @Test
+    void ticketCreationFailedCompensatesDeliveryIfScheduled() {
+        when(processedEventRepository.existsById(any())).thenReturn(false);
+        when(sagaInstanceRepository.findById(42L)).thenReturn(Optional.of(instanceWith(42L, false, true, true)));
+        when(sagaInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        orchestrator.handleReply("e1", "kitchen", "TicketCreationFailed", 42L, "order exceeds kitchen capacity");
+
+        verify(orderTransitions).reject(eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
+    }
+
+    @Test
+    void accountingDeclineCompensatesBothTicketAndDelivery() {
+        when(processedEventRepository.existsById(any())).thenReturn(false);
+        when(sagaInstanceRepository.findById(42L)).thenReturn(Optional.of(instanceWith(42L, true, true, true)));
+        when(sagaInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        orchestrator.handleReply("e1", "accounting", "CardAuthorizationFailed", 42L, "order quantity exceeds authorization limit");
+
+        verify(orderTransitions).reject(eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
+    }
+
+    @Test
+    void compensatesLateDeliveryScheduledReplyAfterAlreadyFailed() {
         CreateOrderSagaInstance instance = new CreateOrderSagaInstance(42L, 5);
         when(processedEventRepository.existsById(any())).thenReturn(false);
         when(sagaInstanceRepository.findById(42L)).thenReturn(Optional.of(instance));
         when(sagaInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        orchestrator.handleReply("e1", "kitchen", "TicketCreated", 42L, null);
-        orchestrator.handleReply("e2", "consumer", "ConsumerVerified", 42L, null);
+        orchestrator.handleReply("e1", "consumer", "ConsumerVerificationFailed", 42L, "not found");
+        orchestrator.handleReply("e2", "delivery", "DeliveryScheduled", 42L, null);
 
-        verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("AuthorizeCard"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
     }
 
     @Test
