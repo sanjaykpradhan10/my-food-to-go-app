@@ -1,16 +1,12 @@
 package com.sanjay.ftgo.order.domain;
 
-import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,14 +14,12 @@ import static org.mockito.Mockito.when;
 
 class CancelOrderSagaOrchestratorTest {
 
-    private final OrderRepository orderRepository = mock(OrderRepository.class);
+    private final OrderTransitions orderTransitions = mock(OrderTransitions.class);
     private final ProcessedEventRepository processedEventRepository = mock(ProcessedEventRepository.class);
-    private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
-    private final OrderDomainEventPublisher domainEventPublisher = mock(OrderDomainEventPublisher.class);
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SagaCommandPublisher sagaCommandPublisher = mock(SagaCommandPublisher.class);
 
     private final CancelOrderSagaOrchestrator orchestrator = new CancelOrderSagaOrchestrator(
-            orderRepository, processedEventRepository, outboxEventRepository, domainEventPublisher, objectMapper);
+            orderTransitions, processedEventRepository, sagaCommandPublisher);
 
     private Order cancelPendingOrder() {
         return new Order(42L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.CANCEL_PENDING);
@@ -35,8 +29,7 @@ class CancelOrderSagaOrchestratorTest {
     void startSendsCancelTicketCommand() {
         orchestrator.start(cancelPendingOrder());
 
-        verify(outboxEventRepository).save(argThat(e -> "kitchen.commands".equals(e.getTopic())
-                && "CancelTicket".equals(e.getEventType())));
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
     }
 
     @Test
@@ -45,33 +38,26 @@ class CancelOrderSagaOrchestratorTest {
 
         orchestrator.handleReply("e1", "kitchen", "TicketCancelled", 42L, null);
 
-        verify(outboxEventRepository).save(argThat(e -> "accounting.commands".equals(e.getTopic())
-                && "ReverseAuthorization".equals(e.getEventType())));
+        verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("ReverseAuthorization"), eq(42L), any());
     }
 
     @Test
     void ticketCancellationRejectedUndoesCancelWithoutContactingAccounting() {
-        Order order = cancelPendingOrder();
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(orderRepository.findById(42L)).thenReturn(Optional.of(order));
 
         orchestrator.handleReply("e1", "kitchen", "TicketCancellationRejected", 42L, "cannot cancel once ready for pickup");
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.APPROVED);
-        verify(domainEventPublisher).publish(List.of(new OrderCancelRejectedEvent(42L)));
-        verify(outboxEventRepository, never()).save(argThat(e -> "accounting.commands".equals(e.getTopic())));
+        verify(orderTransitions).undoCancel(eq(42L), any());
+        verify(sagaCommandPublisher, never()).publish(eq("accounting.commands"), any(), any(), any(), any());
     }
 
     @Test
     void authorizationReversedConfirmsCancel() {
-        Order order = cancelPendingOrder();
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(orderRepository.findById(42L)).thenReturn(Optional.of(order));
 
         orchestrator.handleReply("e2", "accounting", "AuthorizationReversed", 42L, null);
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(domainEventPublisher).publish(List.of(new OrderCancelConfirmedEvent(42L)));
+        verify(orderTransitions).noteCancelled(eq(42L), any());
     }
 
     @Test
@@ -80,6 +66,8 @@ class CancelOrderSagaOrchestratorTest {
 
         orchestrator.handleReply("e1", "kitchen", "TicketCancelled", 42L, null);
 
-        verify(orderRepository, never()).findById(any());
+        verify(sagaCommandPublisher, never()).publish(any(), any(), any(), any(), any());
+        verify(orderTransitions, never()).undoCancel(any(), any());
+        verify(orderTransitions, never()).noteCancelled(any(), any());
     }
 }
