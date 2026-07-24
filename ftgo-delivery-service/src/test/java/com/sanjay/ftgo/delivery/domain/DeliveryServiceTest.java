@@ -79,7 +79,7 @@ class DeliveryServiceTest {
         courier.setAvailable(false);
         Delivery delivery = Delivery.schedule(42L, 7L, 9L).delivery();
         when(processedEventRepository.existsById("evt-2")).thenReturn(false);
-        when(deliveryRepository.findByOrderId(42L)).thenReturn(Optional.of(delivery));
+        when(deliveryRepository.findForUpdateByOrderId(42L)).thenReturn(Optional.of(delivery));
         when(courierRepository.findById(9L)).thenReturn(Optional.of(courier));
 
         deliveryService.release("evt-2", 42L);
@@ -93,7 +93,7 @@ class DeliveryServiceTest {
     @Test
     void releaseRecordsFailedOrderWhenDeliveryNotYetScheduled() {
         when(processedEventRepository.existsById("evt-2")).thenReturn(false);
-        when(deliveryRepository.findByOrderId(42L)).thenReturn(Optional.empty());
+        when(deliveryRepository.findForUpdateByOrderId(42L)).thenReturn(Optional.empty());
 
         deliveryService.release("evt-2", 42L);
 
@@ -119,7 +119,7 @@ class DeliveryServiceTest {
         Courier courier = new Courier("Alex");
         courier.setAvailable(false);
         when(processedEventRepository.existsById("evt-4")).thenReturn(false);
-        when(deliveryRepository.findByOrderId(42L)).thenReturn(Optional.of(delivery));
+        when(deliveryRepository.findForUpdateByOrderId(42L)).thenReturn(Optional.of(delivery));
         when(courierRepository.findById(9L)).thenReturn(Optional.of(courier));
 
         deliveryService.handleReleaseDeliveryCommand("evt-4", 42L, "CreateOrder");

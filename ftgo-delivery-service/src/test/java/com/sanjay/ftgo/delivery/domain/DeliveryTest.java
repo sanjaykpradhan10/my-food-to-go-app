@@ -84,10 +84,11 @@ class DeliveryTest {
     }
 
     @Test
-    void cancelFromCancelledThrows() {
+    void cancelFromCancelledIsNoOp() {
         Delivery delivery = Delivery.schedule(42L, 7L, 3L).delivery();
         delivery.cancel();
 
-        assertThatThrownBy(delivery::cancel).isInstanceOf(UnsupportedStateTransitionException.class);
+        assertThat(delivery.cancel()).isEmpty();
+        assertThat(delivery.getStatus()).isEqualTo(DeliveryStatus.CANCELLED);
     }
 }

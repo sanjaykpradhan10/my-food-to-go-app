@@ -108,7 +108,7 @@ public class DeliveryService {
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
 
-        Delivery delivery = deliveryRepository.findByOrderId(orderId).orElse(null);
+        Delivery delivery = deliveryRepository.findForUpdateByOrderId(orderId).orElse(null);
         if (delivery == null) {
             failedOrderRepository.save(new FailedOrder(orderId));
             return;
@@ -130,7 +130,7 @@ public class DeliveryService {
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
 
-        Delivery delivery = deliveryRepository.findByOrderId(orderId).orElse(null);
+        Delivery delivery = deliveryRepository.findForUpdateByOrderId(orderId).orElse(null);
         if (delivery == null) {
             return;
         }

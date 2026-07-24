@@ -84,7 +84,18 @@ public class Delivery {
     // Legal only from SCHEDULED - reused for both a real Cancel Order request and every
     // Create Order compensation path (consumer/kitchen/accounting failure), same as
     // Ticket.cancel() serving both roles.
+    //
+    // Already-CANCELLED is a no-op rather than an error: a decline (e.g. CardAuthorizationFailed)
+    // reaches this service via two independent listeners - AccountingEventListener directly, and
+    // KitchenEventListener once kitchen reacts to the same decline with its own TicketCancelled.
+    // Those carry two different eventIds, so the per-eventId processed_events dedup in
+    // DeliveryService.release() can't catch the duplicate; without this no-op, the second
+    // concurrent release (raced against the first under DeliveryRepository's pessimistic lock)
+    // would throw and re-emit a second DeliveryCancelled event.
     public List<DeliveryDomainEvent> cancel() {
+        if (status == DeliveryStatus.CANCELLED) {
+            return List.of();
+        }
         if (status != DeliveryStatus.SCHEDULED) {
             throw new UnsupportedStateTransitionException(status);
         }
