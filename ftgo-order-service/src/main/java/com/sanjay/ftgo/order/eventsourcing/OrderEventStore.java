@@ -88,7 +88,7 @@ public class OrderEventStore {
         OrderEvent wireEvent = new OrderEvent(eventId, "OrderRevisionCompensationRequested", orderId,
                 null, null, toWireLineItems(aggregate.getLineItems()));
         eventRepository.save(new OrderEventEntity(
-                eventId, wireEvent.eventType(), orderId, serializer.toJson(wireEvent), triggeringEventId));
+                eventId, wireEvent.eventType(), orderId, serializer.toJson(wireEvent), triggeringEventId, false));
     }
 
     private List<OrderEvent.LineItem> toWireLineItems(List<com.sanjay.ftgo.order.domain.OrderLineItem> lineItems) {
@@ -104,10 +104,11 @@ public class OrderEventStore {
         if (snapshotOpt.isPresent()) {
             OrderSnapshot snapshot = snapshotOpt.get();
             aggregate = OrderAggregate.fromSnapshot(readSnapshotData(snapshot.getSnapshotJson()));
-            tail = eventRepository.findByOrderIdAndIdGreaterThanOrderByIdAsc(orderId, snapshot.getLastEventEntityId());
+            tail = eventRepository.findByOrderIdAndReplayableTrueAndIdGreaterThanOrderByIdAsc(
+                    orderId, snapshot.getLastEventEntityId());
         } else {
             aggregate = new OrderAggregate();
-            tail = eventRepository.findByOrderIdOrderByIdAsc(orderId);
+            tail = eventRepository.findByOrderIdAndReplayableTrueOrderByIdAsc(orderId);
         }
         if (snapshotOpt.isEmpty() && tail.isEmpty()) {
             return Optional.empty();

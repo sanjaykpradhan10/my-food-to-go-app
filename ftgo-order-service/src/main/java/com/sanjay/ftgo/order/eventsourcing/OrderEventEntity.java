@@ -32,15 +32,29 @@ public class OrderEventEntity {
     @Column(name = "triggering_event")
     private String triggeringEvent;
 
+    // Almost every row is a real domain event that must be replayed to reconstruct the aggregate.
+    // The one exception is the OrderRevisionCompensationRequested pseudo-event: it shares this
+    // table purely so the existing order_events CDC connector (Task 16) can carry it to
+    // order.events, but it's not part of OrderDomainEvent/OrderEventSerializer.fromWireEvent and
+    // must never be fed into OrderAggregate.apply() during replay.
+    @Column(name = "replayable", nullable = false)
+    private boolean replayable;
+
     protected OrderEventEntity() {
     }
 
     public OrderEventEntity(String eventId, String eventType, Long orderId, String payload, String triggeringEvent) {
+        this(eventId, eventType, orderId, payload, triggeringEvent, true);
+    }
+
+    public OrderEventEntity(String eventId, String eventType, Long orderId, String payload, String triggeringEvent,
+                             boolean replayable) {
         this.eventId = eventId;
         this.eventType = eventType;
         this.orderId = orderId;
         this.payload = payload;
         this.triggeringEvent = triggeringEvent;
+        this.replayable = replayable;
     }
 
     public Long getId() {
@@ -65,5 +79,9 @@ public class OrderEventEntity {
 
     public String getTriggeringEvent() {
         return triggeringEvent;
+    }
+
+    public boolean isReplayable() {
+        return replayable;
     }
 }

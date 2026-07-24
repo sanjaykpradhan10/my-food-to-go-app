@@ -10,6 +10,10 @@ public interface OrderEventEntityRepository extends JpaRepository<OrderEventEnti
 
     List<OrderEventEntity> findByOrderIdAndIdGreaterThanOrderByIdAsc(Long orderId, Long id);
 
+    List<OrderEventEntity> findByOrderIdAndReplayableTrueOrderByIdAsc(Long orderId);
+
+    List<OrderEventEntity> findByOrderIdAndReplayableTrueAndIdGreaterThanOrderByIdAsc(Long orderId, Long id);
+
     long countByOrderId(Long orderId);
 
     OrderEventEntity findTopByOrderIdOrderByIdDesc(Long orderId);

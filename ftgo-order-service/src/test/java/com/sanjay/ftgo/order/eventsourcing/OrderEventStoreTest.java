@@ -88,6 +88,24 @@ class OrderEventStoreTest {
     }
 
     @Test
+    void replaySkipsNonReplayableCompensationRequestedEvent() {
+        OrderAggregate created = createOrder();
+        Long orderId = created.getId();
+        eventStore.update(orderId, aggregate -> aggregate.process(new ApproveOrderCommand()), "t2");
+        eventStore.update(orderId, aggregate -> aggregate.process(new ReviseOrderCommand(
+                new com.sanjay.ftgo.order.domain.OrderRevision(List.of(new OrderLineItem(10L, 5))))), "t3");
+
+        eventStore.appendCompensationRequestedEvent(orderId, "t4");
+
+        OrderAggregate reloaded = eventStore.find(orderId);
+        assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.REVISION_PENDING);
+
+        OrderAggregate afterUpdate = eventStore.update(orderId,
+                aggregate -> aggregate.process(new RejectRevisionCommand()), "t5");
+        assertThat(afterUpdate.getStatus()).isEqualTo(OrderStatus.APPROVED);
+    }
+
+    @Test
     void writesSnapshotAfterConfiguredEventThreshold() {
         OrderAggregate created = createOrder();
         Long orderId = created.getId();
