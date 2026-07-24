@@ -117,6 +117,28 @@ class CreateOrderSagaOrchestratorTest {
     }
 
     @Test
+    void accountingDeclineDoesNotReAuthorizeOnLateCompensationReplies() {
+        // Regression test for the runaway saga found during Task 18 manual e2e verification:
+        // an accounting decline must mark the instance failed so the TicketCancelled/
+        // DeliveryCancelled replies that follow (kitchen/delivery acking the CancelTicket/
+        // ReleaseDelivery compensation commands) don't fall through to the "leg succeeded"
+        // branch and re-trigger tryAuthorize() - which would re-send AuthorizeCard, decline
+        // again, compensate again, doubling every round.
+        CreateOrderSagaInstance instance = instanceWith(42L, true, true, true);
+        when(processedEventRepository.existsById(any())).thenReturn(false);
+        when(sagaInstanceRepository.findById(42L)).thenReturn(Optional.of(instance));
+        when(sagaInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        orchestrator.handleReply("e1", "accounting", "CardAuthorizationFailed", 42L, "declined");
+        orchestrator.handleReply("e2", "kitchen", "TicketCancelled", 42L, null);
+        orchestrator.handleReply("e3", "delivery", "DeliveryCancelled", 42L, null);
+
+        verify(sagaCommandPublisher, never()).publish(eq("accounting.commands"), any(), eq("AuthorizeCard"), any(), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
+    }
+
+    @Test
     void compensatesLateDeliveryScheduledReplyAfterAlreadyFailed() {
         CreateOrderSagaInstance instance = new CreateOrderSagaInstance(42L, 5);
         when(processedEventRepository.existsById(any())).thenReturn(false);

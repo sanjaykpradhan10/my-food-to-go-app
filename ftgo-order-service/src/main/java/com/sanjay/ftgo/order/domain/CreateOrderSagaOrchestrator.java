@@ -115,6 +115,18 @@ public class CreateOrderSagaOrchestrator {
             sagaCommandPublisher.publish("kitchen.commands", eventId, "ConfirmTicket", orderId,
                     new KitchenCommand(eventId, "ConfirmTicket", orderId, null, "CreateOrder"));
         } else {
+            // markFailed() is essential here, not just bookkeeping: without it the instance stays
+            // "in progress", so the TicketCancelled/DeliveryCancelled replies that kitchen/delivery
+            // send back for the CancelTicket/ReleaseDelivery commands below fall through
+            // handleKitchenReply/handleDeliveryReply's default branch - which treats any non-failure
+            // eventType as a success signal - re-marking those legs complete and calling
+            // tryAuthorize() again. That re-sends AuthorizeCard, which declines again, which
+            // compensates again, doubling every round (observed during Task 18 manual e2e
+            // verification: a single accounting decline produced hundreds of duplicate
+            // AuthorizeCard/CancelTicket/ReleaseDelivery commands in an exponential runaway).
+            instance.markFailed();
+            sagaInstanceRepository.save(instance);
+
             orderTransitions.reject(orderId, UUID.randomUUID().toString());
             sendCancelTicket(orderId);
             sendReleaseDelivery(orderId);
