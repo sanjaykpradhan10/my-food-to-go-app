@@ -8,6 +8,20 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: delivery-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+
+outbox:
+  poll-fixed-delay-ms: 2000
+  batch-size: 20
+
+saga:
+  mode: choreography
 
 server:
   port: 8086

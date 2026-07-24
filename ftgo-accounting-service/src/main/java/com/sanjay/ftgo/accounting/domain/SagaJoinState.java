@@ -14,6 +14,7 @@ public class SagaJoinState {
 
     private boolean consumerVerified;
     private boolean ticketCreated;
+    private boolean deliveryScheduled;
     private boolean failed;
     private boolean resolved;
     private Integer totalQuantity;
@@ -28,6 +29,7 @@ public class SagaJoinState {
         this.orderId = orderId;
         this.consumerVerified = false;
         this.ticketCreated = false;
+        this.deliveryScheduled = false;
         this.failed = false;
         this.resolved = false;
     }
@@ -42,6 +44,10 @@ public class SagaJoinState {
 
     public boolean isTicketCreated() {
         return ticketCreated;
+    }
+
+    public boolean isDeliveryScheduled() {
+        return deliveryScheduled;
     }
 
     public boolean isFailed() {
@@ -67,6 +73,10 @@ public class SagaJoinState {
     public void markTicketCreated(Integer totalQuantity) {
         this.ticketCreated = true;
         this.totalQuantity = totalQuantity;
+    }
+
+    public void markDeliveryScheduled() {
+        this.deliveryScheduled = true;
     }
 
     public void markFailed() {

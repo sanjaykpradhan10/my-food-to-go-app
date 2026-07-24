@@ -1,0 +1,67 @@
+// ftgo-delivery-service/src/main/java/com/sanjay/ftgo/delivery/api/DeliveryController.java
+package com.sanjay.ftgo.delivery.api;
+
+import com.sanjay.ftgo.delivery.domain.Delivery;
+import com.sanjay.ftgo.delivery.domain.DeliveryDomainEvent;
+import com.sanjay.ftgo.delivery.domain.DeliveryDomainEventPublisher;
+import com.sanjay.ftgo.delivery.domain.DeliveryNotFoundException;
+import com.sanjay.ftgo.delivery.domain.DeliveryRepository;
+import com.sanjay.ftgo.delivery.domain.UnsupportedStateTransitionException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/deliveries")
+@Transactional
+public class DeliveryController {
+
+    private final DeliveryRepository deliveryRepository;
+    private final DeliveryDomainEventPublisher domainEventPublisher;
+
+    public DeliveryController(DeliveryRepository deliveryRepository, DeliveryDomainEventPublisher domainEventPublisher) {
+        this.deliveryRepository = deliveryRepository;
+        this.domainEventPublisher = domainEventPublisher;
+    }
+
+    @PostMapping("/{deliveryId}/picked-up")
+    public ResponseEntity<Void> pickedUp(@PathVariable Long deliveryId) {
+        Delivery delivery = findDelivery(deliveryId);
+        apply(delivery, delivery.pickUp());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{deliveryId}/delivered")
+    public ResponseEntity<Void> delivered(@PathVariable Long deliveryId) {
+        Delivery delivery = findDelivery(deliveryId);
+        apply(delivery, delivery.deliver());
+        return ResponseEntity.ok().build();
+    }
+
+    private Delivery findDelivery(Long deliveryId) {
+        return deliveryRepository.findById(deliveryId)
+                .orElseThrow(() -> new DeliveryNotFoundException(deliveryId));
+    }
+
+    private void apply(Delivery delivery, List<DeliveryDomainEvent> events) {
+        deliveryRepository.save(delivery);
+        domainEventPublisher.publish(delivery, events);
+    }
+
+    @ExceptionHandler(DeliveryNotFoundException.class)
+    public ResponseEntity<String> handleNotFound(DeliveryNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
+    }
+
+    @ExceptionHandler(UnsupportedStateTransitionException.class)
+    public ResponseEntity<String> handleConflict(UnsupportedStateTransitionException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());
+    }
+}

@@ -57,6 +57,7 @@ All four: `404` if the ticket doesn't exist, `409` on an illegal transition.
 | Choreography | `order.events` | `OrderCreated` (create the ticket); `OrderCancelled` (Cancel Order primary flow); `OrderRevisionProposed` (Revise Order primary flow); `OrderRevisionCompensationRequested` (Revise Order compensation — **not** the terminal `OrderRevisionRejected`, which nothing here reacts to, since by then there's nothing left to undo) |
 | Choreography | `accounting.events` | `CardAuthorized` / `CardAuthorizationFailed` **only** — every other message on this shared topic (`AuthorizationReversed`, `AuthorizationRevised`, `AuthorizationRevisionRejected`) is explicitly ignored. This topic used to be filtered by "not `CardAuthorized` ⇒ treat as failure," which broke once other event types started appearing on it (see "A bug worth knowing about" below) |
 | Choreography | `consumer.events` | `ConsumerVerificationFailed` only (ignores `ConsumerVerified` — ticket creation doesn't wait on it) |
+| Choreography | `delivery.events` | `DeliverySchedulingFailed` only — reuses the existing `ConsumerVerificationFailed` compensation path (`TicketService.handleConsumerVerificationFailed`) rather than a dedicated handler, since both are just "some other Create Order leg failed, cancel the ticket" |
 | Orchestration | `kitchen.commands` | `CreateTicket` / `ConfirmTicket` / `CancelTicket` / `ReviseTicket` / `UndoReviseTicket`, one listener (`KitchenCommandListener`) dispatching on `commandType` |
 
 ## A bug worth knowing about

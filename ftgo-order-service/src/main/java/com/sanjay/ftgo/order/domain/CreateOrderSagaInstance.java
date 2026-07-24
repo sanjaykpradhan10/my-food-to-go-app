@@ -14,6 +14,7 @@ public class CreateOrderSagaInstance {
 
     private boolean consumerVerified;
     private boolean ticketCreated;
+    private boolean deliveryScheduled;
     private boolean failed;
     private Integer totalQuantity;
 
@@ -43,6 +44,10 @@ public class CreateOrderSagaInstance {
         return ticketCreated;
     }
 
+    public boolean isDeliveryScheduled() {
+        return deliveryScheduled;
+    }
+
     public boolean isFailed() {
         return failed;
     }
@@ -61,6 +66,10 @@ public class CreateOrderSagaInstance {
 
     public void markTicketCreated() {
         this.ticketCreated = true;
+    }
+
+    public void markDeliveryScheduled() {
+        this.deliveryScheduled = true;
     }
 
     public void markFailed() {

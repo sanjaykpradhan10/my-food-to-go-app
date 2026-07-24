@@ -33,10 +33,20 @@ class CancelOrderSagaOrchestratorTest {
     }
 
     @Test
-    void ticketCancelledTriggersReverseAuthorization() {
+    void kitchenConfirmedCancellableSendsReleaseDeliveryNotReverseAuthorization() {
         when(processedEventRepository.existsById(any())).thenReturn(false);
 
         orchestrator.handleReply("e1", "kitchen", "TicketCancelled", 42L, null);
+
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
+        verify(sagaCommandPublisher, never()).publish(eq("accounting.commands"), any(), any(), any(), any());
+    }
+
+    @Test
+    void deliveryReleasedSendsReverseAuthorization() {
+        when(processedEventRepository.existsById(any())).thenReturn(false);
+
+        orchestrator.handleReply("e2", "delivery", "DeliveryCancelled", 42L, null);
 
         verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("ReverseAuthorization"), eq(42L), any());
     }
@@ -52,10 +62,10 @@ class CancelOrderSagaOrchestratorTest {
     }
 
     @Test
-    void authorizationReversedConfirmsCancel() {
+    void accountingReversedMarksOrderCancelled() {
         when(processedEventRepository.existsById(any())).thenReturn(false);
 
-        orchestrator.handleReply("e2", "accounting", "AuthorizationReversed", 42L, null);
+        orchestrator.handleReply("e3", "accounting", "AuthorizationReversed", 42L, null);
 
         verify(orderTransitions).noteCancelled(eq(42L), any());
     }

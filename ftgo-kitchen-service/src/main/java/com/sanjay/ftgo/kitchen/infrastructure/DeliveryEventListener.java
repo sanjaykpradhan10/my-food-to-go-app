@@ -1,0 +1,39 @@
+package com.sanjay.ftgo.kitchen.infrastructure;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sanjay.ftgo.kitchen.domain.DeliveryEvent;
+import com.sanjay.ftgo.kitchen.domain.TicketService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+
+@Component
+@ConditionalOnProperty(name = "saga.mode", havingValue = "choreography", matchIfMissing = true)
+public class DeliveryEventListener {
+
+    private static final Logger log = LoggerFactory.getLogger(DeliveryEventListener.class);
+
+    private final TicketService ticketService;
+    private final ObjectMapper objectMapper;
+
+    public DeliveryEventListener(TicketService ticketService, ObjectMapper objectMapper) {
+        this.ticketService = ticketService;
+        this.objectMapper = objectMapper;
+    }
+
+    @KafkaListener(topics = "delivery.events", groupId = "kitchen-service")
+    public void onMessage(String payload) {
+        DeliveryEvent event;
+        try {
+            event = objectMapper.readValue(payload, DeliveryEvent.class);
+        } catch (Exception e) {
+            log.warn("Skipping malformed delivery event: {}", payload, e);
+            return;
+        }
+        if ("DeliverySchedulingFailed".equals(event.eventType())) {
+            ticketService.handleConsumerVerificationFailed(event.eventId(), event.orderId());
+        }
+    }
+}

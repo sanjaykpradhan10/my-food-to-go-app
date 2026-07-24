@@ -8,8 +8,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 // Deliberately stateless, unlike CreateOrderSagaOrchestrator: Cancel Order is a strict
-// linear pipeline (kitchen cancel -> accounting reversal -> order cancelled) with no
-// parallel replies to join, so there's no need for a persisted saga instance table.
+// linear pipeline (kitchen cancel -> delivery release -> accounting reversal -> order
+// cancelled) with no parallel replies to join, so there's no need for a persisted saga
+// instance table.
 @Service
 public class CancelOrderSagaOrchestrator {
 
@@ -41,6 +42,7 @@ public class CancelOrderSagaOrchestrator {
 
         switch (participant) {
             case "kitchen" -> handleKitchenReply(eventType, orderId);
+            case "delivery" -> handleDeliveryReply(eventType, orderId);
             case "accounting" -> handleAccountingReply(eventType, orderId);
             default -> { }
         }
@@ -49,6 +51,15 @@ public class CancelOrderSagaOrchestrator {
     private void handleKitchenReply(String eventType, Long orderId) {
         if ("TicketCancellationRejected".equals(eventType)) {
             orderTransitions.undoCancel(orderId, UUID.randomUUID().toString());
+            return;
+        }
+        String eventId = UUID.randomUUID().toString();
+        sagaCommandPublisher.publish("delivery.commands", eventId, "ReleaseDelivery", orderId,
+                new DeliveryCommand(eventId, "ReleaseDelivery", orderId, null, "CancelOrder"));
+    }
+
+    private void handleDeliveryReply(String eventType, Long orderId) {
+        if (!"DeliveryCancelled".equals(eventType)) {
             return;
         }
         String eventId = UUID.randomUUID().toString();
