@@ -33,9 +33,11 @@ public class AuthorizationCancelService {
         this.objectMapper = objectMapper;
     }
 
-    // Choreography: kitchen's TicketCancelled domain event triggers this directly. There is
-    // no saga.replies channel in play here, so the reversal is broadcast as a domain event
-    // on accounting.events, same as every other choreography-mode transition in this service.
+    // Choreography: delivery-service's DeliveryCancelled domain event triggers this directly
+    // (kitchen -> delivery-release -> accounting-reversal, since delivery-service now sits
+    // between kitchen and accounting in the Cancel Order sequence). There is no saga.replies
+    // channel in play here, so the reversal is broadcast as a domain event on accounting.events,
+    // same as every other choreography-mode transition in this service.
     @Transactional
     public void reverseForChoreography(String eventId, Long orderId) {
         if (processedEventRepository.existsById(eventId)) {
