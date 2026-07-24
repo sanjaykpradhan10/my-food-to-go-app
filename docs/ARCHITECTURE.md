@@ -47,18 +47,20 @@ This combination means a service crash at any point (before/during/after publish
 
 | Topic | Producer | Consumers | Style |
 |---|---|---|---|
-| `order.events` | order-service | consumer-service, kitchen-service | choreography |
-| `consumer.events` | consumer-service | order-service, kitchen-service, accounting-service | choreography |
-| `kitchen.events` | kitchen-service | order-service, accounting-service | choreography |
+| `order.events` | order-service | consumer-service, kitchen-service, delivery-service | choreography |
+| `consumer.events` | consumer-service | order-service, kitchen-service, accounting-service, delivery-service | choreography |
+| `kitchen.events` | kitchen-service | order-service, accounting-service, delivery-service | choreography |
 | `accounting.events` | accounting-service | order-service, kitchen-service | choreography |
+| `delivery.events` | delivery-service | order-service, kitchen-service, accounting-service | choreography |
 | `consumer.commands` | order-service | consumer-service | orchestration |
 | `kitchen.commands` | order-service | kitchen-service | orchestration |
 | `accounting.commands` | order-service | accounting-service | orchestration |
-| `saga.replies` | consumer-service, kitchen-service, accounting-service | order-service | orchestration |
+| `delivery.commands` | order-service | delivery-service | orchestration |
+| `saga.replies` | consumer-service, kitchen-service, accounting-service, delivery-service | order-service | orchestration |
 
 Choreography topics carry domain events (things that already happened: `OrderCreated`, `TicketCreated`, ...). Orchestration topics carry either commands (imperatives: `VerifyConsumerCommand`, `KitchenCommand{commandType=CreateTicket}`, ...) or replies (a single shared `SagaReply{participant, eventType, sagaType, ...}` shape, discriminated by `participant` then `sagaType` — see "Multi-saga routing" below).
 
-None of these 8 topics grew new members as Cancel Order and Revise Order were added — each carries more `eventType`/`commandType` values on the *same* topics (`order.events` also carries `OrderCancelled`/`OrderRevisionProposed`/etc., `kitchen.commands` also carries `CancelTicket`/`ReviseTicket`/`UndoReviseTicket`, and so on), rather than dedicated topics per saga.
+The original 8 topics from Ch.4 never grew new members as Cancel Order and Revise Order were added — each carries more `eventType`/`commandType` values on the *same* topics (`order.events` also carries `OrderCancelled`/`OrderRevisionProposed`/etc., `kitchen.commands` also carries `CancelTicket`/`ReviseTicket`/`UndoReviseTicket`, and so on), rather than dedicated topics per saga. Wiring delivery-service into the Create Order and Cancel Order sagas did add 2 genuinely new topics — `delivery.events` (choreography) and `delivery.commands` (orchestration) — one pair per producer, following the same one-topic-per-producing-service convention as every other saga participant, rather than a dedicated topic per saga.
 
 ## The `SAGA_MODE` switch
 
@@ -70,7 +72,7 @@ SAGA_MODE=orchestration docker compose up -d --build
 
 ## Create Order saga — choreography
 
-No central coordinator. Each service reacts to events published by others and publishes its own in turn. `order-service` listens **directly** to all three possible failure events, so rejecting the order never depends on a chain of other services' compensations completing first.
+No central coordinator. Each service reacts to events published by others and publishes its own in turn. `order-service` listens **directly** to all failure events across all three legs, so rejecting the order never depends on a chain of other services' compensations completing first.
 
 ### Happy path
 
@@ -80,12 +82,14 @@ sequenceDiagram
     participant O as order-service
     participant Con as consumer-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
     C->>O: POST /orders
     O-->>O: Order{APPROVAL_PENDING}
     O-)Con: OrderCreated (order.events)
     O-)K: OrderCreated (order.events)
+    O-)D: OrderCreated (order.events)
     par parallel steps
         Con-->>Con: verify consumer
         Con-)O: ConsumerVerified (consumer.events)
@@ -94,8 +98,11 @@ sequenceDiagram
         K-->>K: Ticket{CREATE_PENDING}
         K-)O: TicketCreated (kitchen.events)
         K-)A: TicketCreated (kitchen.events)
+    and
+        D-->>D: Delivery{SCHEDULED}, courier assigned
+        D-)A: DeliveryScheduled (delivery.events)
     end
-    A-->>A: join resolves (both received) → authorize
+    A-->>A: join resolves (all 3 received) → authorize
     A-)K: CardAuthorized (accounting.events)
     K-->>K: Ticket{AWAITING_ACCEPTANCE}
     K-)O: TicketConfirmed (kitchen.events)
@@ -109,11 +116,13 @@ sequenceDiagram
     participant O as order-service
     participant Con as consumer-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
     Con-->>Con: verification fails
     Con-)O: ConsumerVerificationFailed (consumer.events)
     Con-)K: ConsumerVerificationFailed (consumer.events)
+    Con-)D: ConsumerVerificationFailed (consumer.events)
     Con-)A: ConsumerVerificationFailed (consumer.events)
     O-->>O: Order{REJECTED}
     A-->>A: join abandoned (never authorizes)
@@ -123,6 +132,12 @@ sequenceDiagram
         K-->>K: record FailedOrder(orderId)
         Note over K: OrderCreated arrives later →<br/>ticket created directly as CANCELLED
     end
+    alt delivery already scheduled
+        D-->>D: Delivery{CANCELLED}, courier released
+    else delivery not scheduled yet
+        D-->>D: record FailedOrder(orderId)
+        Note over D: OrderCreated arrives later →<br/>scheduling skipped entirely
+    end
 ```
 
 ### Case B — kitchen capacity exceeded
@@ -131,14 +146,21 @@ sequenceDiagram
 sequenceDiagram
     participant O as order-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
     K-->>K: totalQuantity > capacity limit
     K-)O: TicketCreationFailed (kitchen.events)
     K-)A: TicketCreationFailed (kitchen.events)
+    K-)D: TicketCreationFailed (kitchen.events)
     O-->>O: Order{REJECTED}
     A-->>A: join abandoned (never authorizes)
     Note over K: no ticket ever persisted — nothing to compensate
+    alt delivery already scheduled
+        D-->>D: Delivery{CANCELLED}, courier released
+    else delivery not scheduled yet
+        D-->>D: record FailedOrder(orderId)
+    end
 ```
 
 ### Case C — card authorization declined
@@ -147,19 +169,41 @@ sequenceDiagram
 sequenceDiagram
     participant O as order-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
-    Note over A: join already resolved (both prerequisites succeeded)
+    Note over A: join already resolved (all 3 prerequisites succeeded)
     A-->>A: quantity over authorization limit
     A-)K: CardAuthorizationFailed (accounting.events)
     A-)O: CardAuthorizationFailed (accounting.events)
+    A-)D: CardAuthorizationFailed (accounting.events)
     K-->>K: Ticket{CANCELLED}
+    D-->>D: Delivery{CANCELLED}, courier released
     O-->>O: Order{REJECTED}
+```
+
+### Case D — no courier available
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant K as kitchen-service
+    participant D as delivery-service
+    participant A as accounting-service
+
+    D-->>D: no available courier (all 3 assigned elsewhere)
+    D-)O: DeliverySchedulingFailed (delivery.events)
+    D-)K: DeliverySchedulingFailed (delivery.events)
+    D-)A: DeliverySchedulingFailed (delivery.events)
+    O-->>O: Order{REJECTED}
+    A-->>A: join abandoned (never authorizes)
+    K-->>K: Ticket{CANCELLED}<br/>(kitchen reuses its ConsumerVerificationFailed<br/>compensation handler for this trigger too)
+    Note over D: no Delivery row ever persisted — nothing to compensate
 ```
 
 ## Create Order saga — orchestration
 
-A central `CreateOrderSagaOrchestrator` in order-service sends explicit commands and reacts to replies on a shared `saga.replies` topic. Progress is persisted in `CreateOrderSagaInstance` (with `@Version` optimistic locking — two Kafka consumer threads can race on the same order's saga state, same reasoning as choreography's `SagaJoinState`).
+A central `CreateOrderSagaOrchestrator` in order-service sends explicit commands and reacts to replies on a shared `saga.replies` topic. Progress is persisted in `CreateOrderSagaInstance` (with `@Version` optimistic locking — three Kafka consumer threads can race on the same order's saga state, same reasoning as choreography's `SagaJoinState`).
 
 ### Happy path
 
@@ -169,6 +213,7 @@ sequenceDiagram
     participant O as order-service
     participant Con as consumer-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
     C->>O: POST /orders
@@ -181,10 +226,14 @@ sequenceDiagram
         O-)K: CreateTicket (kitchen.commands)
         K-->>K: Ticket{CREATE_PENDING}
         K-)O: TicketCreated (saga.replies)
+    and
+        O-)D: ScheduleDelivery (delivery.commands)
+        D-->>D: Delivery{SCHEDULED}, courier assigned
+        D-)O: DeliveryScheduled (saga.replies)
     end
-    O-->>O: both prerequisites received
+    O-->>O: all 3 prerequisites received
     O-)A: AuthorizeCard (accounting.commands)
-    Note over A: no join needed — orchestrator<br/>already confirmed both succeeded
+    Note over A: no join needed — orchestrator<br/>already confirmed all 3 succeeded
     A-->>A: authorize
     A-)O: CardAuthorized (saga.replies)
     O-->>O: Order{APPROVED}  (approved directly, no wait)
@@ -201,6 +250,7 @@ sequenceDiagram
     participant O as order-service
     participant Con as consumer-service
     participant K as kitchen-service
+    participant D as delivery-service
 
     O-)Con: VerifyConsumerCommand (consumer.commands)
     Con-->>Con: verification fails
@@ -215,6 +265,15 @@ sequenceDiagram
         O-)K: CancelTicketCommand (kitchen.commands)
         K-->>K: Ticket{CANCELLED}
     end
+    alt delivery already scheduled (reply already received)
+        O-)D: ReleaseDelivery (delivery.commands)
+        D-->>D: Delivery{CANCELLED}, courier released
+    else delivery not scheduled yet
+        Note over O: DeliveryScheduled reply arrives later,<br/>after instance.failed=true —<br/>orchestrator compensates then
+        D-)O: DeliveryScheduled (saga.replies)
+        O-)D: ReleaseDelivery (delivery.commands)
+        D-->>D: Delivery{CANCELLED}, courier released
+    end
 ```
 
 ### Case B — kitchen capacity exceeded
@@ -223,12 +282,19 @@ sequenceDiagram
 sequenceDiagram
     participant O as order-service
     participant K as kitchen-service
+    participant D as delivery-service
 
     O-)K: CreateTicket (kitchen.commands)
     K-->>K: totalQuantity > capacity limit
     K-)O: TicketCreationFailed (saga.replies)
     O-->>O: Order{REJECTED}
     Note over K: no ticket ever persisted — nothing to compensate
+    alt delivery already scheduled
+        O-)D: ReleaseDelivery (delivery.commands)
+        D-->>D: Delivery{CANCELLED}, courier released
+    else delivery not scheduled yet
+        Note over O: compensated once the reply arrives, same as Case A
+    end
 ```
 
 ### Case C — card authorization declined
@@ -237,29 +303,53 @@ sequenceDiagram
 sequenceDiagram
     participant O as order-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
-    Note over O: both prerequisites already succeeded
+    Note over O: all 3 prerequisites already succeeded
     O-)A: AuthorizeCard (accounting.commands)
     A-->>A: quantity over authorization limit
     A-)O: CardAuthorizationFailed (saga.replies)
     O-->>O: Order{REJECTED}
     O-)K: CancelTicketCommand (kitchen.commands)
     K-->>K: Ticket{CANCELLED}
+    O-)D: ReleaseDelivery (delivery.commands)
+    D-->>D: Delivery{CANCELLED}, courier released
+```
+
+### Case D — no courier available
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant K as kitchen-service
+    participant D as delivery-service
+
+    O-)D: ScheduleDelivery (delivery.commands)
+    D-->>D: no available courier
+    D-)O: DeliverySchedulingFailed (saga.replies)
+    O-->>O: Order{REJECTED}
+    Note over D: no Delivery row ever persisted — nothing to compensate
+    alt ticket already created
+        O-)K: CancelTicketCommand (kitchen.commands)
+        K-->>K: Ticket{CANCELLED}
+    else ticket not created yet
+        Note over O: compensated once the reply arrives, same as Case A
+    end
 ```
 
 ## Multi-saga routing (`sagaType`)
 
-Three independent sagas (Create Order, Cancel Order, Revise Order) all run through order-service, and in orchestration mode all three share the same `kitchen.commands`/`accounting.commands`/`saga.replies` topics rather than getting dedicated ones each. `SagaReply`, `KitchenCommand`, and `AccountingCommand` each carry a `sagaType` field (`"CreateOrder"` / `"CancelOrder"` / `"ReviseOrder"`) so:
+Three independent sagas (Create Order, Cancel Order, Revise Order) all run through order-service, and in orchestration mode all three share the same `kitchen.commands`/`delivery.commands`/`accounting.commands`/`saga.replies` topics rather than getting dedicated ones each. `SagaReply`, `KitchenCommand`, `DeliveryCommand`, and `AccountingCommand` each carry a `sagaType` field (`"CreateOrder"` / `"CancelOrder"` / `"ReviseOrder"`) so:
 
 - order-service's one shared `OrchestratorReplyListener` (on `saga.replies`) routes each reply to the correct one of the three orchestrators (`CreateOrderSagaOrchestrator`, `CancelOrderSagaOrchestrator`, `ReviseOrderSagaOrchestrator`) before that orchestrator's own `handleReply` is ever called — no orchestrator has to guess which saga a message belongs to.
-- A command type shared by more than one saga stays unambiguous. `KitchenCommand{commandType=CancelTicket}` is sent by both Create Order's compensation path (`CreateOrderSagaOrchestrator.sendCancelTicket`) and Cancel Order's primary flow (`CancelOrderSagaOrchestrator.start`) — the same `TicketService.handleCancelTicketCommand` handles both, and echoes the inbound `sagaType` back into its reply unchanged, since it cannot infer which saga's request it's servicing from `commandType` alone.
+- A command type shared by more than one saga stays unambiguous. `KitchenCommand{commandType=CancelTicket}` is sent by both Create Order's compensation path (`CreateOrderSagaOrchestrator.sendCancelTicket`) and Cancel Order's primary flow (`CancelOrderSagaOrchestrator.start`) — the same `TicketService.handleCancelTicketCommand` handles both, and echoes the inbound `sagaType` back into its reply unchanged, since it cannot infer which saga's request it's servicing from `commandType` alone. `DeliveryCommand{commandType=ReleaseDelivery}` has the identical shape: sent by both Create Order's compensation path (`CreateOrderSagaOrchestrator.sendReleaseDelivery`) and Cancel Order's primary flow (`CancelOrderSagaOrchestrator.handleKitchenReply`), handled by one `DeliveryService.handleReleaseDeliveryCommand` that echoes `sagaType` back the same way.
 
 `CancelOrderSagaOrchestrator` and `ReviseOrderSagaOrchestrator` are both deliberately stateless (no persisted saga-instance table, unlike `CreateOrderSagaOrchestrator`'s `CreateOrderSagaInstance`) — both are strict linear pipelines with no parallel replies to join, so `Order`'s own `status` (and, for Revise, its `lineItems`/`pendingRevisedLineItems`) is sufficient saga state on its own.
 
 ## Cancel Order saga — choreography
 
-`Order.cancel()` is only legal from `APPROVED`, meaning the `Ticket` has already been confirmed and may be anywhere from `AWAITING_ACCEPTANCE` through `PICKED_UP` — cancellation isn't guaranteed to succeed. The saga asks kitchen first; accounting's authorization reversal only happens if kitchen confirms the ticket cancellable.
+`Order.cancel()` is only legal from `APPROVED`, meaning the `Ticket` has already been confirmed and may be anywhere from `AWAITING_ACCEPTANCE` through `PICKED_UP` — cancellation isn't guaranteed to succeed. The saga asks kitchen first; delivery release and accounting's authorization reversal only happen if kitchen confirms the ticket cancellable. Delivery-service's step was inserted between kitchen and accounting (kitchen → delivery-release → accounting-reversal) rather than run in parallel with either, since it's a genuine sequential dependency, not a join — accounting now waits for `DeliveryCancelled` (not `TicketCancelled` directly) before reversing the authorization.
 
 ### Happy path
 
@@ -268,13 +358,16 @@ sequenceDiagram
     participant C as Client
     participant O as order-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
     C->>O: POST /orders/{id}/cancel
     O-->>O: Order{CANCEL_PENDING}
     O-)K: OrderCancelled (order.events)
     K-->>K: Ticket.cancel() succeeds
-    K-)A: TicketCancelled (kitchen.events)
+    K-)D: TicketCancelled (kitchen.events)
+    D-->>D: Delivery.cancel(), courier released
+    D-)A: DeliveryCancelled (delivery.events)
     A-->>A: Authorization.reverse()
     A-)O: AuthorizationReversed (accounting.events)
     O-->>O: Order{CANCELLED}
@@ -286,18 +379,19 @@ sequenceDiagram
 sequenceDiagram
     participant O as order-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
     O-)K: OrderCancelled (order.events)
     K-->>K: Ticket.cancel() throws<br/>(READY_FOR_PICKUP or later)
     K-)O: TicketCancellationRejected (kitchen.events)
     O-->>O: Order{APPROVED} (undoCancel)
-    Note over A: never contacted — nothing was ever<br/>reversed, so no re-authorization is needed
+    Note over D,A: neither ever contacted — nothing was ever<br/>released or reversed, so no compensation is needed
 ```
 
 ## Cancel Order saga — orchestration
 
-Stateless `CancelOrderSagaOrchestrator`, driven purely by `saga.replies` (`sagaType=CancelOrder`), using `Order`'s own status as the implicit saga state.
+Stateless `CancelOrderSagaOrchestrator`, driven purely by `saga.replies` (`sagaType=CancelOrder`), using `Order`'s own status as the implicit saga state. Same sequential 3-step chain as choreography — kitchen → delivery-release → accounting-reversal.
 
 ### Happy path
 
@@ -306,6 +400,7 @@ sequenceDiagram
     participant C as Client
     participant O as order-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
     C->>O: POST /orders/{id}/cancel
@@ -313,6 +408,9 @@ sequenceDiagram
     O-)K: CancelTicket (kitchen.commands, sagaType=CancelOrder)
     K-->>K: Ticket.cancel() succeeds
     K-)O: TicketCancelled (saga.replies, sagaType=CancelOrder)
+    O-)D: ReleaseDelivery (delivery.commands, sagaType=CancelOrder)
+    D-->>D: Delivery.cancel(), courier released
+    D-)O: DeliveryCancelled (saga.replies, sagaType=CancelOrder)
     O-)A: ReverseAuthorization (accounting.commands, sagaType=CancelOrder)
     A-->>A: Authorization.reverse()
     A-)O: AuthorizationReversed (saga.replies, sagaType=CancelOrder)
@@ -325,13 +423,14 @@ sequenceDiagram
 sequenceDiagram
     participant O as order-service
     participant K as kitchen-service
+    participant D as delivery-service
     participant A as accounting-service
 
     O-)K: CancelTicket (kitchen.commands, sagaType=CancelOrder)
     K-->>K: Ticket.cancel() throws
     K-)O: TicketCancellationRejected (saga.replies, sagaType=CancelOrder)
     O-->>O: Order{APPROVED} (undoCancel)
-    Note over A: never contacted
+    Note over D,A: neither ever contacted
 ```
 
 ## Revise Order saga — choreography
@@ -459,16 +558,16 @@ sequenceDiagram
 | | Choreography | Orchestration |
 |---|---|---|
 | Coordination | Implicit — each service reacts to peers' events | Explicit — one orchestrator drives every step |
-| accounting-service join | Needed (`SagaJoinState`, waits for 2 events in either order) | **Not needed at all** — orchestrator already waited |
-| kitchen-service race table | Needed (`FailedOrder`, absorbs a timing race) | **Not needed** — orchestrator absorbs the race centrally |
+| accounting-service join | Needed (`SagaJoinState`, waits for 3 events — consumer, kitchen, delivery — in any order) | **Not needed at all** — orchestrator already waited |
+| kitchen-service / delivery-service race table | Needed (`FailedOrder` in each — absorbs a timing race) | **Not needed** — orchestrator absorbs the race centrally |
 | Order approval trigger | Waits for kitchen's `TicketConfirmed` echo | Approves directly on `CardAuthorized`, no wait |
-| New Kafka topics | 0 (reuses existing domain-event topics) | 4 (3 command topics + 1 shared reply topic) |
+| New Kafka topics | 0 (reuses existing domain-event topics) | 5 (4 command topics + 1 shared reply topic) |
 | Saga state persistence | Distributed across each service's own local state (`SagaJoinState`, `FailedOrder`) | Centralized in one `CreateOrderSagaInstance` per order |
-| Final observable outcome | Identical `Order`/`Ticket`/`Authorization` end states for all 4 scenarios | Identical `Order`/`Ticket`/`Authorization` end states for all 4 scenarios |
+| Final observable outcome | Identical `Order`/`Ticket`/`Delivery`/`Authorization` end states for all 5 scenarios | Identical `Order`/`Ticket`/`Delivery`/`Authorization` end states for all 5 scenarios |
 
-Both styles reach the exact same end states for the happy path and all three compensation cases — verified by running the identical manual test scenarios against both. The difference is entirely in *how* that consistency is achieved: distributed reactive logic vs. centralized explicit coordination.
+Both styles reach the exact same end states for the happy path and all four compensation cases (including the delivery-specific "no courier available" case) — verified by running the identical manual test scenarios against both. The difference is entirely in *how* that consistency is achieved: distributed reactive logic vs. centralized explicit coordination.
 
-Cancel Order and Revise Order are simpler on this axis: both are strict linear pipelines (kitchen replies, then conditionally accounting replies) rather than a parallel join, so **neither ever needed a `SagaJoinState`/`FailedOrder`-style local state table in either saga mode**, and their orchestrators (`CancelOrderSagaOrchestrator`, `ReviseOrderSagaOrchestrator`) are stateless — no `*SagaInstance` table either. The choreography/orchestration contrast for those two sagas is almost entirely about *how a step is triggered* (reacting to a domain event vs. receiving an explicit command), not about coordination complexity, since there's no join to centralize away.
+Cancel Order and Revise Order are simpler on this axis: Cancel Order is now a 3-step sequential chain (kitchen → delivery-release → accounting-reversal) and Revise Order stays a 2-step chain (kitchen, then conditionally accounting) — neither is a parallel join, so **neither ever needed a `SagaJoinState`/`FailedOrder`-style local state table in either saga mode**, and their orchestrators (`CancelOrderSagaOrchestrator`, `ReviseOrderSagaOrchestrator`) are stateless — no `*SagaInstance` table either. The choreography/orchestration contrast for those two sagas is almost entirely about *how a step is triggered* (reacting to a domain event vs. receiving an explicit command), not about coordination complexity, since there's no join to centralize away.
 
 ## Event sourcing — `Order` aggregate (Ch.6)
 
@@ -535,7 +634,7 @@ sequenceDiagram
     participant Pub as EventSourcedSagaCommandPublisher
     participant DB as order_saga_command_requests
     participant Poll as SagaCommandRequestPublisher (poller)
-    participant K as Kafka (kitchen.commands / accounting.commands / consumer.commands)
+    participant K as Kafka (kitchen.commands / delivery.commands / accounting.commands / consumer.commands)
 
     Orch->>Pub: publish(topic, eventId, eventType, orderId, command)
     Pub->>DB: insert row {target_topic, payload, published_at=null}
@@ -546,4 +645,4 @@ sequenceDiagram
     end
 ```
 
-This table is kept separate from `order_events` on purpose: the same CDC connector that now watches `order_events` unconditionally routes every row there to `order.events`, and saga commands are meant for `kitchen.commands`/`accounting.commands`/`consumer.commands` instead — mixing them into one table would either leak saga commands onto `order.events` or require per-row topic filtering in the connector config, which Debezium's Outbox Event Router SMT doesn't support per-row. `order_saga_command_requests` is polled independently by its own `SagaCommandRequestPublisher`, sending before marking published — an at-least-once send, matching every other outbox-style publisher in this codebase.
+This table is kept separate from `order_events` on purpose: the same CDC connector that now watches `order_events` unconditionally routes every row there to `order.events`, and saga commands are meant for `kitchen.commands`/`delivery.commands`/`accounting.commands`/`consumer.commands` instead — mixing them into one table would either leak saga commands onto `order.events` or require per-row topic filtering in the connector config, which Debezium's Outbox Event Router SMT doesn't support per-row. `order_saga_command_requests` is polled independently by its own `SagaCommandRequestPublisher`, sending before marking published — an at-least-once send, matching every other outbox-style publisher in this codebase.

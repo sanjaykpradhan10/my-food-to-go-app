@@ -79,6 +79,7 @@ Legal only from `APPROVED` — moves the order to `REVISION_PENDING`, records th
 |---|---|---|
 | `consumer.commands` | `VerifyConsumerCommand` | Create Order saga start |
 | `kitchen.commands` | `KitchenCommand{commandType=CreateTicket\|ConfirmTicket\|CancelTicket\|ReviseTicket\|UndoReviseTicket}` | Depending on which saga/step |
+| `delivery.commands` | `DeliveryCommand{commandType=ScheduleDelivery\|ReleaseDelivery}` | Create Order saga start (`ScheduleDelivery`, parallel with `VerifyConsumerCommand`/`CreateTicket`); Create Order compensation or Cancel Order's delivery-release step (`ReleaseDelivery`, `sagaType` distinguishes which) |
 | `accounting.commands` | `AccountingCommand{commandType=AuthorizeCard\|ReverseAuthorization\|ReviseAuthorization}` | Depending on which saga/step |
 
 Every command/reply carries a `sagaType` (`CreateOrder`/`CancelOrder`/`ReviseOrder`) so the three sagas can safely share these topics — see the root [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md#multi-saga-routing-sagatype).
@@ -89,13 +90,14 @@ Every command/reply carries a `sagaType` (`CreateOrder`/`CancelOrder`/`ReviseOrd
 |---|---|---|
 | Choreography | `consumer.events` | `ConsumerVerificationFailed` → reject (Create Order) |
 | Choreography | `kitchen.events` | `TicketConfirmed`/`TicketCreationFailed` (Create Order); `TicketCancellationRejected` (Cancel Order); `TicketRevisionRejected`/`TicketRevisionUndone` (Revise Order) |
+| Choreography | `delivery.events` | `DeliverySchedulingFailed` → reject (Create Order). `DeliveryScheduled` doesn't move `Order` — only the failure case triggers a saga transition here, mirroring `kitchen.events` only reacting to `TicketCreationFailed`, not `TicketCreated` |
 | Choreography | `accounting.events` | `CardAuthorizationFailed` (Create Order); `AuthorizationReversed` (Cancel Order); `AuthorizationRevised`/`AuthorizationRevisionRejected` (Revise Order) |
 | Orchestration | `saga.replies` | All participants' replies for all 3 sagas, routed by `sagaType` then dispatched to the matching orchestrator |
 
 ## Saga participants
 
-- **Create Order** — choreography: `OrderSagaService` (three thin listeners, approve/reject guarded on `APPROVAL_PENDING`). Orchestration: `CreateOrderSagaOrchestrator` + persisted `CreateOrderSagaInstance` (parallel join, `@Version` optimistic locking).
-- **Cancel Order** — choreography: `OrderCancelSagaService`. Orchestration: stateless `CancelOrderSagaOrchestrator`. Sequential, kitchen-gates-accounting — `Ticket.cancel()` can legitimately fail (ticket already `READY_FOR_PICKUP`+), in which case `Order.undoCancel()` fires immediately and accounting is never contacted.
+- **Create Order** — choreography: `OrderSagaService` (three thin listeners, approve/reject guarded on `APPROVAL_PENDING`). Orchestration: `CreateOrderSagaOrchestrator` + persisted `CreateOrderSagaInstance` (**3-way parallel join** — consumer verification, ticket creation, and delivery scheduling all run in parallel; accounting authorization only fires once all three flags (`consumerVerified`/`ticketCreated`/`deliveryScheduled`) are set, `@Version` optimistic locking). A failure on any one of the three legs rejects the order and compensates whichever of the other two legs already succeeded (`sendCancelTicket`/`sendReleaseDelivery`), including late-arriving success replies that land after the instance is already marked failed.
+- **Cancel Order** — choreography: `OrderCancelSagaService`. Orchestration: stateless `CancelOrderSagaOrchestrator`. Sequential 3-step chain — kitchen ticket cancellation → delivery release → accounting authorization reversal. `Ticket.cancel()` can legitimately fail (ticket already `READY_FOR_PICKUP`+), in which case `Order.undoCancel()` fires immediately and neither delivery nor accounting is ever contacted.
 - **Revise Order** — choreography: `OrderReviseSagaService`. Orchestration: stateless `ReviseOrderSagaOrchestrator`. Same kitchen-gates-accounting shape as Cancel Order, but kitchen *provisionally applies* the revised quantity before accounting is asked (since re-authorization is a real threshold check accounting can decline, unlike Cancel Order's unconditional reversal) — `compensateRevision`/`sendUndoReviseTicket` trigger kitchen to revert if accounting declines, and `Order` stays `REVISION_PENDING` until that reversion is confirmed.
 
 Each saga's trigger from the REST layer is a small `OrderXSagaTrigger` interface (`OrderCancellationSagaTrigger`, `OrderRevisionSagaTrigger`) with a choreography impl (publishes domain events directly) and an orchestration impl (calls the orchestrator's `start()`), selected by `@ConditionalOnProperty(saga.mode=...)` — `OrderController` depends only on the interface, never on which mode is active.
