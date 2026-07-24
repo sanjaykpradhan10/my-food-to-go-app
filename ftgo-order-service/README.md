@@ -5,7 +5,7 @@
 
 ## Role
 
-Owns the `Order` aggregate — the entry point for placing an order and the service whose status field records the outcome of every saga this order participates in: `APPROVAL_PENDING → APPROVED`/`REJECTED` (Create Order), `APPROVED ⇄ CANCEL_PENDING ⇄ CANCELLED` (Cancel Order), and `APPROVED ⇄ REVISION_PENDING` (Revise Order). It plays two different roles depending on `SAGA_MODE`: in **choreography** it's just one more participant reacting to events published by the other services; in **orchestration** it's the coordinator for all three sagas, driving kitchen-service and accounting-service via explicit commands and tracking each saga's progress. Both implementations live in the codebase simultaneously, gated by Spring's `@ConditionalOnProperty`.
+Owns the `Order` aggregate — the entry point for placing an order and the service whose status field records the outcome of every saga this order participates in: `APPROVAL_PENDING → APPROVED`/`REJECTED` (Create Order), `APPROVED ⇄ CANCEL_PENDING ⇄ CANCELLED` (Cancel Order), and `APPROVED ⇄ REVISION_PENDING` (Revise Order). It plays two different roles depending on `SAGA_MODE`: in **choreography** it's just one more participant reacting to events published by the other services; in **orchestration** it's the coordinator for all three sagas, driving kitchen-service and accounting-service via explicit commands and tracking each saga's progress. Both implementations live in the codebase simultaneously, gated by Spring's `@ConditionalOnProperty`. Independently of `SAGA_MODE`, `Order` can be persisted either via JPA or via a hand-rolled event store, switchable via `PERSISTENCE_MODE` (see "Persistence" below) — all four combinations of the two switches are supported.
 
 It also validates every order against restaurant-service before creating it, via a synchronous REST call wrapped in a circuit breaker (the Ch.3 RPI pattern) — this part of the service is identical regardless of saga mode.
 
@@ -71,7 +71,7 @@ Legal only from `APPROVED` — moves the order to `REVISION_PENDING`, records th
 | `OrderRevisionProposed` | `/revise` called (`REVISION_PENDING`) — carries the proposed line items |
 | `OrderRevised` | Revise Order saga confirms — carries the applied line items |
 | `OrderRevisionRejected` | Revise Order saga rejects (either outright, or after compensation finalizes) |
-| `OrderRevisionCompensationRequested` | Revise Order saga's compensation trigger only — **not** a real `Order` state transition (status stays `REVISION_PENDING`); carries the original, untouched line items so kitchen knows what to revert to |
+| `OrderRevisionCompensationRequested` | Revise Order saga's compensation trigger only — **not** a real `Order` state transition (status stays `REVISION_PENDING`); carries the original, untouched line items so kitchen knows what to revert to. Wire-only in both persistence modes: written straight to the outbox in JPA mode, and written to `order_events` with `replayable=false` in event-sourcing mode (see "Persistence" below) — it must never be fed back into `OrderAggregate.apply()` |
 
 ### Publishes (orchestration mode)
 
@@ -108,6 +108,20 @@ See [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the full side-by-side 
 - `OrderStatus`: `APPROVAL_PENDING`, `APPROVED`, `REJECTED`, `CANCEL_PENDING`, `CANCELLED`, `REVISION_PENDING`.
 - 8 guarded state-changing methods (`noteApproved`/`noteRejected`/`cancel`/`noteCancelled`/`undoCancel`/`revise`/`confirmRevision`/`rejectRevision`), each returning a `List<OrderDomainEvent>` (class-per-event, sealed interface) rather than being hand-built inline by callers.
 - `CreateOrderSagaInstance` (orchestration mode only) — `orderId` PK, `consumerVerified`/`ticketCreated`/`failed` flags, `totalQuantity`, `@Version`. Cancel Order and Revise Order have no equivalent table (both orchestrators are stateless).
+- `OrderAggregate` (`event-sourcing` mode only) — the same state machine as `Order`, re-expressed as `process(OrderCommand) -> List<OrderDomainEvent>` / `apply(OrderDomainEvent)` for event-sourced replay; `OrderEventStore` translates between it and the persisted `Order` used everywhere else via `EventSourcedOrderTransitions`.
+
+## Persistence
+
+`Order` supports two persistence paths, switchable via `PERSISTENCE_MODE` (env var, default `jpa`, alternate `event-sourcing`):
+
+- **`jpa`** — a mutable `orders` row, updated in place, `@Version` optimistic locking. Unchanged from Ch.5.
+- **`event-sourcing`** — `Order`'s full history stored as an append-only sequence in `order_events`, current state derived by replay. Implemented by `OrderAggregate` (the book's `process(Command)`/`apply(Event)` split) and `OrderEventStore` (the hand-rolled event store: append, replay from a snapshot plus the tail since it, and a dedicated `order_aggregate_version` table for optimistic locking rather than deriving a version from event count). Snapshots (`order_snapshots`) are written every 5 events, purely as a replay-cost optimization with no effect on correctness.
+
+Every call site (`OrderController`, `OrderService`, all three choreography saga services, all three orchestration saga orchestrators) depends on an `OrderTransitions` facade rather than `OrderRepository` directly, so neither persistence mode leaks into business logic. A parallel `SagaCommandPublisher` facade does the same for orchestration-mode outbound saga commands. In event-sourcing mode, those commands are written to a table deliberately separate from `order_events` — `order_saga_command_requests` (`OrderSagaCommandRequest`), polled by its own `SagaCommandRequestPublisher` — so the Debezium connector that watches `order_events` (see below) never leaks a saga command meant for `kitchen.commands`/`accounting.commands`/`consumer.commands` onto `order.events`.
+
+Choreography-mode publishing in event-sourcing mode reuses the existing Ch.3 Debezium/Kafka Connect connector rather than a new pipeline: `order_events`' columns (`event_id`/`event_type`/`order_id`/`payload`) are deliberately named to match `outbox_events`', so the same connector's `table.include.list` covers both tables and routes both to `order.events` unchanged.
+
+Full mechanics, sequence diagrams, and the wire-only-pseudo-event gotcha this surfaced (`OrderEventEntity.replayable`) are documented in the root [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md#event-sourcing--order-aggregate-ch6).
 
 ## Idempotency & reliability
 
