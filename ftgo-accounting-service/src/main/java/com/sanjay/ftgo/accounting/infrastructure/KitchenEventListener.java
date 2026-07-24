@@ -1,7 +1,6 @@
 package com.sanjay.ftgo.accounting.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sanjay.ftgo.accounting.domain.AuthorizationCancelService;
 import com.sanjay.ftgo.accounting.domain.AuthorizationReviseService;
 import com.sanjay.ftgo.accounting.domain.KitchenEvent;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
@@ -18,16 +17,13 @@ public class KitchenEventListener {
     private static final Logger log = LoggerFactory.getLogger(KitchenEventListener.class);
 
     private final SagaJoinService sagaJoinService;
-    private final AuthorizationCancelService authorizationCancelService;
     private final AuthorizationReviseService authorizationReviseService;
     private final ObjectMapper objectMapper;
 
     public KitchenEventListener(SagaJoinService sagaJoinService,
-                                 AuthorizationCancelService authorizationCancelService,
                                  AuthorizationReviseService authorizationReviseService,
                                  ObjectMapper objectMapper) {
         this.sagaJoinService = sagaJoinService;
-        this.authorizationCancelService = authorizationCancelService;
         this.authorizationReviseService = authorizationReviseService;
         this.objectMapper = objectMapper;
     }
@@ -44,7 +40,9 @@ public class KitchenEventListener {
         switch (event.eventType()) {
             case "TicketCreated", "TicketCreationFailed" ->
                     sagaJoinService.handleKitchenEvent(event.eventId(), event.orderId(), event.eventType(), event.totalQuantity());
-            case "TicketCancelled" -> authorizationCancelService.reverseForChoreography(event.eventId(), event.orderId());
+            // TicketCancelled no longer triggers a reversal here: Cancel Order's saga
+            // sequence now runs kitchen -> delivery-release -> accounting, so
+            // DeliveryEventListener reacts to DeliveryCancelled instead.
             case "TicketQuantityRevised" ->
                     authorizationReviseService.reviseForChoreography(event.eventId(), event.orderId(), event.totalQuantity());
             default -> { }
