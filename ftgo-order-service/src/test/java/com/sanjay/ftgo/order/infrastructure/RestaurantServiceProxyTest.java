@@ -1,9 +1,13 @@
 package com.sanjay.ftgo.order.infrastructure;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.sanjay.ftgo.order.domain.Found;
+import com.sanjay.ftgo.order.domain.NotFound;
 import com.sanjay.ftgo.order.domain.RestaurantInfo;
 import com.sanjay.ftgo.order.domain.RestaurantNotFoundException;
 import com.sanjay.ftgo.order.domain.RestaurantServiceUnavailableException;
+import com.sanjay.ftgo.order.domain.SectionResult;
+import com.sanjay.ftgo.order.domain.Unavailable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,5 +88,43 @@ class RestaurantServiceProxyTest {
 
         assertThatThrownBy(() -> restaurantServiceProxy.findRestaurant(1L))
                 .isInstanceOf(RestaurantServiceUnavailableException.class);
+    }
+
+    @Test
+    void findRestaurantForViewReturnsFoundOnSuccess() {
+        wireMockServer.stubFor(get(urlEqualTo("/restaurants/1"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {"id":1,"name":"Ajanta Indian Cuisine","menuItems":[]}
+                                """)));
+
+        SectionResult<RestaurantInfo> result = restaurantServiceProxy.findRestaurantForView(1L);
+
+        assertThat(result).isInstanceOf(Found.class);
+        assertThat(((Found<RestaurantInfo>) result).data().name()).isEqualTo("Ajanta Indian Cuisine");
+    }
+
+    @Test
+    void findRestaurantForViewReturnsNotFoundOn404() {
+        wireMockServer.stubFor(get(urlEqualTo("/restaurants/99"))
+                .willReturn(aResponse().withStatus(404)));
+
+        SectionResult<RestaurantInfo> result = restaurantServiceProxy.findRestaurantForView(99L);
+
+        assertThat(result).isInstanceOf(NotFound.class);
+    }
+
+    @Test
+    void findRestaurantForViewReturnsUnavailableWhenCircuitOpen() {
+        wireMockServer.stop();
+
+        SectionResult<RestaurantInfo> result = null;
+        for (int i = 0; i < 4; i++) {
+            result = restaurantServiceProxy.findRestaurantForView(1L);
+        }
+
+        assertThat(result).isInstanceOf(Unavailable.class);
     }
 }
