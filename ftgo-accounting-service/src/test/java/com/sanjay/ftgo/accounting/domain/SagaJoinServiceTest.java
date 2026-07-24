@@ -38,6 +38,7 @@ class SagaJoinServiceTest {
 
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
         service.handleKitchenEvent("e2", 42L, "TicketCreated", 5);
+        service.handleDeliveryEvent("e3", 42L, "DeliveryScheduled");
 
         verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.AUTHORIZED));
         verify(domainEventPublisher).publish(java.util.List.of(new CardAuthorizedEvent(42L)));
@@ -52,6 +53,7 @@ class SagaJoinServiceTest {
 
         service.handleKitchenEvent("e1", 42L, "TicketCreated", 5);
         service.handleConsumerEvent("e2", 42L, "ConsumerVerified");
+        service.handleDeliveryEvent("e3", 42L, "DeliveryScheduled");
 
         verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.AUTHORIZED));
         verify(domainEventPublisher).publish(java.util.List.of(new CardAuthorizedEvent(42L)));
@@ -66,6 +68,7 @@ class SagaJoinServiceTest {
 
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
         service.handleKitchenEvent("e2", 42L, "TicketCreated", 15);
+        service.handleDeliveryEvent("e3", 42L, "DeliveryScheduled");
 
         verify(authorizationRepository).save(argThat(a -> a.getStatus() == AuthorizationStatus.DECLINED));
         verify(domainEventPublisher).publish(java.util.List.of(new CardAuthorizationDeclinedEvent(42L, "order quantity exceeds authorization limit")));
@@ -119,12 +122,46 @@ class SagaJoinServiceTest {
 
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
         service.handleKitchenEvent("e2", 42L, "TicketCreated", 5);
+        service.handleDeliveryEvent("e3", 42L, "DeliveryScheduled");
 
         // Late/duplicate redelivery for the same order, after the join has already resolved.
-        service.handleKitchenEvent("e3", 42L, "TicketCreated", 5);
+        service.handleKitchenEvent("e4", 42L, "TicketCreated", 5);
 
         verify(authorizationRepository, times(1)).save(any());
         verify(domainEventPublisher, times(1)).publish(any());
+    }
+
+    @Test
+    void resolvesOnlyAfterAllThreeLegs() {
+        SagaJoinState state = new SagaJoinState(42L);
+        when(processedEventRepository.existsById(any())).thenReturn(false);
+        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
+        service.handleKitchenEvent("e2", 42L, "TicketCreated", 5);
+        // Not resolved yet - delivery leg still missing
+        verify(authorizationRepository, never()).save(any());
+
+        service.handleDeliveryEvent("e3", 42L, "DeliveryScheduled");
+
+        verify(authorizationRepository, times(1)).save(any());
+    }
+
+    @Test
+    void deliverySchedulingFailedMarksJoinFailed() {
+        SagaJoinState state = new SagaJoinState(42L);
+        when(processedEventRepository.existsById(any())).thenReturn(false);
+        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.handleDeliveryEvent("e1", 42L, "DeliverySchedulingFailed");
+
+        service.handleConsumerEvent("e2", 42L, "ConsumerVerified");
+        service.handleKitchenEvent("e3", 42L, "TicketCreated", 5);
+
+        // Join already marked failed by the delivery leg - never authorizes
+        verify(authorizationRepository, never()).save(any());
     }
 
     @Test

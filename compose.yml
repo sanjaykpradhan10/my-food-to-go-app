@@ -180,5 +180,21 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
 
+  delivery-service:
+    build:
+      context: .
+      dockerfile: ftgo-delivery-service/Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_delivery
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SAGA_MODE: ${SAGA_MODE:-choreography}
+
 volumes:
   mysql-data:

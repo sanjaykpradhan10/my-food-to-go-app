@@ -1,7 +1,6 @@
 package com.sanjay.ftgo.accounting.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sanjay.ftgo.accounting.domain.AuthorizationCancelService;
 import com.sanjay.ftgo.accounting.domain.AuthorizationReviseService;
 import com.sanjay.ftgo.accounting.domain.SagaJoinService;
 import org.junit.jupiter.api.Test;
@@ -14,12 +13,11 @@ import static org.mockito.Mockito.verify;
 class KitchenEventListenerTest {
 
     private final SagaJoinService sagaJoinService = mock(SagaJoinService.class);
-    private final AuthorizationCancelService authorizationCancelService = mock(AuthorizationCancelService.class);
     private final AuthorizationReviseService authorizationReviseService = mock(AuthorizationReviseService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final KitchenEventListener listener =
-            new KitchenEventListener(sagaJoinService, authorizationCancelService, authorizationReviseService, objectMapper);
+            new KitchenEventListener(sagaJoinService, authorizationReviseService, objectMapper);
 
     @Test
     void routesTicketCreatedToSagaJoinService() {
@@ -30,19 +28,6 @@ class KitchenEventListenerTest {
         listener.onMessage(payload);
 
         verify(sagaJoinService).handleKitchenEvent("e1", 42L, "TicketCreated", 5);
-        verify(authorizationCancelService, never()).reverseForChoreography(any(), any());
-    }
-
-    @Test
-    void routesTicketCancelledToAuthorizationCancelService() {
-        String payload = """
-                {"eventId":"e2","eventType":"TicketCancelled","orderId":42,"ticketId":1,"totalQuantity":null,"reason":null}
-                """;
-
-        listener.onMessage(payload);
-
-        verify(authorizationCancelService).reverseForChoreography("e2", 42L);
-        verify(sagaJoinService, never()).handleKitchenEvent(any(), any(), any(), any());
     }
 
     @Test
@@ -54,7 +39,19 @@ class KitchenEventListenerTest {
         listener.onMessage(payload);
 
         verify(sagaJoinService, never()).handleKitchenEvent(any(), any(), any(), any());
-        verify(authorizationCancelService, never()).reverseForChoreography(any(), any());
+    }
+
+    @Test
+    void ignoresTicketCancelled() {
+        // TicketCancelled is no longer handled here; DeliveryEventListener owns the
+        // reversal trigger now (reacting to DeliveryCancelled instead).
+        String payload = """
+                {"eventId":"e2","eventType":"TicketCancelled","orderId":42,"ticketId":1,"totalQuantity":null,"reason":null}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(sagaJoinService, never()).handleKitchenEvent(any(), any(), any(), any());
     }
 
     @Test

@@ -84,6 +84,29 @@ public class SagaJoinService {
     }
 
     @Transactional
+    public void handleDeliveryEvent(String eventId, Long orderId, String eventType) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        SagaJoinState state = sagaJoinStateRepository.findById(orderId).orElseGet(() -> new SagaJoinState(orderId));
+        if (state.isResolved() || state.isFailed()) {
+            return;
+        }
+
+        if ("DeliverySchedulingFailed".equals(eventType)) {
+            state.markFailed();
+            sagaJoinStateRepository.save(state);
+            return;
+        }
+
+        state.markDeliveryScheduled();
+        sagaJoinStateRepository.save(state);
+        tryResolve(state);
+    }
+
+    @Transactional
     public void handleAuthorizeCardCommand(String eventId, Long orderId, Integer totalQuantity) {
         if (processedEventRepository.existsById(eventId)) {
             return;
@@ -109,7 +132,10 @@ public class SagaJoinService {
     }
 
     private void tryResolve(SagaJoinState state) {
-        if (!state.isConsumerVerified() || !state.isTicketCreated()) {
+        // 3-way join: authorization must wait for delivery scheduling too, since
+        // delivery-service is wired into the Create Order saga as a parallel leg
+        // (Ch.7 prerequisite work — see docs/superpowers/specs/2026-07-24-delivery-aggregate-saga-design.md).
+        if (!state.isConsumerVerified() || !state.isTicketCreated() || !state.isDeliveryScheduled()) {
             return;
         }
         state.markResolved();
