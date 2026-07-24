@@ -62,6 +62,10 @@ public class Ticket {
         return totalQuantity;
     }
 
+    public ZonedDateTime getReadyBy() {
+        return readyBy;
+    }
+
     public List<TicketDomainEvent> confirm() {
         if (state != TicketState.CREATE_PENDING) {
             throw new UnsupportedStateTransitionException(state);
