@@ -133,7 +133,8 @@ public class SagaJoinService {
 
     private void tryResolve(SagaJoinState state) {
         // 3-way join: authorization must wait for delivery scheduling too, since
-        // Chapter 9 wires delivery-service into the Create Order saga as a parallel leg.
+        // delivery-service is wired into the Create Order saga as a parallel leg
+        // (Ch.7 prerequisite work — see docs/superpowers/specs/2026-07-24-delivery-aggregate-saga-design.md).
         if (!state.isConsumerVerified() || !state.isTicketCreated() || !state.isDeliveryScheduled()) {
             return;
         }
