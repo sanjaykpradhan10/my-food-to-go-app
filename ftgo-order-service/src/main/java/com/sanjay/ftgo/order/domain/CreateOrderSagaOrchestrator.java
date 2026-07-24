@@ -1,13 +1,7 @@
 package com.sanjay.ftgo.order.domain;
 
-import com.sanjay.ftgo.common.outbox.OutboxEvent;
-import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEvent;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,27 +11,19 @@ import java.util.UUID;
 @Service
 public class CreateOrderSagaOrchestrator {
 
-    private static final Logger log = LoggerFactory.getLogger(CreateOrderSagaOrchestrator.class);
-
     private final CreateOrderSagaInstanceRepository sagaInstanceRepository;
-    private final OrderRepository orderRepository;
+    private final OrderTransitions orderTransitions;
     private final ProcessedEventRepository processedEventRepository;
-    private final OutboxEventRepository outboxEventRepository;
-    private final OrderDomainEventPublisher domainEventPublisher;
-    private final ObjectMapper objectMapper;
+    private final SagaCommandPublisher sagaCommandPublisher;
 
     public CreateOrderSagaOrchestrator(CreateOrderSagaInstanceRepository sagaInstanceRepository,
-                                        OrderRepository orderRepository,
+                                        OrderTransitions orderTransitions,
                                         ProcessedEventRepository processedEventRepository,
-                                        OutboxEventRepository outboxEventRepository,
-                                        OrderDomainEventPublisher domainEventPublisher,
-                                        ObjectMapper objectMapper) {
+                                        SagaCommandPublisher sagaCommandPublisher) {
         this.sagaInstanceRepository = sagaInstanceRepository;
-        this.orderRepository = orderRepository;
+        this.orderTransitions = orderTransitions;
         this.processedEventRepository = processedEventRepository;
-        this.outboxEventRepository = outboxEventRepository;
-        this.domainEventPublisher = domainEventPublisher;
-        this.objectMapper = objectMapper;
+        this.sagaCommandPublisher = sagaCommandPublisher;
     }
 
     @Transactional
@@ -46,11 +32,11 @@ public class CreateOrderSagaOrchestrator {
         sagaInstanceRepository.save(new CreateOrderSagaInstance(order.getId(), totalQuantity));
 
         String verifyEventId = UUID.randomUUID().toString();
-        publishCommand("consumer.commands", verifyEventId, "VerifyConsumerCommand", order.getId(),
+        sagaCommandPublisher.publish("consumer.commands", verifyEventId, "VerifyConsumerCommand", order.getId(),
                 new VerifyConsumerCommand(verifyEventId, order.getId(), order.getConsumerId()));
 
         String createTicketEventId = UUID.randomUUID().toString();
-        publishCommand("kitchen.commands", createTicketEventId, "CreateTicket", order.getId(),
+        sagaCommandPublisher.publish("kitchen.commands", createTicketEventId, "CreateTicket", order.getId(),
                 new KitchenCommand(createTicketEventId, "CreateTicket", order.getId(), totalQuantity, "CreateOrder"));
     }
 
@@ -102,18 +88,15 @@ public class CreateOrderSagaOrchestrator {
     }
 
     private void handleAccountingReply(CreateOrderSagaInstance instance, String eventType) {
-        Order order = orderRepository.findById(instance.getOrderId()).orElse(null);
-        if (order == null) {
-            return;
-        }
+        Long orderId = instance.getOrderId();
         if ("CardAuthorized".equals(eventType)) {
-            approveOrder(order);
+            orderTransitions.approve(orderId, UUID.randomUUID().toString());
             String eventId = UUID.randomUUID().toString();
-            publishCommand("kitchen.commands", eventId, "ConfirmTicket", instance.getOrderId(),
-                    new KitchenCommand(eventId, "ConfirmTicket", instance.getOrderId(), null, "CreateOrder"));
+            sagaCommandPublisher.publish("kitchen.commands", eventId, "ConfirmTicket", orderId,
+                    new KitchenCommand(eventId, "ConfirmTicket", orderId, null, "CreateOrder"));
         } else {
-            rejectOrder(order);
-            sendCancelTicket(instance.getOrderId());
+            orderTransitions.reject(orderId, UUID.randomUUID().toString());
+            sendCancelTicket(orderId);
         }
     }
 
@@ -122,7 +105,7 @@ public class CreateOrderSagaOrchestrator {
             return;
         }
         String eventId = UUID.randomUUID().toString();
-        publishCommand("accounting.commands", eventId, "AuthorizeCard", instance.getOrderId(),
+        sagaCommandPublisher.publish("accounting.commands", eventId, "AuthorizeCard", instance.getOrderId(),
                 new AccountingCommand(eventId, "AuthorizeCard", instance.getOrderId(), instance.getTotalQuantity(), "CreateOrder"));
     }
 
@@ -130,10 +113,7 @@ public class CreateOrderSagaOrchestrator {
         instance.markFailed();
         sagaInstanceRepository.save(instance);
 
-        Order order = orderRepository.findById(instance.getOrderId()).orElse(null);
-        if (order != null) {
-            rejectOrder(order);
-        }
+        orderTransitions.reject(instance.getOrderId(), UUID.randomUUID().toString());
 
         if (instance.isTicketCreated()) {
             sendCancelTicket(instance.getOrderId());
@@ -142,43 +122,11 @@ public class CreateOrderSagaOrchestrator {
 
     private void sendCancelTicket(Long orderId) {
         String eventId = UUID.randomUUID().toString();
-        publishCommand("kitchen.commands", eventId, "CancelTicket", orderId,
+        sagaCommandPublisher.publish("kitchen.commands", eventId, "CancelTicket", orderId,
                 new KitchenCommand(eventId, "CancelTicket", orderId, null, "CreateOrder"));
-    }
-
-    private void approveOrder(Order order) {
-        try {
-            List<OrderDomainEvent> events = order.noteApproved();
-            orderRepository.save(order);
-            domainEventPublisher.publish(events);
-        } catch (UnsupportedStateTransitionException e) {
-            log.debug("Ignoring approve for order {}: {}", order.getId(), e.getMessage());
-        }
-    }
-
-    private void rejectOrder(Order order) {
-        try {
-            List<OrderDomainEvent> events = order.noteRejected();
-            orderRepository.save(order);
-            domainEventPublisher.publish(events);
-        } catch (UnsupportedStateTransitionException e) {
-            log.debug("Ignoring reject for order {}: {}", order.getId(), e.getMessage());
-        }
     }
 
     private int totalQuantity(List<OrderLineItem> lineItems) {
         return lineItems.stream().mapToInt(OrderLineItem::quantity).sum();
-    }
-
-    private void publishCommand(String topic, String eventId, String eventType, Long orderId, Object command) {
-        outboxEventRepository.save(new OutboxEvent(eventId, eventType, orderId, topic, toJson(command)));
-    }
-
-    private String toJson(Object command) {
-        try {
-            return objectMapper.writeValueAsString(command);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize saga command", e);
-        }
     }
 }

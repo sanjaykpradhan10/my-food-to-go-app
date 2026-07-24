@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 @ConditionalOnProperty(name = "saga.mode", havingValue = "choreography", matchIfMissing = true)
+@ConditionalOnProperty(name = "persistence.mode", havingValue = "jpa", matchIfMissing = true)
 public class ChoreographyOrderCreationSagaTrigger implements OrderCreationSagaTrigger {
 
     private final OrderDomainEventPublisher domainEventPublisher;

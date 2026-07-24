@@ -6,12 +6,13 @@ import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
 import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderNotFoundException;
-import com.sanjay.ftgo.order.domain.OrderRepository;
 import com.sanjay.ftgo.order.domain.OrderRevisionSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderService;
 import com.sanjay.ftgo.order.domain.OrderStatus;
+import com.sanjay.ftgo.order.domain.OrderTransitions;
 import com.sanjay.ftgo.order.domain.RestaurantNotFoundException;
 import com.sanjay.ftgo.order.domain.RestaurantServiceUnavailableException;
+import com.sanjay.ftgo.order.domain.TransitionResult;
 import com.sanjay.ftgo.order.domain.UnsupportedStateTransitionException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +21,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -40,7 +40,7 @@ class OrderControllerTest {
     private OrderService orderService;
 
     @MockitoBean
-    private OrderRepository orderRepository;
+    private OrderTransitions orderTransitions;
 
     @MockitoBean
     private OrderCancellationSagaTrigger cancellationSagaTrigger;
@@ -134,8 +134,9 @@ class OrderControllerTest {
 
     @Test
     void cancelsAnApprovedOrder() throws Exception {
-        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
-        when(orderRepository.findById(5L)).thenReturn(Optional.of(order));
+        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.CANCEL_PENDING);
+        when(orderTransitions.cancel(eq(5L), any()))
+                .thenReturn(new TransitionResult(order, List.of(new com.sanjay.ftgo.order.domain.OrderCancelledEvent(5L))));
 
         mockMvc.perform(post("/orders/5/cancel"))
                 .andExpect(status().isOk())
@@ -146,7 +147,7 @@ class OrderControllerTest {
 
     @Test
     void returns404WhenCancellingUnknownOrder() throws Exception {
-        when(orderRepository.findById(99L)).thenReturn(Optional.empty());
+        when(orderTransitions.cancel(eq(99L), any())).thenThrow(new OrderNotFoundException(99L));
 
         mockMvc.perform(post("/orders/99/cancel"))
                 .andExpect(status().isNotFound());
@@ -154,8 +155,7 @@ class OrderControllerTest {
 
     @Test
     void returns409WhenCancellingAnOrderThatCannotBeCancelled() throws Exception {
-        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
-        when(orderRepository.findById(5L)).thenReturn(Optional.of(order));
+        when(orderTransitions.cancel(eq(5L), any())).thenThrow(new OrderCannotBeCancelledException(5L));
 
         mockMvc.perform(post("/orders/5/cancel"))
                 .andExpect(status().isConflict());
@@ -163,8 +163,9 @@ class OrderControllerTest {
 
     @Test
     void revisesAnApprovedOrder() throws Exception {
-        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
-        when(orderRepository.findById(5L)).thenReturn(Optional.of(order));
+        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.REVISION_PENDING);
+        when(orderTransitions.revise(eq(5L), any(), any())).thenReturn(new TransitionResult(order,
+                List.of(new com.sanjay.ftgo.order.domain.OrderRevisionProposedEvent(5L, List.of(new OrderLineItem(10L, 5))))));
 
         mockMvc.perform(post("/orders/5/revise")
                         .contentType("application/json")
@@ -179,7 +180,7 @@ class OrderControllerTest {
 
     @Test
     void returns404WhenRevisingUnknownOrder() throws Exception {
-        when(orderRepository.findById(99L)).thenReturn(Optional.empty());
+        when(orderTransitions.revise(eq(99L), any(), any())).thenThrow(new OrderNotFoundException(99L));
 
         mockMvc.perform(post("/orders/99/revise")
                         .contentType("application/json")
@@ -191,8 +192,8 @@ class OrderControllerTest {
 
     @Test
     void returns409WhenRevisingAnOrderNotYetApproved() throws Exception {
-        Order order = new Order(5L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
-        when(orderRepository.findById(5L)).thenReturn(Optional.of(order));
+        when(orderTransitions.revise(eq(5L), any(), any()))
+                .thenThrow(new UnsupportedStateTransitionException(OrderStatus.APPROVAL_PENDING));
 
         mockMvc.perform(post("/orders/5/revise")
                         .contentType("application/json")

@@ -7,6 +7,7 @@ import java.util.List;
 
 @Service
 @ConditionalOnProperty(name = "saga.mode", havingValue = "choreography", matchIfMissing = true)
+@ConditionalOnProperty(name = "persistence.mode", havingValue = "jpa", matchIfMissing = true)
 public class ChoreographyOrderRevisionSagaTrigger implements OrderRevisionSagaTrigger {
 
     private final OrderDomainEventPublisher domainEventPublisher;

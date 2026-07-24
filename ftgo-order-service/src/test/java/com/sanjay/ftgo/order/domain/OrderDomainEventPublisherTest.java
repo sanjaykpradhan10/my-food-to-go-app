@@ -14,7 +14,7 @@ class OrderDomainEventPublisherTest {
 
     private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
     private final OrderDomainEventPublisher publisher =
-            new OrderDomainEventPublisher(outboxEventRepository, new ObjectMapper());
+            new OrderDomainEventPublisher(outboxEventRepository, new OrderEventSerializer(new ObjectMapper()));
 
     @Test
     void publishOrderCreatedKeepsTheSameWireShapeAsBeforeTheRefactor() {

@@ -55,6 +55,12 @@ public class Order {
         this(null, consumerId, restaurantId, lineItems, status);
     }
 
+    public Order(Long id, Long consumerId, Long restaurantId, List<OrderLineItem> lineItems, OrderStatus status,
+                 List<OrderLineItem> pendingRevisedLineItems) {
+        this(id, consumerId, restaurantId, lineItems, status);
+        this.pendingRevisedLineItems = pendingRevisedLineItems;
+    }
+
     public Long getId() {
         return id;
     }

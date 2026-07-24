@@ -4,15 +4,15 @@ import com.sanjay.ftgo.order.domain.MenuItemNotFoundException;
 import com.sanjay.ftgo.order.domain.Order;
 import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
 import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
-import com.sanjay.ftgo.order.domain.OrderDomainEvent;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderNotFoundException;
-import com.sanjay.ftgo.order.domain.OrderRepository;
 import com.sanjay.ftgo.order.domain.OrderRevision;
 import com.sanjay.ftgo.order.domain.OrderRevisionSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderService;
+import com.sanjay.ftgo.order.domain.OrderTransitions;
 import com.sanjay.ftgo.order.domain.RestaurantNotFoundException;
 import com.sanjay.ftgo.order.domain.RestaurantServiceUnavailableException;
+import com.sanjay.ftgo.order.domain.TransitionResult;
 import com.sanjay.ftgo.order.domain.UnsupportedStateTransitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,21 +25,22 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/orders")
 public class OrderController {
 
     private final OrderService orderService;
-    private final OrderRepository orderRepository;
+    private final OrderTransitions orderTransitions;
     private final OrderCancellationSagaTrigger cancellationSagaTrigger;
     private final OrderRevisionSagaTrigger revisionSagaTrigger;
 
-    public OrderController(OrderService orderService, OrderRepository orderRepository,
+    public OrderController(OrderService orderService, OrderTransitions orderTransitions,
                             OrderCancellationSagaTrigger cancellationSagaTrigger,
                             OrderRevisionSagaTrigger revisionSagaTrigger) {
         this.orderService = orderService;
-        this.orderRepository = orderRepository;
+        this.orderTransitions = orderTransitions;
         this.cancellationSagaTrigger = cancellationSagaTrigger;
         this.revisionSagaTrigger = revisionSagaTrigger;
     }
@@ -67,28 +68,21 @@ public class OrderController {
     @PostMapping("/{id}/cancel")
     @Transactional
     public ResponseEntity<OrderResponse> cancel(@PathVariable Long id) {
-        Order order = findOrder(id);
-        List<OrderDomainEvent> events = order.cancel();
-        orderRepository.save(order);
-        cancellationSagaTrigger.onOrderCancelled(order, events);
-        return ResponseEntity.ok(OrderResponse.from(order));
+        TransitionResult result = orderTransitions.cancel(id, UUID.randomUUID().toString());
+        cancellationSagaTrigger.onOrderCancelled(result.order(), result.events());
+        return ResponseEntity.ok(OrderResponse.from(result.order()));
     }
 
     @PostMapping("/{id}/revise")
     @Transactional
     public ResponseEntity<OrderResponse> revise(@PathVariable Long id, @RequestBody ReviseOrderRequest request) {
-        Order order = findOrder(id);
         List<OrderLineItem> revisedLineItems = request.lineItems().stream()
                 .map(item -> new OrderLineItem(item.menuItemId(), item.quantity()))
                 .toList();
-        List<OrderDomainEvent> events = order.revise(new OrderRevision(revisedLineItems));
-        orderRepository.save(order);
-        revisionSagaTrigger.onOrderRevised(order, events);
-        return ResponseEntity.ok(OrderResponse.from(order));
-    }
-
-    private Order findOrder(Long id) {
-        return orderRepository.findById(id).orElseThrow(() -> new OrderNotFoundException(id));
+        TransitionResult result =
+                orderTransitions.revise(id, new OrderRevision(revisedLineItems), UUID.randomUUID().toString());
+        revisionSagaTrigger.onOrderRevised(result.order(), result.events());
+        return ResponseEntity.ok(OrderResponse.from(result.order()));
     }
 
     @ExceptionHandler({RestaurantNotFoundException.class, MenuItemNotFoundException.class, OrderNotFoundException.class})

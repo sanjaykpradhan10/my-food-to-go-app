@@ -12,14 +12,14 @@ import java.util.stream.Collectors;
 public class OrderService {
 
     private final RestaurantServicePort restaurantServicePort;
-    private final OrderRepository orderRepository;
+    private final OrderTransitions orderTransitions;
     private final OrderCreationSagaTrigger orderCreationSagaTrigger;
 
     public OrderService(RestaurantServicePort restaurantServicePort,
-                         OrderRepository orderRepository,
+                         OrderTransitions orderTransitions,
                          OrderCreationSagaTrigger orderCreationSagaTrigger) {
         this.restaurantServicePort = restaurantServicePort;
-        this.orderRepository = orderRepository;
+        this.orderTransitions = orderTransitions;
         this.orderCreationSagaTrigger = orderCreationSagaTrigger;
     }
 
@@ -37,9 +37,9 @@ public class OrderService {
             }
         }
 
-        Order order = orderRepository.save(new Order(consumerId, restaurantId, lineItems, OrderStatus.APPROVAL_PENDING));
-
         String eventId = UUID.randomUUID().toString();
+        Order order = orderTransitions.create(consumerId, restaurantId, lineItems, eventId);
+
         orderCreationSagaTrigger.onOrderCreated(order, eventId);
 
         return order;
