@@ -102,6 +102,25 @@ class DeliveryServiceTest {
     }
 
     @Test
+    void releaseIsIdempotentAgainstAlreadyCancelledDelivery() {
+        // Simulates a second racing release() call that acquires the lock after a first racer
+        // already committed the CANCELLED status - cancel() returns List.of() on this delivery.
+        Delivery delivery = Delivery.schedule(42L, 7L, 9L).delivery();
+        delivery.cancel();
+        assertThat(delivery.getStatus()).isEqualTo(DeliveryStatus.CANCELLED);
+        when(processedEventRepository.existsById("evt-2b")).thenReturn(false);
+        when(deliveryRepository.findForUpdateByOrderId(42L)).thenReturn(Optional.of(delivery));
+
+        deliveryService.release("evt-2b", 42L);
+
+        // Must not re-touch the courier (it may have since been reassigned to a different order)
+        // or publish a duplicate DeliveryCancelled domain event.
+        verify(courierRepository, never()).findById(any());
+        verify(courierRepository, never()).save(any());
+        verify(domainEventPublisher, never()).publish(any(), any());
+    }
+
+    @Test
     void handleScheduleDeliveryCommandRepliesDeliveryScheduled() {
         Courier courier = new Courier("Alex");
         when(courierRepository.findFirstByAvailableTrue()).thenReturn(Optional.of(courier));
@@ -127,5 +146,26 @@ class DeliveryServiceTest {
         assertThat(delivery.getStatus()).isEqualTo(DeliveryStatus.CANCELLED);
         assertThat(courier.isAvailable()).isTrue();
         verify(outboxEventRepository, times(1)).save(any());
+    }
+
+    @Test
+    void handleReleaseDeliveryCommandIsIdempotentAgainstAlreadyCancelledDelivery() {
+        // Simulates a second racing call to the orchestration entry point after a first racer
+        // already committed the CANCELLED status - cancel() returns List.of() on this delivery.
+        Delivery delivery = Delivery.schedule(42L, 7L, 9L).delivery();
+        delivery.cancel();
+        assertThat(delivery.getStatus()).isEqualTo(DeliveryStatus.CANCELLED);
+        when(processedEventRepository.existsById("evt-4b")).thenReturn(false);
+        when(deliveryRepository.findForUpdateByOrderId(42L)).thenReturn(Optional.of(delivery));
+
+        deliveryService.handleReleaseDeliveryCommand("evt-4b", 42L, "CreateOrder");
+
+        // Must not re-touch the courier or emit a duplicate DeliveryCancelled reply on saga.replies.
+        // outboxEventRepository is only ever written to by publishReply in this service, so
+        // never().save(any()) here is a direct assertion that no reply was published - not a
+        // false negative against some other dedup-ledger usage of this repository.
+        verify(courierRepository, never()).findById(any());
+        verify(courierRepository, never()).save(any());
+        verify(outboxEventRepository, never()).save(any());
     }
 }

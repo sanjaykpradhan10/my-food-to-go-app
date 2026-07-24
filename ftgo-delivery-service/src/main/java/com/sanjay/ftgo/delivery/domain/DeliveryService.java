@@ -115,8 +115,13 @@ public class DeliveryService {
         }
         List<DeliveryDomainEvent> events = delivery.cancel();
         deliveryRepository.save(delivery);
-        releaseCourier(delivery);
-        domainEventPublisher.publish(delivery, events);
+        // cancel() returns List.of() when the delivery was already CANCELLED (a racing caller
+        // won the lock first) - skip courier release and event publishing so we don't flip a
+        // courier back to available if it's since been reassigned to a different order.
+        if (!events.isEmpty()) {
+            releaseCourier(delivery);
+            domainEventPublisher.publish(delivery, events);
+        }
     }
 
     // Orchestration equivalent of release: replies on saga.replies. Unconditional once the
@@ -134,10 +139,14 @@ public class DeliveryService {
         if (delivery == null) {
             return;
         }
-        delivery.cancel();
+        List<DeliveryDomainEvent> events = delivery.cancel();
         deliveryRepository.save(delivery);
-        releaseCourier(delivery);
-        publishReply("DeliveryCancelled", orderId, null, sagaType);
+        // Mirror release()'s idempotency gate: a racing second call to this command handler
+        // must not re-touch the courier or emit a duplicate DeliveryCancelled reply.
+        if (!events.isEmpty()) {
+            releaseCourier(delivery);
+            publishReply("DeliveryCancelled", orderId, null, sagaType);
+        }
     }
 
     private void releaseCourier(Delivery delivery) {
