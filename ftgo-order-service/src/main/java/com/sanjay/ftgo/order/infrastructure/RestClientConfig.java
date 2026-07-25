@@ -44,4 +44,17 @@ public class RestClientConfig {
                 .requestFactory(requestFactory)
                 .build();
     }
+
+    @Bean
+    public RestClient accountingServiceRestClient(@LoadBalanced RestClient.Builder loadBalancedRestClientBuilder) {
+        ClientHttpRequestFactorySettings settings = ClientHttpRequestFactorySettings.defaults()
+                .withConnectTimeout(Duration.ofSeconds(2))
+                .withReadTimeout(Duration.ofSeconds(2));
+        ClientHttpRequestFactory requestFactory = ClientHttpRequestFactoryBuilder.detect().build(settings);
+
+        return loadBalancedRestClientBuilder
+                .baseUrl("http://ftgo-accounting-service")
+                .requestFactory(requestFactory)
+                .build();
+    }
 }
