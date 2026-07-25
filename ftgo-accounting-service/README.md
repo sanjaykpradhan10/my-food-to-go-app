@@ -9,7 +9,9 @@
 
 ## API
 
-None. This service has no REST endpoints — it participates entirely through Kafka.
+**`GET /authorizations/order/{orderId}`** (API composition, Ch.7) — this service's first-ever REST controller (`AuthorizationController`); until now it participated entirely through Kafka. Looks up the authorization for a given order rather than by its own `id`, since the caller (order-service's composite `GET /orders/{id}/view`) only knows the `orderId`. Returns `200` with an `AuthorizationInfo{id, orderId, status}` projection if an authorization exists for that order, `404` otherwise — `order-service`'s `AccountingServiceProxy` turns that `404` into `SectionResult.NotFound`, not an error.
+
+This service now also registers with Eureka (`spring.application.name: ftgo-accounting-service`) so order-service's `@LoadBalanced RestClient` can resolve it dynamically.
 
 ## Events
 
