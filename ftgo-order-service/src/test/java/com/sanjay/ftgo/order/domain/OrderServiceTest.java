@@ -20,8 +20,17 @@ class OrderServiceTest {
             new RestaurantInfo.MenuItemInfo(11L, "Garlic Naan", new BigDecimal("3.50"))
     ));
 
-    private final RestaurantServicePort fakePort = restaurantId ->
-            restaurantId.equals(1L) ? restaurant : null;
+    private final RestaurantServicePort fakePort = new RestaurantServicePort() {
+        @Override
+        public RestaurantInfo findRestaurant(Long restaurantId) {
+            return restaurantId.equals(1L) ? restaurant : null;
+        }
+
+        @Override
+        public SectionResult<RestaurantInfo> findRestaurantForView(Long restaurantId) {
+            throw new UnsupportedOperationException("not used by OrderServiceTest");
+        }
+    };
 
     private final OrderTransitions orderTransitions = mock(OrderTransitions.class);
     private final OrderCreationSagaTrigger orderCreationSagaTrigger = mock(OrderCreationSagaTrigger.class);

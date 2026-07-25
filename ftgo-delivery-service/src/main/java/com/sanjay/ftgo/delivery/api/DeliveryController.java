@@ -1,4 +1,3 @@
-// ftgo-delivery-service/src/main/java/com/sanjay/ftgo/delivery/api/DeliveryController.java
 package com.sanjay.ftgo.delivery.api;
 
 import com.sanjay.ftgo.delivery.domain.Delivery;
@@ -11,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -43,6 +43,15 @@ public class DeliveryController {
         Delivery delivery = findDelivery(deliveryId);
         apply(delivery, delivery.deliver());
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/order/{orderId}")
+    public ResponseEntity<DeliveryInfo> viewByOrderId(@PathVariable Long orderId) {
+        return deliveryRepository.findByOrderId(orderId)
+                .map(delivery -> new DeliveryInfo(
+                        delivery.getId(), delivery.getOrderId(), delivery.getStatus().name(), delivery.getCourierId()))
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     private Delivery findDelivery(Long deliveryId) {

@@ -54,9 +54,39 @@ Legal only from `APPROVED` — moves the order to `REVISION_PENDING`, records th
 | Order not found | `404` |
 | Order not in `APPROVED` | `409` |
 
-## Restaurant service integration
+**`GET /orders/{id}/view`** (API composition, Ch.7)
 
-`RestaurantServiceProxy` calls restaurant-service via a `@LoadBalanced RestClient` (base URL `http://ftgo-restaurant-service`, resolved dynamically through Eureka), wrapped in a Resilience4j circuit breaker (`restaurantService` instance): sliding window 5, failure-rate threshold 50%, 5s wait-duration-in-open-state, 3 permitted calls in half-open. `RestaurantNotFoundException` is excluded from the failure count (a 404 isn't a service health signal).
+A composite read: assembles a single response for the order-detail screen from data owned by four different services, fanned out in parallel rather than sequentially.
+
+Response (`200 OK`):
+```json
+{
+  "order": {"id": 1, "status": "APPROVED", "consumerId": 1, "restaurantId": 1, "lineItems": [{"menuItemId": 1, "quantity": 2}]},
+  "restaurant": {"data": {"id": 1, "name": "Ajanta", "menuItems": [...]}},
+  "ticket": {"data": {"id": 1, "orderId": 1, "status": "AWAITING_ACCEPTANCE", "readyBy": null}},
+  "authorization": {"data": {"id": 1, "orderId": 1, "status": "AUTHORIZED"}},
+  "delivery": {"reason": "..."}
+}
+```
+
+`order` (`OrderSummary`) comes from this service's own `Order` — no remote call needed. The other four sections (`restaurant`/`ticket`/`authorization`/`delivery`) are each a `SectionResult<T>` — a sealed interface with exactly three cases, so a downstream problem degrades one section instead of failing the whole response. No Jackson type discriminator is configured, so each case serializes as its own record shape (`{"data": ...}`, `{}`, or `{"reason": ...}`) — a client distinguishes them structurally, not by a `type` field:
+
+- `Found<T>(data)` — the remote call succeeded. Serializes as `{"data": {...}}`.
+- `NotFound<T>()` — the remote service responded `404` (e.g. no ticket exists yet for this order). Serializes as `{}`.
+- `Unavailable<T>(reason)` — the remote call failed for any other reason (timeout, connection refused, open circuit). Serializes as `{"reason": "..."}` — carries the exception message, not a generic string, since this is a debugging aid, not user-facing copy.
+
+`OrderViewController.view()` fires all four downstream lookups (`restaurantServicePort.findRestaurantForView`, `kitchenServicePort.findTicket`, `accountingServicePort.findAuthorization`, `deliveryServicePort.findDelivery`) concurrently via `CompletableFuture.supplyAsync(..., orderViewExecutor)` on a dedicated virtual-thread-per-task `ExecutorService` (`VirtualThreadExecutorConfig`), then joins all four before assembling the response — the four are independent, degradable sections, so none should block the others, and virtual threads make the 4-way fan-out cheap without a fixed pool-size decision to justify.
+
+| Condition | Status |
+|---|---|
+| Order not found | `404` |
+| Every downstream call succeeds, fails, or times out | `200` — a downstream problem never fails this endpoint; it shows up as `NotFound`/`Unavailable` in the corresponding section |
+
+## Restaurant/kitchen/accounting/delivery service integration
+
+`RestaurantServiceProxy`, `KitchenServiceProxy`, `AccountingServiceProxy`, and `DeliveryServiceProxy` each call their respective service via a `@LoadBalanced RestClient` (base URLs `http://ftgo-restaurant-service`/`http://ftgo-kitchen-service`/`http://ftgo-accounting-service`/`http://ftgo-delivery-service`, all resolved dynamically through Eureka), each wrapped in its own Resilience4j circuit breaker instance (`restaurantService`/`kitchenService`/`accountingService`/`deliveryService`) — all four instances share the exact same settings: sliding window 5, failure-rate threshold 50%, 5s wait-duration-in-open-state, 3 permitted calls in half-open. `RestaurantNotFoundException` is excluded from `restaurantService`'s failure count (a 404 isn't a service health signal) — the other three proxies don't need an equivalent exclusion, since their `findXForView`-style methods return `SectionResult.NotFound` directly on a `404` rather than throwing.
+
+Each `findX`/`findXForView` method has a `@CircuitBreaker`-annotated fallback method returning `Unavailable<>(throwable.getMessage())` — this is what turns a timeout or an open circuit into a degraded section instead of a failed request. `RestaurantServiceProxy` alone carries two methods against the same `restaurantService` circuit breaker instance: the pre-existing `findRestaurant` (throws, used by `POST /orders`'s order-creation validation) and the new `findRestaurantForView` (returns `SectionResult`, used only by `GET /orders/{id}/view`) — same remote endpoint, two different failure-handling contracts for two different callers.
 
 ## Events
 

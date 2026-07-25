@@ -646,3 +646,88 @@ sequenceDiagram
 ```
 
 This table is kept separate from `order_events` on purpose: the same CDC connector that now watches `order_events` unconditionally routes every row there to `order.events`, and saga commands are meant for `kitchen.commands`/`delivery.commands`/`accounting.commands`/`consumer.commands` instead — mixing them into one table would either leak saga commands onto `order.events` or require per-row topic filtering in the connector config, which Debezium's Outbox Event Router SMT doesn't support per-row. `order_saga_command_requests` is polled independently by its own `SagaCommandRequestPublisher`, sending before marking published — an at-least-once send, matching every other outbox-style publisher in this codebase.
+
+## API composition — `GET /orders/{id}/view` (Ch.7)
+
+This project's first query pattern. The order-detail screen needs data owned by four different services (`Order` itself, plus restaurant, ticket, authorization, and delivery info) — API composition assembles it behind one endpoint on order-service rather than making the client call four services and stitch the result together itself.
+
+### Service discovery — who's registered with Eureka now
+
+Ch.7 added three new Eureka clients. Every service order-service calls synchronously for this feature is now dynamically discoverable, matching the pattern restaurant-service already used since Ch.3:
+
+| Service | Eureka client since | Called by |
+|---|---|---|
+| restaurant-service | Ch.3 | order-service (`POST /orders` validation, `GET /orders/{id}/view`) |
+| kitchen-service | Ch.7 | order-service (`GET /orders/{id}/view`) |
+| accounting-service | Ch.7 | order-service (`GET /orders/{id}/view`) |
+| delivery-service | Ch.7 | order-service (`GET /orders/{id}/view`) |
+
+Before this chapter, kitchen-service, accounting-service, and delivery-service were Kafka-only participants — nothing ever called them synchronously, so there was no reason for them to be discoverable. Each gained `spring-cloud-starter-netflix-eureka-client` and the same `eureka.client.service-url.defaultZone`/`eureka.instance.prefer-ip-address` config restaurant-service already had, plus a new read-only REST controller (accounting-service's is its first controller ever — see its own `README.md`).
+
+### Parallel fan-out via virtual threads
+
+`OrderViewController.view()` doesn't call the four downstream proxies sequentially — it fires all four via `CompletableFuture.supplyAsync(..., orderViewExecutor)` and joins on `CompletableFuture.allOf(...)` before assembling the response. `orderViewExecutor` (`VirtualThreadExecutorConfig`) is a dedicated `Executors.newVirtualThreadPerTaskExecutor()`, not the shared `ForkJoinPool.commonPool()` or a fixed-size pool:
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant O as OrderViewController
+    participant R as RestaurantServiceProxy
+    participant K as KitchenServiceProxy
+    participant Ac as AccountingServiceProxy
+    participant D as DeliveryServiceProxy
+
+    C->>O: GET /orders/{id}/view
+    O-->>O: load Order (local, no remote call)
+    par 4 virtual threads, orderViewExecutor
+        O->>R: findRestaurantForView(restaurantId)
+        R-->>O: SectionResult<RestaurantInfo>
+    and
+        O->>K: findTicket(orderId)
+        K-->>O: SectionResult<TicketInfo>
+    and
+        O->>Ac: findAuthorization(orderId)
+        Ac-->>O: SectionResult<AuthorizationInfo>
+    and
+        O->>D: findDelivery(orderId)
+        D-->>O: SectionResult<DeliveryInfo>
+    end
+    O-->>O: join all 4, assemble OrderViewResponse
+    O-->>C: 200 OK
+```
+
+Virtual threads are a natural fit here: 4 short-lived, blocking, I/O-bound calls fired concurrently, with no pool-size tuning decision to make or justify (unlike a fixed-size `ExecutorService`, where "how many threads" is itself a decision that needs revisiting as load changes). Each downstream call still blocks its own virtual thread on the underlying `RestClient`'s synchronous HTTP call — virtual threads make that cheap to do 4 times in parallel, they don't change the RPI pattern itself.
+
+### Per-proxy circuit breaker (reusing `restaurantService`'s settings)
+
+Each of the 4 downstream calls goes through its own `@CircuitBreaker`-wrapped proxy (`RestaurantServiceProxy.findRestaurantForView`, `KitchenServiceProxy.findTicket`, `AccountingServiceProxy.findAuthorization`, `DeliveryServiceProxy.findDelivery`), one circuit breaker instance per service (`restaurantService`/`kitchenService`/`accountingService`/`deliveryService`) so one degraded downstream doesn't trip the breaker for the other three. All four instances share the exact same Resilience4j settings order-service's `restaurantService` breaker already used since Ch.3 — sliding window 5, failure-rate threshold 50%, 5s wait-duration-in-open-state, 3 permitted calls in half-open — reused rather than re-tuned, since there's no reason to expect kitchen/accounting/delivery to need different circuit-breaking behavior than restaurant-service did.
+
+Each proxy method's `@CircuitBreaker` fallback returns `Unavailable<>(throwable.getMessage())` rather than throwing — this is the mechanism that turns a timeout, connection failure, or open circuit into a degraded section of the response instead of a failed request. `RestaurantServiceProxy` is the only proxy with two methods against the same circuit breaker instance: the pre-existing `findRestaurant` (throws `RestaurantNotFoundException`/`RestaurantServiceUnavailableException`, used by `POST /orders`'s creation-time validation) and the new `findRestaurantForView` (returns `SectionResult`, used only by the composite query) — same remote endpoint, two different failure-handling contracts because the two callers need different things from a failure.
+
+### The 3-state `SectionResult` design
+
+```mermaid
+classDiagram
+    class SectionResult~T~ {
+        <<sealed interface>>
+    }
+    class Found~T~ {
+        T data
+    }
+    class NotFound~T~ {
+    }
+    class Unavailable~T~ {
+        String reason
+    }
+    SectionResult <|.. Found
+    SectionResult <|.. NotFound
+    SectionResult <|.. Unavailable
+```
+
+A naive composite query would either fail the whole request if any one downstream call fails, or silently coalesce "not found" and "unreachable" into the same null/absent value — losing information a client needs to render correctly (an order with no delivery yet scheduled should render differently from a delivery-service outage). `SectionResult<T>` (a sealed interface, `permits Found, NotFound, Unavailable`) keeps those two cases distinct:
+
+- **`Found<T>(data)`** — the remote call succeeded and returned data.
+- **`NotFound<T>()`** — the remote service responded `404` — a real, expected "this doesn't exist yet" (e.g. no `Ticket` row for an order still `APPROVAL_PENDING`), not an error.
+- **`Unavailable<T>(reason)`** — the remote call failed for any other reason (timeout, connection refused, open circuit) — `reason` carries the exception message, a debugging aid rather than user-facing copy.
+
+Each of the 4 sections resolves independently to one of these three states; the endpoint always returns `200` with whatever mix of `Found`/`NotFound`/`Unavailable` the four downstream calls produced — only a missing `Order` itself (the one piece of data this service owns directly) returns `404` for the whole request.

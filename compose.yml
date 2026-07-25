@@ -141,12 +141,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      service-registry:
+        condition: service_started
     ports:
       - "8083:8083"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_kitchen
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
 
   consumer-service:
     build:
@@ -173,12 +176,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      service-registry:
+        condition: service_started
     ports:
       - "8084:8084"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_accounting
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
 
   delivery-service:
     build:
@@ -189,12 +195,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      service-registry:
+        condition: service_started
     ports:
       - "8086:8086"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_delivery
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
 
 volumes:
   mysql-data:

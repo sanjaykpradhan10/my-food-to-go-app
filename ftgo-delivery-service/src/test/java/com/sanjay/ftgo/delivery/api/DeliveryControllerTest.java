@@ -13,7 +13,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.Optional;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DeliveryController.class)
@@ -67,5 +69,24 @@ class DeliveryControllerTest {
         when(deliveryRepository.findById(1L)).thenReturn(Optional.of(delivery));
 
         mockMvc.perform(post("/deliveries/1/delivered")).andExpect(status().isConflict());
+    }
+
+    @Test
+    void viewByOrderIdReturnsDeliveryInfo() throws Exception {
+        Delivery delivery = Delivery.schedule(42L, 7L, 3L).delivery();
+        when(deliveryRepository.findByOrderId(42L)).thenReturn(Optional.of(delivery));
+
+        mockMvc.perform(get("/deliveries/order/42"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orderId").value(42))
+                .andExpect(jsonPath("$.status").value("SCHEDULED"))
+                .andExpect(jsonPath("$.courierId").value(3));
+    }
+
+    @Test
+    void viewByOrderIdReturns404WhenNoDeliveryForOrder() throws Exception {
+        when(deliveryRepository.findByOrderId(99L)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/deliveries/order/99")).andExpect(status().isNotFound());
     }
 }

@@ -1,9 +1,13 @@
 package com.sanjay.ftgo.order.infrastructure;
 
+import com.sanjay.ftgo.order.domain.Found;
+import com.sanjay.ftgo.order.domain.NotFound;
 import com.sanjay.ftgo.order.domain.RestaurantInfo;
 import com.sanjay.ftgo.order.domain.RestaurantNotFoundException;
 import com.sanjay.ftgo.order.domain.RestaurantServicePort;
 import com.sanjay.ftgo.order.domain.RestaurantServiceUnavailableException;
+import com.sanjay.ftgo.order.domain.SectionResult;
+import com.sanjay.ftgo.order.domain.Unavailable;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
@@ -37,5 +41,24 @@ public class RestaurantServiceProxy implements RestaurantServicePort {
             throw notFound;
         }
         throw new RestaurantServiceUnavailableException(restaurantId, throwable);
+    }
+
+    @Override
+    @CircuitBreaker(name = "restaurantService", fallbackMethod = "findRestaurantForViewFallback")
+    public SectionResult<RestaurantInfo> findRestaurantForView(Long restaurantId) {
+        try {
+            RestaurantInfo info = restClient.get()
+                    .uri("/restaurants/{id}", restaurantId)
+                    .retrieve()
+                    .body(RestaurantInfo.class);
+            return new Found<>(info);
+        } catch (HttpClientErrorException.NotFound e) {
+            return new NotFound<>();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private SectionResult<RestaurantInfo> findRestaurantForViewFallback(Long restaurantId, Throwable throwable) {
+        return new Unavailable<>(throwable.getMessage());
     }
 }

@@ -17,6 +17,10 @@ Most interaction is Kafka-driven, either reacting to another service's domain ev
 
 Both: `404` if the delivery doesn't exist, `409` on an illegal transition.
 
+**`GET /deliveries/order/{orderId}`** (API composition, Ch.7) — looks up the delivery for a given order rather than by its own `id`, since the caller (order-service's composite `GET /orders/{id}/view`) only knows the `orderId`. Returns `200` with a `DeliveryInfo{id, orderId, status, courierId}` projection if a delivery exists for that order, `404` otherwise — `order-service`'s `DeliveryServiceProxy` turns that `404` into `SectionResult.NotFound`, not an error.
+
+This service now also registers with Eureka (`spring.application.name: ftgo-delivery-service`) so order-service's `@LoadBalanced RestClient` can resolve it dynamically — previously delivery-service only ever consumed Kafka topics and was never called synchronously by anything.
+
 ## Events
 
 ### Publishes (`delivery.events`, choreography)
