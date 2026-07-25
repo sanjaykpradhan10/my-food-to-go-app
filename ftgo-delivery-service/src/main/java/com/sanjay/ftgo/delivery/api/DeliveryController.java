@@ -1,4 +1,3 @@
-// ftgo-delivery-service/src/main/java/com/sanjay/ftgo/delivery/api/DeliveryController.java
 package com.sanjay.ftgo.delivery.api;
 
 import com.sanjay.ftgo.delivery.domain.Delivery;
