@@ -86,4 +86,29 @@ public class OrderViewService {
 
         orderViewRepository.save(view);
     }
+
+    // Same upsert pattern again, for accounting.events: authorization can arrive before
+    // OrderCreated too, same cross-topic ordering caveat as the other two handlers.
+    @Transactional
+    public void handleAccountingEvent(String eventId, String eventType, Long orderId) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        OrderView view = orderViewRepository.findById(orderId).orElseGet(() -> new OrderView(orderId));
+
+        switch (eventType) {
+            case "CardAuthorized" -> view.setAuthorizationStatus("AUTHORIZED");
+            case "CardAuthorizationFailed" -> view.setAuthorizationStatus("DECLINED");
+            case "AuthorizationReversed" -> view.setAuthorizationStatus("REVERSED");
+            // Still authorized, just at a new quantity - this read model doesn't track quantity.
+            case "AuthorizationRevised" -> view.setAuthorizationStatus("AUTHORIZED");
+            // Decline of a revision attempt, not a new authorization state - the existing
+            // authorization is untouched.
+            default -> { }
+        }
+
+        orderViewRepository.save(view);
+    }
 }

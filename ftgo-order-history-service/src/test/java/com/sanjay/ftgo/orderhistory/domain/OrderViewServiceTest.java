@@ -158,4 +158,50 @@ class OrderViewServiceTest {
 
         assertThat(existing.getTicketStatus()).isEqualTo("ACCEPTED");
     }
+
+    @Test
+    void cardAuthorizedSetsAuthorizationStatus() {
+        OrderView existing = new OrderView(42L);
+        when(processedEventRepository.existsById("evt-8")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleAccountingEvent("evt-8", "CardAuthorized", 42L);
+
+        assertThat(existing.getAuthorizationStatus()).isEqualTo("AUTHORIZED");
+    }
+
+    @Test
+    void cardAuthorizationFailedSetsDeclined() {
+        OrderView existing = new OrderView(42L);
+        when(processedEventRepository.existsById("evt-9")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleAccountingEvent("evt-9", "CardAuthorizationFailed", 42L);
+
+        assertThat(existing.getAuthorizationStatus()).isEqualTo("DECLINED");
+    }
+
+    @Test
+    void authorizationReversedSetsReversed() {
+        OrderView existing = new OrderView(42L);
+        existing.setAuthorizationStatus("AUTHORIZED");
+        when(processedEventRepository.existsById("evt-10")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleAccountingEvent("evt-10", "AuthorizationReversed", 42L);
+
+        assertThat(existing.getAuthorizationStatus()).isEqualTo("REVERSED");
+    }
+
+    @Test
+    void authorizationRevisionRejectedDoesNotChangeStatus() {
+        OrderView existing = new OrderView(42L);
+        existing.setAuthorizationStatus("AUTHORIZED");
+        when(processedEventRepository.existsById("evt-11")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleAccountingEvent("evt-11", "AuthorizationRevisionRejected", 42L);
+
+        assertThat(existing.getAuthorizationStatus()).isEqualTo("AUTHORIZED");
+    }
 }
