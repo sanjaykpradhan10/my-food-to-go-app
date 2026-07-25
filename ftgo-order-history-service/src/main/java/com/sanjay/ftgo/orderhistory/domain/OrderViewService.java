@@ -111,4 +111,33 @@ public class OrderViewService {
 
         orderViewRepository.save(view);
     }
+
+    // Same upsert pattern again, for delivery.events: courier assignment can arrive before
+    // OrderCreated too, same cross-topic ordering caveat as the other three handlers.
+    @Transactional
+    public void handleDeliveryEvent(String eventId, String eventType, Long orderId, Long courierId) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        OrderView view = orderViewRepository.findById(orderId).orElseGet(() -> new OrderView(orderId));
+
+        switch (eventType) {
+            case "DeliveryScheduled" -> {
+                view.setDeliveryStatus("SCHEDULED");
+                view.setCourierId(courierId);
+            }
+            case "DeliveryPickedUp" -> view.setDeliveryStatus("PICKED_UP");
+            case "DeliveryDelivered" -> view.setDeliveryStatus("DELIVERED");
+            case "DeliveryCancelled" -> {
+                view.setDeliveryStatus("CANCELLED");
+                view.setCourierId(null); // no courier is assigned anymore
+            }
+            // DeliverySchedulingFailed: nothing was ever scheduled, nothing to record.
+            default -> { }
+        }
+
+        orderViewRepository.save(view);
+    }
 }

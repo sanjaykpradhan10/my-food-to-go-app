@@ -204,4 +204,53 @@ class OrderViewServiceTest {
 
         assertThat(existing.getAuthorizationStatus()).isEqualTo("AUTHORIZED");
     }
+
+    @Test
+    void deliveryScheduledSetsStatusAndCourierId() {
+        OrderView existing = new OrderView(42L);
+        when(processedEventRepository.existsById("evt-12")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleDeliveryEvent("evt-12", "DeliveryScheduled", 42L, 3L);
+
+        assertThat(existing.getDeliveryStatus()).isEqualTo("SCHEDULED");
+        assertThat(existing.getCourierId()).isEqualTo(3L);
+    }
+
+    @Test
+    void deliveryCancelledClearsCourierId() {
+        OrderView existing = new OrderView(42L);
+        existing.setDeliveryStatus("SCHEDULED");
+        existing.setCourierId(3L);
+        when(processedEventRepository.existsById("evt-13")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleDeliveryEvent("evt-13", "DeliveryCancelled", 42L, null);
+
+        assertThat(existing.getDeliveryStatus()).isEqualTo("CANCELLED");
+        assertThat(existing.getCourierId()).isNull();
+    }
+
+    @Test
+    void deliverySchedulingFailedDoesNotChangeStatus() {
+        OrderView existing = new OrderView(42L);
+        when(processedEventRepository.existsById("evt-14")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleDeliveryEvent("evt-14", "DeliverySchedulingFailed", 42L, null);
+
+        assertThat(existing.getDeliveryStatus()).isNull();
+    }
+
+    @Test
+    void deliveryPickedUpAndDeliveredUpdateStatus() {
+        OrderView existing = new OrderView(42L);
+        existing.setDeliveryStatus("SCHEDULED");
+        when(processedEventRepository.existsById("evt-15")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleDeliveryEvent("evt-15", "DeliveryPickedUp", 42L, null);
+
+        assertThat(existing.getDeliveryStatus()).isEqualTo("PICKED_UP");
+    }
 }
