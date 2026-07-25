@@ -111,4 +111,51 @@ class OrderViewServiceTest {
 
         verify(orderViewRepository, org.mockito.Mockito.never()).findById(any());
     }
+
+    @Test
+    void ticketCreatedSetsTicketStatusOnExistingOrCreatesStub() {
+        when(processedEventRepository.existsById("evt-4")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.empty());
+
+        orderViewService.handleKitchenEvent("evt-4", "TicketCreated", 42L);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(OrderView.class);
+        verify(orderViewRepository).save(captor.capture());
+        assertThat(captor.getValue().getTicketStatus()).isEqualTo("CREATE_PENDING");
+    }
+
+    @Test
+    void ticketAcceptedUpdatesExistingRow() {
+        OrderView existing = new OrderView(42L);
+        existing.setTicketStatus("AWAITING_ACCEPTANCE");
+        when(processedEventRepository.existsById("evt-5")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleKitchenEvent("evt-5", "TicketAccepted", 42L);
+
+        assertThat(existing.getTicketStatus()).isEqualTo("ACCEPTED");
+    }
+
+    @Test
+    void ticketCreationFailedDoesNotSetTicketStatus() {
+        OrderView existing = new OrderView(42L);
+        when(processedEventRepository.existsById("evt-6")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleKitchenEvent("evt-6", "TicketCreationFailed", 42L);
+
+        assertThat(existing.getTicketStatus()).isNull();
+    }
+
+    @Test
+    void ticketQuantityRevisedDoesNotChangeTicketStatus() {
+        OrderView existing = new OrderView(42L);
+        existing.setTicketStatus("ACCEPTED");
+        when(processedEventRepository.existsById("evt-7")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleKitchenEvent("evt-7", "TicketQuantityRevised", 42L);
+
+        assertThat(existing.getTicketStatus()).isEqualTo("ACCEPTED");
+    }
 }

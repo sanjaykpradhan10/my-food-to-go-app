@@ -56,4 +56,34 @@ public class OrderViewService {
 
         orderViewRepository.save(view);
     }
+
+    // Same upsert pattern as handleOrderEvent, mirrored for the kitchen.events topic: kitchen
+    // ticket events can likewise arrive before OrderCreated, so this must not assume a row exists.
+    @Transactional
+    public void handleKitchenEvent(String eventId, String eventType, Long orderId) {
+        if (processedEventRepository.existsById(eventId)) {
+            return;
+        }
+        processedEventRepository.save(new ProcessedEvent(eventId));
+
+        OrderView view = orderViewRepository.findById(orderId).orElseGet(() -> new OrderView(orderId));
+
+        switch (eventType) {
+            case "TicketCreated" -> view.setTicketStatus("CREATE_PENDING");
+            case "TicketConfirmed" -> view.setTicketStatus("AWAITING_ACCEPTANCE");
+            case "TicketAccepted" -> view.setTicketStatus("ACCEPTED");
+            case "TicketPreparingStarted" -> view.setTicketStatus("PREPARING");
+            case "TicketReadyForPickup" -> view.setTicketStatus("READY_FOR_PICKUP");
+            case "TicketPickedUp" -> view.setTicketStatus("PICKED_UP");
+            case "TicketCancelled" -> view.setTicketStatus("CANCELLED");
+            // TicketCreationFailed: no ticket was ever created, nothing to record.
+            // TicketCancellationRejected/TicketRevisionRejected/TicketRevisionUndone/
+            // TicketQuantityRevised: none represent a new lifecycle state on their own -
+            // TicketQuantityRevised changes quantity, not status, and this read model doesn't
+            // track quantity at all (out of scope per the design).
+            default -> { }
+        }
+
+        orderViewRepository.save(view);
+    }
 }
