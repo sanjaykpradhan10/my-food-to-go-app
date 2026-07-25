@@ -22,6 +22,12 @@ spring:
           instances:
             ftgo-restaurant-service:
               - uri: http://localhost:8089
+            ftgo-kitchen-service:
+              - uri: http://localhost:8090
+            ftgo-accounting-service:
+              - uri: http://localhost:8091
+            ftgo-delivery-service:
+              - uri: http://localhost:8092
 
 eureka:
   client:
@@ -41,3 +47,21 @@ resilience4j:
         automatic-transition-from-open-to-half-open-enabled: true
         ignore-exceptions:
           - com.sanjay.ftgo.order.domain.RestaurantNotFoundException
+      kitchenService:
+        sliding-window-size: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 2s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+      accountingService:
+        sliding-window-size: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 2s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+      deliveryService:
+        sliding-window-size: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 2s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true

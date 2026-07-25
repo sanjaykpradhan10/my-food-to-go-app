@@ -23,6 +23,10 @@ Request: `{"readyBy": "2026-07-22T18:30:00Z"}`. Legal only from `AWAITING_ACCEPT
 
 All four: `404` if the ticket doesn't exist, `409` on an illegal transition.
 
+**`GET /tickets/order/{orderId}`** (API composition, Ch.7) — looks up the ticket for a given order rather than by its own `id`, since the caller (order-service's composite `GET /orders/{id}/view`) only knows the `orderId`. Returns `200` with a `TicketInfo{id, orderId, status, readyBy}` projection if a ticket exists for that order, `404` otherwise — `order-service`'s `KitchenServiceProxy` turns that `404` into `SectionResult.NotFound`, not an error.
+
+This service now also registers with Eureka (`spring.application.name: ftgo-kitchen-service`) so order-service's `@LoadBalanced RestClient` can resolve it dynamically — previously kitchen-service only ever consumed Kafka topics and was never called synchronously by anything.
+
 ## Events
 
 ### Publishes (`kitchen.events`, choreography)

@@ -13,7 +13,9 @@ import java.time.ZonedDateTime;
 import java.util.Optional;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(TicketController.class)
@@ -111,6 +113,29 @@ class TicketControllerTest {
         when(ticketRepository.findById(99L)).thenReturn(Optional.empty());
 
         mockMvc.perform(post("/tickets/99/picked-up"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void viewByOrderIdReturnsTicketInfo() throws Exception {
+        Ticket ticket = Ticket.createTicket(42L, 3).ticket();
+        ticket.confirm();
+        ZonedDateTime readyBy = ZonedDateTime.parse("2026-07-20T18:00:00Z");
+        ticket.accept(readyBy);
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+
+        mockMvc.perform(get("/tickets/order/42"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orderId").value(42))
+                .andExpect(jsonPath("$.status").value("ACCEPTED"))
+                .andExpect(jsonPath("$.readyBy").value("2026-07-20T18:00:00Z"));
+    }
+
+    @Test
+    void viewByOrderIdReturns404WhenNoTicketForOrder() throws Exception {
+        when(ticketRepository.findByOrderId(99L)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/tickets/order/99"))
                 .andExpect(status().isNotFound());
     }
 
