@@ -47,11 +47,11 @@ This combination means a service crash at any point (before/during/after publish
 
 | Topic | Producer | Consumers | Style |
 |---|---|---|---|
-| `order.events` | order-service | consumer-service, kitchen-service, delivery-service | choreography |
+| `order.events` | order-service | consumer-service, kitchen-service, delivery-service, order-history-service | choreography |
 | `consumer.events` | consumer-service | order-service, kitchen-service, accounting-service, delivery-service | choreography |
-| `kitchen.events` | kitchen-service | order-service, accounting-service, delivery-service | choreography |
-| `accounting.events` | accounting-service | order-service, kitchen-service | choreography |
-| `delivery.events` | delivery-service | order-service, kitchen-service, accounting-service | choreography |
+| `kitchen.events` | kitchen-service | order-service, accounting-service, delivery-service, order-history-service | choreography |
+| `accounting.events` | accounting-service | order-service, kitchen-service, order-history-service | choreography |
+| `delivery.events` | delivery-service | order-service, kitchen-service, accounting-service, order-history-service | choreography |
 | `consumer.commands` | order-service | consumer-service | orchestration |
 | `kitchen.commands` | order-service | kitchen-service | orchestration |
 | `accounting.commands` | order-service | accounting-service | orchestration |
@@ -61,6 +61,8 @@ This combination means a service crash at any point (before/during/after publish
 Choreography topics carry domain events (things that already happened: `OrderCreated`, `TicketCreated`, ...). Orchestration topics carry either commands (imperatives: `VerifyConsumerCommand`, `KitchenCommand{commandType=CreateTicket}`, ...) or replies (a single shared `SagaReply{participant, eventType, sagaType, ...}` shape, discriminated by `participant` then `sagaType` — see "Multi-saga routing" below).
 
 The original 8 topics from Ch.4 never grew new members as Cancel Order and Revise Order were added — each carries more `eventType`/`commandType` values on the *same* topics (`order.events` also carries `OrderCancelled`/`OrderRevisionProposed`/etc., `kitchen.commands` also carries `CancelTicket`/`ReviseTicket`/`UndoReviseTicket`, and so on), rather than dedicated topics per saga. Wiring delivery-service into the Create Order and Cancel Order sagas did add 2 genuinely new topics — `delivery.events` (choreography) and `delivery.commands` (orchestration) — one pair per producer, following the same one-topic-per-producing-service convention as every other saga participant, rather than a dedicated topic per saga.
+
+Ch.7's CQRS sub-project (`order-history-service`, see below) added no new topics at all — it's a 4th/5th consumer added to the 4 choreography event topics that already existed, not a new producer. It's also the first consumer of these topics that is *not* a saga participant in either style — it never publishes a command, a reply, or a compensating event, so it needed no `SAGA_MODE` switch and shares Kafka consumer group `order-history-service` (a group of its own — joining an existing saga participant's group would split partition assignment and silently drop messages neither instance was meant to consume).
 
 ## The `SAGA_MODE` switch
 
@@ -731,3 +733,68 @@ A naive composite query would either fail the whole request if any one downstrea
 - **`Unavailable<T>(reason)`** — the remote call failed for any other reason (timeout, connection refused, open circuit) — `reason` carries the exception message, a debugging aid rather than user-facing copy.
 
 Each of the 4 sections resolves independently to one of these three states; the endpoint always returns `200` with whatever mix of `Found`/`NotFound`/`Unavailable` the four downstream calls produced — only a missing `Order` itself (the one piece of data this service owns directly) returns `404` for the whole request.
+
+## CQRS — `ftgo-order-history-service` (Ch.7)
+
+This project's second and last query pattern for Ch.7, and a deliberate architectural contrast with API composition above rather than a refinement of it — the book presents them as two genuinely different answers to "how does a client get a view spanning multiple services' data," not two versions of the same idea. Where API composition assembles a response at request time from four live calls, CQRS maintains a standing, pre-joined read model (`order_views`, one row per order) built incrementally from the same domain events every saga participant already publishes, and answers a query with a single local `findById` — no downstream call of any kind.
+
+### Why this is a new, separate service rather than a mode on order-service
+
+Every other query pattern decision in this codebase (`SAGA_MODE`, `PERSISTENCE_MODE`) has been a switch on an *existing* service, because both alternatives being switched between still live in the same bounded context. CQRS's read side deliberately isn't: it needs its own datastore, its own scaling characteristics (read-heavy, no write contention), and its own failure domain (a slow/down order-history-service must never affect order-service's own request/response cycle) — exactly the reasoning the book gives for CQRS query-side services being standalone. `ftgo-order-history-service` has no Eureka registration and is never called synchronously by anything else in this codebase; the only way data reaches it is Kafka.
+
+### Consumes 4 topics, publishes nothing, one handler method per topic
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant K as kitchen-service
+    participant A as accounting-service
+    participant D as delivery-service
+    participant H as order-history-service
+    participant DB as order_views
+
+    O-)H: order.events (OrderCreated, OrderApproved, ...)
+    K-)H: kitchen.events (TicketCreated, TicketConfirmed, ...)
+    A-)H: accounting.events (CardAuthorized, AuthorizationReversed, ...)
+    D-)H: delivery.events (DeliveryScheduled, DeliveryDelivered, ...)
+    H-->>H: OrderViewService.handle*Event(eventId, eventType, orderId, ...)
+    H->>DB: upsert order_views row (create stub if absent, else fill in owned fields)
+```
+
+`OrderEventListener`/`KitchenEventListener`/`AccountingEventListener`/`DeliveryEventListener` each deserialize their own topic's existing flat wire-format record (`OrderEvent`/`KitchenEvent`/`AccountingEvent`/`DeliveryEvent` — copy-pasted per-consumer, matching this codebase's existing convention for saga wire records) and hand off to one shared `OrderViewService`, which has exactly one `handle*Event` method per topic. Every handler dedupes via the same `processed_events` ledger every other consumer in this codebase uses before touching `order_views`.
+
+### The upsert pattern — why no handler can assume `OrderCreated` came first
+
+```mermaid
+sequenceDiagram
+    participant K as kitchen.events
+    participant O as order.events
+    participant H as OrderViewService
+    participant DB as order_views
+
+    Note over K,O: Kafka guarantees ordering only within one topic-partition —<br/>never across topics. TicketCreated can be consumed<br/>before this service has caught up on OrderCreated.
+    K-)H: TicketCreated (orderId=42)
+    H->>DB: findById(42) → absent → new OrderView(42), all fields null
+    H->>DB: save (ticketStatus=CREATE_PENDING only)
+    O-)H: OrderCreated (orderId=42)
+    H->>DB: findById(42) → found (stub from above)
+    H->>DB: save (consumerId/restaurantId/lineItems/orderStatus now filled in too)
+```
+
+Every one of the four `handle*Event` methods follows the identical shape: `orderViewRepository.findById(orderId).orElseGet(() -> new OrderView(orderId))`, then a `switch` on `eventType` that sets only the fields that handler owns, then save. None of the four is privileged as "the one that creates the row" — whichever event this service's consumer group happens to process first for a given order creates the stub, and the rest fill it in as they arrive, regardless of order. This is a direct, structural consequence of Kafka's ordering guarantee being per-topic-partition only, not global — a real property of this system, not a hypothetical edge case, since this service's four listeners run on independent consumer offsets against four independent topics.
+
+### API composition vs. CQRS — what actually differs
+
+| | API composition (`GET /orders/{id}/view`) | CQRS (`GET /order-views/{orderId}`) |
+|---|---|---|
+| Where the join happens | Request time, in `OrderViewController` | Continuously, in `OrderViewService` as events arrive |
+| Data freshness | Always current as of the request (each downstream call reads live state) | Eventually consistent — a `GET` moments after a write can show a stale or partially-filled view until the relevant event is consumed |
+| Request-time latency | Bounded by the slowest of 4 parallel downstream calls (mitigated by virtual threads, not eliminated) | One local indexed `findById` — near-instant regardless of what the write side is doing |
+| Failure coupling | Availability of the composite endpoint is coupled to restaurant/kitchen/accounting/delivery-service being reachable — a circuit breaker degrades a section, but the endpoint's overall responsiveness still depends on 4 live services | Fully decoupled from write-side availability — order-history-service still answers from its own table even if every other service is down, as long as it isn't itself down |
+| New service required | No — reuses order-service, adds proxies/controllers to 3 existing services | Yes — `ftgo-order-history-service`, standalone from the start |
+| New Eureka registrations | 3 (kitchen/accounting/delivery-service, so order-service can discover them) | 0 — order-history-service registers with nobody and is discovered by nobody |
+| New Kafka topics | 0 | 0 — reuses the 4 existing choreography topics as a 4th/5th consumer each |
+| Partial-failure model | Per-section (`SectionResult`: `Found`/`NotFound`/`Unavailable`) — a degraded downstream degrades only its own field of the response | All-or-nothing at the row level — a field is either populated (its owning event was consumed) or still null (not yet), there's no "unavailable" state since nothing is called live |
+| Consistency guarantee | Strong per-section (each section reflects the current DB state of its owning service at call time) | Eventual — bounded by how far behind this service's Kafka consumer group is, typically sub-second in this setup |
+
+Both patterns solve the same underlying problem (a client needs data owned by more than one service) with opposite tradeoffs on the same axis: API composition pays latency and availability coupling at request time in exchange for always-current data; CQRS pays eventual consistency and the cost of a standing extra service/datastore in exchange for near-instant, fully decoupled reads. Neither is strictly better — the book's own framing (and this project's) is that API composition suits ad hoc, low-volume composite queries where freshness matters most, while CQRS suits high-volume, read-heavy queries (e.g. an order-history screen a consumer might poll or page through often) where the write-side services being briefly unreachable should never be visible to that screen at all.

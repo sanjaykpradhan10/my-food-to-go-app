@@ -6,19 +6,20 @@ A hands-on implementation of the FTGO (Food To Go) application from [*Microservi
 
 This project follows the book's progression, adding real code at each chapter. It is not a clone of the [reference implementation](https://github.com/microservices-patterns/ftgo-application) — it's a ground-up build used to develop a deep, working understanding of microservices patterns.
 
-**Progress:** Chapters 1–6 done. Sagas (Ch.4) and DDD aggregates (Ch.5) cover all three `Order` sub-sagas in both styles; event sourcing (Ch.6) adds a hand-rolled, switchable persistence path for the `Order` aggregate.
+**Progress:** Chapters 1–7 done. Sagas (Ch.4) and DDD aggregates (Ch.5) cover all three `Order` sub-sagas in both styles; event sourcing (Ch.6) adds a hand-rolled, switchable persistence path for the `Order` aggregate; queries (Ch.7) adds two contrasting patterns — API composition (`GET /orders/{id}/view` on order-service) and CQRS (a new standalone `ftgo-order-history-service`).
 
 ## Services
 
 | Service | Port | Domain | Status |
 |---------|------|--------|--------|
 | ftgo-consumer-service | 8081 | Consumer management | Verifies consumer, publishes `ConsumerVerified`/`Failed` (choreography) or replies to `VerifyConsumerCommand` (orchestration) |
-| ftgo-order-service | 8082 | Order lifecycle (saga participant/coordinator); `Order` is a DDD aggregate (Ch.5) with the full create/cancel/revise state machine, persisted either via JPA or hand-rolled event sourcing (Ch.6), switchable via `PERSISTENCE_MODE`; Cancel Order and Revise Order saga participant (both modes) | `POST /orders`, `POST /orders/{id}/cancel`, `POST /orders/{id}/revise`; choreography: `OrderSagaService`/`OrderCancelSagaService`/`OrderReviseSagaService` react to event topics; orchestration: `CreateOrderSagaOrchestrator` (create) + stateless `CancelOrderSagaOrchestrator` (cancel) + stateless `ReviseOrderSagaOrchestrator` (revise), routed from one shared `saga.replies` listener via `SagaReply.sagaType()`; both saga styles work identically against either persistence mode via the `OrderTransitions`/`SagaCommandPublisher` facades |
-| ftgo-kitchen-service | 8083 | Ticket management (separate bounded context from Order); Cancel Order and Revise Order saga participant (both modes) | `Ticket` is a DDD aggregate (Ch.5) with an enforced state machine, a persisted `totalQuantity`, and class-per-event domain events; creates capacity-gated `Ticket`s, confirms/cancels based on saga outcome (either style); asks-kitchen-first gate for Cancel Order (`handleOrderCancelled`/`handleCancelTicketCommand`) and for Revise Order (`reviseQuantity`/`undoRevision`, provisionally applying a revised quantity before accounting is ever asked, reverting it if accounting later declines); REST API for restaurant staff (`accept`/`preparing`/`ready-for-pickup`/`picked-up`) |
-| ftgo-accounting-service | 8084 | Payment authorisation; `Authorization` is a DDD aggregate (Ch.5) with a persisted `totalQuantity`; Cancel Order and Revise Order saga participant (both modes) | Authorizes/declines by order quantity threshold; choreography needs a local join, orchestration doesn't (orchestrator already waited for both prerequisites); reverses an authorization only after kitchen confirms a ticket cancellable, and re-checks the threshold on a revision (`reviseAuthorization`) without reversing anything if declined — `reverseForChoreography`/`reverseForCommand` and `reviseForChoreography`/`reviseForCommand` each publish to different channels (`accounting.events` vs. a `saga.replies` reply) and are not interchangeable |
+| ftgo-order-service | 8082 | Order lifecycle (saga participant/coordinator); `Order` is a DDD aggregate (Ch.5) with the full create/cancel/revise state machine, persisted either via JPA or hand-rolled event sourcing (Ch.6), switchable via `PERSISTENCE_MODE`; Cancel Order and Revise Order saga participant (both modes) | `POST /orders`, `POST /orders/{id}/cancel`, `POST /orders/{id}/revise`, `GET /orders/{id}/view` (API composition, Ch.7); choreography: `OrderSagaService`/`OrderCancelSagaService`/`OrderReviseSagaService` react to event topics; orchestration: `CreateOrderSagaOrchestrator` (create) + stateless `CancelOrderSagaOrchestrator` (cancel) + stateless `ReviseOrderSagaOrchestrator` (revise), routed from one shared `saga.replies` listener via `SagaReply.sagaType()`; both saga styles work identically against either persistence mode via the `OrderTransitions`/`SagaCommandPublisher` facades |
+| ftgo-kitchen-service | 8083 | Ticket management (separate bounded context from Order); Cancel Order and Revise Order saga participant (both modes) | `Ticket` is a DDD aggregate (Ch.5) with an enforced state machine, a persisted `totalQuantity`, and class-per-event domain events; creates capacity-gated `Ticket`s, confirms/cancels based on saga outcome (either style); asks-kitchen-first gate for Cancel Order (`handleOrderCancelled`/`handleCancelTicketCommand`) and for Revise Order (`reviseQuantity`/`undoRevision`, provisionally applying a revised quantity before accounting is ever asked, reverting it if accounting later declines); REST API for restaurant staff (`accept`/`preparing`/`ready-for-pickup`/`picked-up`), plus a read-only `GET /tickets/order/{orderId}` (API composition, Ch.7); registers with Eureka |
+| ftgo-accounting-service | 8084 | Payment authorisation; `Authorization` is a DDD aggregate (Ch.5) with a persisted `totalQuantity`; Cancel Order and Revise Order saga participant (both modes) | Authorizes/declines by order quantity threshold; choreography needs a local join, orchestration doesn't (orchestrator already waited for both prerequisites); reverses an authorization only after kitchen confirms a ticket cancellable, and re-checks the threshold on a revision (`reviseAuthorization`) without reversing anything if declined — `reverseForChoreography`/`reverseForCommand` and `reviseForChoreography`/`reviseForCommand` each publish to different channels (`accounting.events` vs. a `saga.replies` reply) and are not interchangeable; read-only `GET /authorizations/order/{orderId}` (API composition, Ch.7 — this service's first-ever REST controller); registers with Eureka |
 | ftgo-restaurant-service | 8085 | Restaurant/menu management | `GET /restaurants/{id}`, registers with Eureka |
+| ftgo-delivery-service | 8086 | Delivery tracking (separate bounded context from Order); Create Order saga's 3rd parallel-join leg and Cancel Order saga's delivery-release step (both saga modes) | `Delivery` is a DDD aggregate (`SCHEDULED → PICKED_UP → DELIVERED`, or `CANCELLED` from `SCHEDULED`) with a seeded 3-courier pool; `POST /deliveries/{id}/picked-up`/`delivered`; read-only `GET /deliveries/order/{orderId}` (API composition, Ch.7); registers with Eureka |
+| ftgo-order-history-service | 8088 | Order history / order view (CQRS read model, Ch.7 — no bounded context of its own, no aggregate) | Pure Kafka consumer (`order.events`/`kitchen.events`/`accounting.events`/`delivery.events`) maintaining a denormalized `order_views` table via an upsert-on-any-event pattern; `GET /order-views/{orderId}`; no Eureka, no synchronous calls to or from anything |
 | ftgo-service-registry | 8761 | Eureka service registry | Standalone |
-| ftgo-delivery-service | 8086 | Delivery tracking (separate bounded context from Order) | Stub — not yet in scope |
 
 Each service has its own `README.md` with its full API/events/domain model. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the project-level event catalog, the shared outbox pattern, and sequence diagrams for both saga styles.
 
@@ -84,7 +85,7 @@ docker compose down -v
 ```
 my-food-to-go-app/
 ├── build.gradle              ← shared plugin versions and dependencies
-├── settings.gradle           ← declares all 8 sub-projects
+├── settings.gradle           ← declares all 9 sub-projects
 ├── compose.yml               ← local MySQL + Kafka infrastructure
 ├── infrastructure/
 │   └── mysql/
@@ -96,6 +97,7 @@ my-food-to-go-app/
 ├── ftgo-accounting-service/
 ├── ftgo-restaurant-service/
 ├── ftgo-delivery-service/
+├── ftgo-order-history-service/
 ├── ftgo-service-registry/
 └── docs/
     ├── ARCHITECTURE.md       ← event catalog, outbox pattern, saga sequence diagrams
@@ -115,6 +117,7 @@ my-food-to-go-app/
 | 4 | Managing transactions with sagas | Create Order saga implemented both ways (choreography, orchestration) |
 | 5 | Designing business logic | `Ticket` (kitchen-service), `Order` (order-service), and `Authorization` (accounting-service) all refactored into DDD aggregates with enforced state transitions and domain events. Cancel Order and Revise Order sagas both implemented (both modes) — all three `Order` sub-projects complete |
 | 6 | Event sourcing | Done — `Order` (order-service) gained a hand-rolled event-sourced persistence path (event store, snapshots, dedicated optimistic-lock version table), switchable against JPA via `PERSISTENCE_MODE`; covers all three `Order` sagas (create/cancel/revise) in both styles, including the book's full pseudo-event mechanism (`SagaCommandEvent`-style) for orchestration-mode sagas; publishes via the existing Ch.3 CDC pipeline |
-| 7–13 | … | Not started |
+| 7 | Implementing queries | Done — two contrasting query patterns: API composition (`GET /orders/{id}/view` on order-service, parallel virtual-thread fan-out to restaurant/kitchen/accounting/delivery-service, per-service circuit breakers, `SectionResult` graceful degradation) and CQRS (new standalone `ftgo-order-history-service`, a pure Kafka consumer maintaining a denormalized `order_views` read model via an upsert-on-any-event pattern, `GET /order-views/{orderId}`, no Eureka, no synchronous calls) |
+| 8–13 | … | Not started |
 
 See [`CONTEXT.md`](CONTEXT.md) for detailed notes and concept understanding per chapter.
