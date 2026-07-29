@@ -25,6 +25,28 @@ class DeliveryEventListenerTest {
     }
 
     @Test
+    void deliveryPickedUpCallsHandleDeliveryEvent() {
+        String payload = """
+                {"eventId":"evt-2","eventType":"DeliveryPickedUp","orderId":42}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(orderViewService).handleDeliveryEvent("evt-2", "DeliveryPickedUp", 42L, null);
+    }
+
+    @Test
+    void deliveryDeliveredCallsHandleDeliveryEvent() {
+        String payload = """
+                {"eventId":"evt-3","eventType":"DeliveryDelivered","orderId":42}
+                """;
+
+        listener.onMessage(payload);
+
+        verify(orderViewService).handleDeliveryEvent("evt-3", "DeliveryDelivered", 42L, null);
+    }
+
+    @Test
     void skipsMalformedPayload() {
         listener.onMessage("not json");
 

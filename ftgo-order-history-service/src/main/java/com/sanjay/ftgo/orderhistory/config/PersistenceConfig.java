@@ -11,7 +11,9 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 // (ftgo-common's KafkaProducerConfig bean doesn't need scanning here — it's registered
 // automatically via ftgo-common's own Spring Boot auto-configuration. This service never uses
 // OutboxPublisher/OutboxEventRepository since it never publishes, only ProcessedEventRepository
-// for consume-side dedup.)
+// for consume-side dedup — but com.sanjay.ftgo.common.outbox can't be scanned selectively at
+// the class level, so scanning it for ProcessedEvent unavoidably also registers OutboxEvent,
+// creating an unused outbox_events table as a harmless side effect.)
 @Configuration
 @EntityScan(basePackages = {"com.sanjay.ftgo.orderhistory.domain", "com.sanjay.ftgo.common.outbox"})
 @EnableJpaRepositories(basePackages = {"com.sanjay.ftgo.orderhistory.domain", "com.sanjay.ftgo.common.outbox"})
