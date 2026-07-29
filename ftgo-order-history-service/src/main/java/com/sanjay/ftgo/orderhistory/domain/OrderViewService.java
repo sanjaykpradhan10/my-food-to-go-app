@@ -45,7 +45,13 @@ public class OrderViewService {
             case "OrderCancelConfirmed" -> view.setOrderStatus("CANCELLED");
             case "OrderCancelRejected" -> view.setOrderStatus("APPROVED");
             case "OrderRevisionProposed" -> view.setOrderStatus("REVISION_PENDING");
-            case "OrderRevised" -> view.setOrderStatus("APPROVED");
+            // The wire payload's lineItems field carries the revised line items here (see
+            // OrderEventSerializer in ftgo-order-service - OrderRevisedEvent's revisedLineItems
+            // is serialized onto the same generic "lineItems" wire field OrderCreated uses).
+            case "OrderRevised" -> {
+                view.setLineItems(lineItems);
+                view.setOrderStatus("APPROVED");
+            }
             case "OrderRevisionRejected" -> view.setOrderStatus("APPROVED");
             // OrderRevisionCompensationRequested: wire-only pseudo-event signalling kitchen to
             // undo a provisional revision - the order itself stays REVISION_PENDING at this

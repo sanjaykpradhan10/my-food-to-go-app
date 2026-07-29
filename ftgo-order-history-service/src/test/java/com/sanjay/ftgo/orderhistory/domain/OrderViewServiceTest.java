@@ -3,6 +3,8 @@ package com.sanjay.ftgo.orderhistory.domain;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.List;
 import java.util.Optional;
@@ -101,6 +103,100 @@ class OrderViewServiceTest {
         orderViewService.handleOrderEvent("evt-3", "OrderRevisionCompensationRequested", 42L, null, null, null);
 
         assertThat(existing.getOrderStatus()).isEqualTo("REVISION_PENDING");
+    }
+
+    @Test
+    void orderRevisedUpdatesLineItems() {
+        OrderView existing = new OrderView(42L);
+        existing.setLineItems(List.of(new OrderViewLineItem(10L, 2)));
+        existing.setOrderStatus("REVISION_PENDING");
+        when(processedEventRepository.existsById("evt-16")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+        List<OrderViewLineItem> revisedLineItems = List.of(new OrderViewLineItem(10L, 5), new OrderViewLineItem(20L, 1));
+
+        orderViewService.handleOrderEvent("evt-16", "OrderRevised", 42L, null, null, revisedLineItems);
+
+        assertThat(existing.getLineItems()).containsExactlyElementsOf(revisedLineItems);
+        assertThat(existing.getOrderStatus()).isEqualTo("APPROVED");
+    }
+
+    // Full event-type-to-status mapping coverage for all 4 handlers, cross-checked against
+    // README.md's "Events consumed" table (the authoritative list, independently re-verified
+    // against the producing services' sealed-interface permits lists during Task 3-6 reviews).
+    @ParameterizedTest
+    @CsvSource({
+            "OrderCreated,APPROVAL_PENDING",
+            "OrderApproved,APPROVED",
+            "OrderRejected,REJECTED",
+            "OrderCancelled,CANCEL_PENDING",
+            "OrderCancelConfirmed,CANCELLED",
+            "OrderCancelRejected,APPROVED",
+            "OrderRevisionProposed,REVISION_PENDING",
+            "OrderRevised,APPROVED",
+            "OrderRevisionRejected,APPROVED"
+    })
+    void orderEventTypeMapsToExpectedOrderStatus(String eventType, String expectedStatus) {
+        OrderView existing = new OrderView(42L);
+        when(processedEventRepository.existsById("evt")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleOrderEvent("evt", eventType, 42L, 1L, 7L, List.of(new OrderViewLineItem(10L, 2)));
+
+        assertThat(existing.getOrderStatus()).isEqualTo(expectedStatus);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "TicketCreated,CREATE_PENDING",
+            "TicketConfirmed,AWAITING_ACCEPTANCE",
+            "TicketAccepted,ACCEPTED",
+            "TicketPreparingStarted,PREPARING",
+            "TicketReadyForPickup,READY_FOR_PICKUP",
+            "TicketPickedUp,PICKED_UP",
+            "TicketCancelled,CANCELLED"
+    })
+    void kitchenEventTypeMapsToExpectedTicketStatus(String eventType, String expectedStatus) {
+        OrderView existing = new OrderView(42L);
+        when(processedEventRepository.existsById("evt")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleKitchenEvent("evt", eventType, 42L);
+
+        assertThat(existing.getTicketStatus()).isEqualTo(expectedStatus);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "CardAuthorized,AUTHORIZED",
+            "CardAuthorizationFailed,DECLINED",
+            "AuthorizationReversed,REVERSED",
+            "AuthorizationRevised,AUTHORIZED"
+    })
+    void accountingEventTypeMapsToExpectedAuthorizationStatus(String eventType, String expectedStatus) {
+        OrderView existing = new OrderView(42L);
+        when(processedEventRepository.existsById("evt")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleAccountingEvent("evt", eventType, 42L);
+
+        assertThat(existing.getAuthorizationStatus()).isEqualTo(expectedStatus);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "DeliveryScheduled,SCHEDULED",
+            "DeliveryPickedUp,PICKED_UP",
+            "DeliveryDelivered,DELIVERED",
+            "DeliveryCancelled,CANCELLED"
+    })
+    void deliveryEventTypeMapsToExpectedDeliveryStatus(String eventType, String expectedStatus) {
+        OrderView existing = new OrderView(42L);
+        when(processedEventRepository.existsById("evt")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.of(existing));
+
+        orderViewService.handleDeliveryEvent("evt", eventType, 42L, 3L);
+
+        assertThat(existing.getDeliveryStatus()).isEqualTo(expectedStatus);
     }
 
     @Test
@@ -242,8 +338,11 @@ class OrderViewServiceTest {
         assertThat(existing.getDeliveryStatus()).isNull();
     }
 
+    // Named for exactly what it tests - see also deliveryEventTypeMapsToExpectedDeliveryStatus
+    // below, which covers DeliveryDelivered (and DeliveryPickedUp again) as part of the full
+    // mapping table.
     @Test
-    void deliveryPickedUpAndDeliveredUpdateStatus() {
+    void deliveryPickedUpUpdatesStatus() {
         OrderView existing = new OrderView(42L);
         existing.setDeliveryStatus("SCHEDULED");
         when(processedEventRepository.existsById("evt-15")).thenReturn(false);
