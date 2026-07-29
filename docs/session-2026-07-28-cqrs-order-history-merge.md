@@ -53,6 +53,12 @@ PR #18 pushed and merged via `gh pr merge --merge --delete-branch` (no CI config
 
 This completes **Chapter 7** (both sub-projects — API composition via PR #17, CQRS via PR #18) — already flipped to Done in `CONTEXT.md`'s progress table during the prior session's documentation sweep; no further doc changes needed this session beyond the resume-doc deletion and the retry-count doc correction, both already covered above.
 
+### Post-merge project-wide documentation sweep
+
+After merge, ran a project-wide check (per explicit request) to confirm every doc reflects Ch.7 as complete: `README.md` (progress line, per-service descriptions, Book-progress table), `docs/ARCHITECTURE.md` (API-composition and CQRS sections, sequence diagrams, comparison table), `CONTEXT.md`'s Services-to-build table and Patterns reference, and all five touched `ftgo-*-service/README.md` files were already fully current from the prior session's Task 9 sweep — no edits needed. A repo-wide grep for stale "not started"/stub language turned up only `CONTEXT.md`'s own session-log entries, which are correctly time-scoped historical records, not live status claims, and are exempt from the sweep rule.
+
+The one real gap: `CONTEXT.md`'s "Concept understanding" section had detailed Ch.5/Ch.6 write-ups but no Ch.7 entry. Added one (API composition vs. CQRS contrast, the `@Version`/lost-update lesson) and moved Ch.7 out of "Needs more depth"/"Open questions" (commit `6d28c1f`). Also committed this session-log file itself, which had been created but not yet committed (commit `93d8e81`). Both pushed to `main`.
+
 ## Next actions
 
 - [ ] Still-deferred from earlier sessions: consider a Spring Boot 4.x migration now that 3.5.x is permanently frozen (no more OSS patches). Not part of any recent session's scope.
