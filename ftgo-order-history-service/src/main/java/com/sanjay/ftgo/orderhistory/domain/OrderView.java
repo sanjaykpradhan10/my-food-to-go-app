@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,18 @@ public class OrderView {
     @ElementCollection
     @CollectionTable(name = "order_view_line_items", joinColumns = @JoinColumn(name = "order_id"))
     private List<OrderViewLineItem> lineItems = new ArrayList<>();
+
+    // This @Id is externally assigned (orderId), so every save() goes through
+    // EntityManager.merge() rather than a true INSERT-then-dirty-checking path, and merge
+    // always writes every column, not just the ones the current handler touched. Without
+    // optimistic locking, two of the four @KafkaListener threads racing to update the same
+    // row (e.g. OrderCreated and TicketCreated landing close together) can silently overwrite
+    // each other's columns with a stale read snapshot - see SagaJoinState in
+    // ftgo-accounting-service for this repo's existing precedent. KafkaConsumerConfig retries
+    // the listener on OptimisticLockingFailureException so the loser re-reads the
+    // already-committed write instead of clobbering it.
+    @Version
+    private Long version;
 
     protected OrderView() {
     }
@@ -109,7 +122,15 @@ public class OrderView {
         return lineItems;
     }
 
+    // Defensive copy: OrderEventListener builds this list via Stream.toList(), which is
+    // immutable. Assigning it directly into this @ElementCollection field makes Hibernate
+    // throw UnsupportedOperationException when it clears the collection during merge on
+    // save() - same bug and fix as Order.java's revise()/confirmRevision() in ftgo-order-service.
     public void setLineItems(List<OrderViewLineItem> lineItems) {
-        this.lineItems = lineItems;
+        this.lineItems = lineItems == null ? new ArrayList<>() : new ArrayList<>(lineItems);
+    }
+
+    public Long getVersion() {
+        return version;
     }
 }
