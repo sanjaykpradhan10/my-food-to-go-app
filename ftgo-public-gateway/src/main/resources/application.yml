@@ -1,0 +1,76 @@
+spring:
+  application:
+    name: ftgo-public-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: public-orders
+          uri: lb://ftgo-order-service
+          predicates:
+            - Path=/api/v1/orders/**
+          filters:
+            - RewritePath=/api/v1/orders(?<segment>/?.*), /orders$\{segment}
+            - name: PerKeyRateLimiter
+              args:
+                requestsPerSecond: 5
+        - id: public-tickets
+          uri: lb://ftgo-kitchen-service
+          predicates:
+            - Path=/api/v1/tickets/**
+          filters:
+            - RewritePath=/api/v1/tickets(?<segment>/?.*), /tickets$\{segment}
+            - name: PerKeyRateLimiter
+              args:
+                requestsPerSecond: 5
+        - id: public-authorizations
+          uri: lb://ftgo-accounting-service
+          predicates:
+            - Path=/api/v1/authorizations/**
+          filters:
+            - RewritePath=/api/v1/authorizations(?<segment>/?.*), /authorizations$\{segment}
+            - name: PerKeyRateLimiter
+              args:
+                requestsPerSecond: 5
+        - id: public-deliveries
+          uri: lb://ftgo-delivery-service
+          predicates:
+            - Path=/api/v1/deliveries/**
+          filters:
+            - RewritePath=/api/v1/deliveries(?<segment>/?.*), /deliveries$\{segment}
+            - name: PerKeyRateLimiter
+              args:
+                requestsPerSecond: 5
+        - id: public-order-views
+          uri: lb://ftgo-order-history-service
+          predicates:
+            - Path=/api/v1/order-views/**
+          filters:
+            - RewritePath=/api/v1/order-views(?<segment>/?.*), /order-views$\{segment}
+            - name: PerKeyRateLimiter
+              args:
+                requestsPerSecond: 5
+        - id: public-restaurants
+          uri: lb://ftgo-restaurant-service
+          predicates:
+            - Path=/api/v1/restaurants/**
+          filters:
+            - RewritePath=/api/v1/restaurants(?<segment>/?.*), /restaurants$\{segment}
+            - name: PerKeyRateLimiter
+              args:
+                requestsPerSecond: 5
+
+gateway:
+  api-key:
+    value: public-dev-key
+
+server:
+  port: 8091
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true

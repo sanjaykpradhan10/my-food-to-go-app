@@ -214,11 +214,46 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      service-registry:
+        condition: service_started
     ports:
       - "8088:8088"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order_history
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+
+  mobile-gateway:
+    build:
+      context: .
+      dockerfile: ftgo-mobile-gateway/Dockerfile
+    depends_on:
+      - service-registry
+      - order-service
+      - kitchen-service
+      - accounting-service
+      - delivery-service
+    ports:
+      - "8090:8090"
+    environment:
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+
+  public-gateway:
+    build:
+      context: .
+      dockerfile: ftgo-public-gateway/Dockerfile
+    depends_on:
+      - service-registry
+      - order-service
+      - kitchen-service
+      - accounting-service
+      - delivery-service
+      - order-history-service
+      - restaurant-service
+    ports:
+      - "8091:8091"
+    environment:
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
 
 volumes:
   mysql-data:

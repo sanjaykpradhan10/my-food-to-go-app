@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: ftgo-mobile-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: mobile-create-order
+          uri: lb://ftgo-order-service
+          predicates:
+            - Path=/mobile/orders
+            - Method=POST
+          filters:
+            - RewritePath=/mobile/orders, /orders
+            - name: PerKeyRateLimiter
+              args:
+                requestsPerSecond: 20
+        - id: mobile-cancel-order
+          uri: lb://ftgo-order-service
+          predicates:
+            - Path=/mobile/orders/{id}/cancel
+            - Method=POST
+          filters:
+            - RewritePath=/mobile/orders/(?<id>.*)/cancel, /orders/$\{id}/cancel
+            - name: PerKeyRateLimiter
+              args:
+                requestsPerSecond: 20
+        - id: mobile-revise-order
+          uri: lb://ftgo-order-service
+          predicates:
+            - Path=/mobile/orders/{id}/revise
+            - Method=POST
+          filters:
+            - RewritePath=/mobile/orders/(?<id>.*)/revise, /orders/$\{id}/revise
+            - name: PerKeyRateLimiter
+              args:
+                requestsPerSecond: 20
+
+gateway:
+  api-key:
+    value: mobile-dev-key
+
+server:
+  port: 8090
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      orderService:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 5s
+      kitchenService:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 5s
+      accountingService:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 5s
+      deliveryService:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 5s
