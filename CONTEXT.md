@@ -218,7 +218,7 @@ Ask whichever tool you're in:
 - **Database**: MySQL per service (each service owns its schema)
 - **Infrastructure**: Docker Compose (local), Kubernetes deferred to Ch. 12
 - **Build tool**: Gradle (matches reference implementation)
-- **Testing**: JUnit 5, Mockito, Spring Boot Test, Pact (contract tests in Ch. 9)
+- **Testing**: JUnit 5, Mockito, Spring Boot Test, Pact (contract tests in Ch. 10)
 
 ---
 *Last updated: 2026-07-30 — Ch.9 done: unit-testing patterns audited against the existing suite (4 of 6 book techniques already matched independently), saga/event payload assertions tightened in 3 test files, a standalone `OrderLineItemTest` added, and the Ch.9/Ch.10 contract-testing mis-filing corrected. Next up: Ch.10.*
