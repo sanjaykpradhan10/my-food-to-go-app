@@ -1,11 +1,13 @@
 # Session — 2026-07-29 (Ch.8 — API gateway / Backends for Frontends)
 
 **Tool:** Claude Code
-**Duration:** Single session — full brainstorm → spec → plan → task-based implementation cycle (10 tasks), including live Docker e2e verification and a full documentation sweep.
+**Duration:** Single session — full brainstorm → spec → plan → task-based implementation cycle (10 tasks), including live Docker e2e verification and a full documentation sweep, followed by a final whole-branch review, PR, and merge.
 **Repo:** https://github.com/sanjaykpradhan10/my-food-to-go-app
-**Branch:** `worktree-api-gateway-bff`
+**Branch:** `worktree-worktree-api-gateway-bff` — merged and deleted; work now lives on `main`
+**Merged:** PR [#19](https://github.com/sanjaykpradhan10/my-food-to-go-app/pull/19), merge commit `b20a231`
 **Spec:** `docs/superpowers/specs/2026-07-29-api-gateway-bff-design.md`
 **Plan:** `docs/superpowers/plans/2026-07-29-api-gateway-bff-plan.md`
+**Status: CLOSED — Chapter 8 is fully done and merged to `main`. Nothing pending from this session.**
 
 ## Sub-project scope
 
@@ -50,10 +52,20 @@ All 5 fixes were independently code-reviewed and approved before this documentat
 
 Per `CLAUDE.md`'s chapter-completion rule: `docs/ARCHITECTURE.md` gained a new "API Gateway / Backends for Frontends" section (ownership model, routing tables for both gateways, the mobile-gateway composition sequence diagram, an explicit contrast table against Ch.7's API composition, and the RouterFunction-vs-Gateway-route filter-isolation callout); new `ftgo-gateway-common`/`ftgo-mobile-gateway`/`ftgo-public-gateway` READMEs following the existing per-service convention; `CONTEXT.md`'s book-progress table (Ch.8 flipped to Done), current position, services-to-build table, concept-understanding section, and session log; and the root `README.md`'s service list and book-progress line.
 
+## Final whole-branch review and merge
+
+After the doc sweep, a final whole-branch review (Opus, all 18 commits) ran before merge. Verdict: Approved, with one Important finding fixed on the spot — `ftgo-gateway-common/build.gradle` was missing the `spring-cloud-dependencies:2025.0.3` BOM override that both consumer gateways already had, so the shared library compiled/tested against `spring-cloud-starter-gateway:4.2.0` while running at `4.3.5` in production. Fixed in commit `58bf227`, scoped re-review approved clean. Six additional Minor findings were triaged as acceptable, ledger-worthy follow-ups (not merge blockers) — see the "Next actions" list below for the ones still worth picking up later.
+
+Branch pushed and PR [#19](https://github.com/sanjaykpradhan10/my-food-to-go-app/pull/19) opened, then merged to `main` (merge commit `b20a231`). Local `main` fast-forwarded, the feature worktree and branch were removed (all 19 commits confirmed merged before deletion). The full repo-wide doc sweep was independently re-verified afterward — root `README.md`, `CONTEXT.md`, `docs/ARCHITECTURE.md`, `settings.gradle`, and all three new gateway READMEs are current; the only remaining `ftgo-api-gateway`/pre-Ch.8 references are confined to point-in-time `docs/superpowers/plans/` and `docs/superpowers/specs/` files, which are exempt from the sweep rule.
+
 ## Next actions
 
 - [ ] Chapter 9 — Testing microservices: Part 1 — not started, no session yet.
 - [ ] Still-deferred: the mobile gateway's composed endpoint has no rate-limiting or request-logging applied (RouterFunction filter-isolation gap, deliberately parked, not part of this chapter's scope).
+- [ ] Still-deferred: auth-check duplication between `ApiKeyAuthFilter` and `OrderDetailsRouterConfig`'s own `.filter()` wrapper — structurally forced by the RouterFunction/GlobalFilter split, cosmetic only; a shared constant on `GatewayApiKeyProperties` would remove the last drift risk (the header name).
+- [ ] Still-deferred: `docs/superpowers/specs/2026-07-29-api-gateway-bff-design.md`'s "no changes to existing services' internal REST/Kafka APIs" non-goal is now stale — `GET /orders/{id}` was added to order-service as a necessary, additive exception; worth a one-line amendment next time that spec is touched.
+- [ ] Still-deferred: `GATEWAY_APIKEY_VALUE` (not `GATEWAY_API_KEY_VALUE` — relaxed binding drops dashes, doesn't map them to underscores) is a naming trap for the next person who wants to override an API key via `compose.yml`; worth one line in the gateway READMEs.
+- [ ] Still-deferred: gateway route configuration has thin automated coverage (each gateway's test suite is close to `contextLoads()`-only) — route rewrites and per-route rate-limiter attachment are currently verified only by the live e2e run, not by CI-repeatable tests.
 - [ ] Still-deferred from earlier sessions: consider a Spring Boot 4.x migration now that 3.5.x is permanently frozen (no more OSS patches).
 
 ---
