@@ -27,7 +27,10 @@ subprojects {
 // ftgo-common is a plain library (no REST layer, no JDBC runtime of its own) — it declares
 // its own minimal dependency set in its own build.gradle instead of inheriting the runnable
 // services' web/mysql/test stack, so its classpath isn't bloated with dependencies it never uses.
-configure(subprojects.findAll { it.name != 'ftgo-common' }) {
+// The gateway modules are WebFlux-based and need reactive starters, not servlet web/JPA.
+def reactiveModules = ['ftgo-common', 'ftgo-gateway-common', 'ftgo-mobile-gateway', 'ftgo-public-gateway']
+
+configure(subprojects.findAll { !reactiveModules.contains(it.name) }) {
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-web'
         implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
