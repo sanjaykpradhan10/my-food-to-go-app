@@ -1,0 +1,12 @@
+apply plugin: 'java-library'
+
+// This module ships only Groovy contract DSL files consumed by the Spring Cloud Contract
+// Gradle plugin (in ftgo-order-service, at contractTest time) and by Task 3's consumer-side
+// Stub Runner test in ftgo-mobile-gateway — it has no Spring Boot application of its own.
+bootJar {
+    enabled = false
+}
+
+jar {
+    enabled = true
+}

@@ -1,6 +1,10 @@
 plugins {
     id 'org.springframework.boot' version '3.5.16' apply false
     id 'io.spring.dependency-management' version '1.1.7' apply false
+    // 4.3.4 is the spring-cloud-contract-verifier release confirmed (Ch.10 Task 1) to resolve
+    // cleanly against this project's Spring Cloud 2025.0.3 BOM setup; the Gradle plugin ships
+    // from the same release train as the verifier artifact.
+    id 'org.springframework.cloud.contract' version '4.3.4' apply false
 }
 
 subprojects {
