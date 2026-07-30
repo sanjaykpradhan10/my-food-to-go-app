@@ -16,4 +16,24 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    // Runs a real WireMock stub server generated from ftgo-order-service-contracts' contract
+    // (published to mavenLocal by Task 3's wiring) so OrderDetailsHandlerContractTest exercises
+    // the actual contract shape instead of a hand-rolled mock duplicating it. Deliberately NOT a
+    // `project(':ftgo-order-service-contracts')` dependency: Stub Runner resolves the stub jar
+    // by Maven coordinates from mavenLocal at test runtime (see StubRunnerExtension.downloadStub
+    // in the test), and a Gradle project dependency here was tried and reverted - it leaked that
+    // module's own `implementation` deps (spring-boot-starter-data-jpa/web/mysql, applied to
+    // every non-reactive subproject by the root build.gradle) onto this reactive module's test
+    // runtime classpath, which broke MobileGatewayApplicationTests by pulling in an unwanted
+    // DataSource autoconfiguration attempt.
+    testImplementation 'org.springframework.cloud:spring-cloud-starter-contract-stub-runner'
+}
+
+// Stub Runner (StubsMode.LOCAL, see OrderDetailsHandlerContractTest) resolves the contracts
+// stub jar from the local Maven repository by coordinates, not from this build's own project
+// graph - it needs the jar to already be sitting in ~/.m2 before the test JVM starts. Wiring
+// this as a task dependency (rather than a "run this manually first" note) keeps the contract
+// test self-sufficient for anyone running `./gradlew :ftgo-mobile-gateway:test`.
+tasks.named('test') {
+    dependsOn ':ftgo-order-service-contracts:publishToMavenLocal'
 }

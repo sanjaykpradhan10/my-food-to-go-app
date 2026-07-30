@@ -1,4 +1,9 @@
 apply plugin: 'java-library'
+// Applied so this module (not just ftgo-order-service, which consumes it via contractsDslDir)
+// also produces the verifierStubsJar (classifier "stubs") that Task 3's consumer-side Stub
+// Runner test resolves via Maven coordinates from mavenLocal().
+apply plugin: 'org.springframework.cloud.contract'
+apply plugin: 'maven-publish'
 
 // This module ships only Groovy contract DSL files consumed by the Spring Cloud Contract
 // Gradle plugin (in ftgo-order-service, at contractTest time) and by Task 3's consumer-side
@@ -9,4 +14,36 @@ bootJar {
 
 jar {
     enabled = true
+}
+
+// This module's own contracts live under src/main/resources/contracts (there's no application
+// under test here, so there's no src/test tree) - the contract plugin's own default location
+// is src/test/resources/contracts, which doesn't exist in this module, so copyContracts finds
+// nothing without this override.
+contracts {
+    contractsDslDir = file('src/main/resources/contracts')
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            // verifierStubsJar is the task the Spring Cloud Contract Gradle plugin registers to
+            // package contracts/ + generated WireMock mappings as a classifier="stubs" jar - this
+            // is the artifact Stub Runner resolves at "group:artifact:+:stubs:port".
+            artifact verifierStubsJar
+        }
+    }
+    repositories {
+        mavenLocal()
+    }
+}
+
+// This module declares no explicit dependencies of its own; the BOM-managed versions the root
+// build's io.spring.dependency-management plugin applies to every subproject don't carry
+// explicit version numbers into this module's POM, which Gradle's publish validation otherwise
+// rejects. Nothing here is consumed transitively in a way that requires resolved versions -
+// this module is a contracts+stubs jar, not a library with a real dependency graph.
+tasks.withType(GenerateModuleMetadata).configureEach {
+    suppressedValidationErrors.add('dependencies-without-versions')
 }
