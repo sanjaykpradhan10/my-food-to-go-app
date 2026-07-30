@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -25,11 +26,33 @@ class CancelOrderSagaOrchestratorTest {
         return new Order(42L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.CANCEL_PENDING);
     }
 
+    private static boolean isKitchenCommand(Object command, String commandType, Integer totalQuantity, String sagaType) {
+        return command instanceof KitchenCommand kitchenCommand
+                && commandType.equals(kitchenCommand.commandType())
+                && java.util.Objects.equals(totalQuantity, kitchenCommand.totalQuantity())
+                && sagaType.equals(kitchenCommand.sagaType());
+    }
+
+    private static boolean isDeliveryCommand(Object command, String commandType, Long restaurantId, String sagaType) {
+        return command instanceof DeliveryCommand deliveryCommand
+                && commandType.equals(deliveryCommand.commandType())
+                && java.util.Objects.equals(restaurantId, deliveryCommand.restaurantId())
+                && sagaType.equals(deliveryCommand.sagaType());
+    }
+
+    private static boolean isAccountingCommand(Object command, String commandType, Integer totalQuantity, String sagaType) {
+        return command instanceof AccountingCommand accountingCommand
+                && commandType.equals(accountingCommand.commandType())
+                && java.util.Objects.equals(totalQuantity, accountingCommand.totalQuantity())
+                && sagaType.equals(accountingCommand.sagaType());
+    }
+
     @Test
     void startSendsCancelTicketCommand() {
         orchestrator.start(cancelPendingOrder());
 
-        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L),
+                argThat(command -> isKitchenCommand(command, "CancelTicket", null, "CancelOrder")));
     }
 
     @Test
@@ -38,7 +61,8 @@ class CancelOrderSagaOrchestratorTest {
 
         orchestrator.handleReply("e1", "kitchen", "TicketCancelled", 42L, null);
 
-        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L),
+                argThat(command -> isDeliveryCommand(command, "ReleaseDelivery", null, "CancelOrder")));
         verify(sagaCommandPublisher, never()).publish(eq("accounting.commands"), any(), any(), any(), any());
     }
 
@@ -48,7 +72,8 @@ class CancelOrderSagaOrchestratorTest {
 
         orchestrator.handleReply("e2", "delivery", "DeliveryCancelled", 42L, null);
 
-        verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("ReverseAuthorization"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("ReverseAuthorization"), eq(42L),
+                argThat(command -> isAccountingCommand(command, "ReverseAuthorization", null, "CancelOrder")));
     }
 
     @Test
