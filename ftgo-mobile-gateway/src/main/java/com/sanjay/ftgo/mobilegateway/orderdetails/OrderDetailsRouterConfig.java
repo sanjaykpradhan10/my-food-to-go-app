@@ -1,8 +1,10 @@
 package com.sanjay.ftgo.mobilegateway.orderdetails;
 
+import org.springframework.cloud.client.circuitbreaker.ReactiveCircuitBreakerFactory;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.server.RouterFunction;
@@ -33,14 +35,19 @@ public class OrderDetailsRouterConfig {
     }
 
     @Bean
-    public OrderDetailsHandler orderDetailsHandler(BackendClients clients) {
-        return new OrderDetailsHandler(clients);
+    public OrderDetailsHandler orderDetailsHandler(BackendClients clients, ReactiveCircuitBreakerFactory circuitBreakerFactory) {
+        return new OrderDetailsHandler(clients, circuitBreakerFactory);
     }
 
     @Bean
     public RouterFunction<ServerResponse> orderDetailsRoute(OrderDetailsHandler handler) {
         return RouterFunctions.route(GET("/mobile/orders/{orderId}"), request -> {
-            Long orderId = Long.valueOf(request.pathVariable("orderId"));
+            Long orderId;
+            try {
+                orderId = Long.valueOf(request.pathVariable("orderId"));
+            } catch (NumberFormatException e) {
+                return ServerResponse.status(HttpStatus.BAD_REQUEST).bodyValue("orderId must be numeric");
+            }
             return handler.fetchOrderDetails(orderId)
                     .flatMap(details -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(details));
         });
