@@ -6,7 +6,7 @@ A hands-on implementation of the FTGO (Food To Go) application from [*Microservi
 
 This project follows the book's progression, adding real code at each chapter. It is not a clone of the [reference implementation](https://github.com/microservices-patterns/ftgo-application) — it's a ground-up build used to develop a deep, working understanding of microservices patterns.
 
-**Progress:** Chapters 1–7 done. Sagas (Ch.4) and DDD aggregates (Ch.5) cover all three `Order` sub-sagas in both styles; event sourcing (Ch.6) adds a hand-rolled, switchable persistence path for the `Order` aggregate; queries (Ch.7) adds two contrasting patterns — API composition (`GET /orders/{id}/view` on order-service) and CQRS (a new standalone `ftgo-order-history-service`).
+**Progress:** Chapters 1–8 done. Sagas (Ch.4) and DDD aggregates (Ch.5) cover all three `Order` sub-sagas in both styles; event sourcing (Ch.6) adds a hand-rolled, switchable persistence path for the `Order` aggregate; queries (Ch.7) adds two contrasting patterns — API composition (`GET /orders/{id}/view` on order-service) and CQRS (a new standalone `ftgo-order-history-service`); external API patterns (Ch.8) adds two BFF-style gateways — `ftgo-mobile-gateway` and `ftgo-public-gateway` — sharing a `ftgo-gateway-common` edge-function library.
 
 ## Services
 
@@ -20,6 +20,9 @@ This project follows the book's progression, adding real code at each chapter. I
 | ftgo-delivery-service | 8086 | Delivery tracking (separate bounded context from Order); Create Order saga's 3rd parallel-join leg and Cancel Order saga's delivery-release step (both saga modes) | `Delivery` is a DDD aggregate (`SCHEDULED → PICKED_UP → DELIVERED`, or `CANCELLED` from `SCHEDULED`) with a seeded 3-courier pool; `POST /deliveries/{id}/picked-up`/`delivered`; read-only `GET /deliveries/order/{orderId}` (API composition, Ch.7); registers with Eureka |
 | ftgo-order-history-service | 8088 | Order history / order view (CQRS read model, Ch.7 — no bounded context of its own, no aggregate) | Pure Kafka consumer (`order.events`/`kitchen.events`/`accounting.events`/`delivery.events`) maintaining a denormalized `order_views` table via an upsert-on-any-event pattern; `GET /order-views/{orderId}`; no Eureka, no synchronous calls to or from anything |
 | ftgo-service-registry | 8761 | Eureka service registry | Standalone |
+| ftgo-mobile-gateway | 8090 | Mobile BFF gateway (Ch.8, mobile-team-owned) | 3 declared routes (create/cancel/revise order → order-service) plus one hand-composed `GET /mobile/orders/{orderId}` (a WebFlux `RouterFunction`, not a Gateway route) fanning out via `Mono.zip`/`ReactiveCircuitBreaker` to order/kitchen/accounting/delivery-service; API key `mobile-dev-key`, 20 req/s per key |
+| ftgo-public-gateway | 8091 | Public/3rd-party API gateway (Ch.8, public-API-team-owned) | Pure Spring Cloud Gateway routing (no composition code) to 6 backends under `/api/v1/...`; API key `public-dev-key`, 5 req/s per key |
+| ftgo-gateway-common | — | Shared WebFlux library (Ch.8, not a runnable service) | `RequestLoggingFilter`/`ApiKeyAuthFilter` (`GlobalFilter`s) and `PerKeyRateLimiterGatewayFilterFactory` (named `PerKeyRateLimiter`), consumed by both gateways above |
 
 Each service has its own `README.md` with its full API/events/domain model. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the project-level event catalog, the shared outbox pattern, and sequence diagrams for both saga styles.
 
@@ -85,7 +88,7 @@ docker compose down -v
 ```
 my-food-to-go-app/
 ├── build.gradle              ← shared plugin versions and dependencies
-├── settings.gradle           ← declares all 9 sub-projects
+├── settings.gradle           ← declares all 12 sub-projects
 ├── compose.yml               ← local MySQL + Kafka infrastructure
 ├── infrastructure/
 │   └── mysql/
@@ -99,6 +102,9 @@ my-food-to-go-app/
 ├── ftgo-delivery-service/
 ├── ftgo-order-history-service/
 ├── ftgo-service-registry/
+├── ftgo-gateway-common/       ← shared library: gateway edge functions (logging/auth/rate-limit), not a runnable service
+├── ftgo-mobile-gateway/
+├── ftgo-public-gateway/
 └── docs/
     ├── ARCHITECTURE.md       ← event catalog, outbox pattern, saga sequence diagrams
     ├── session-*.md          ← per-session summaries
@@ -118,6 +124,7 @@ my-food-to-go-app/
 | 5 | Designing business logic | `Ticket` (kitchen-service), `Order` (order-service), and `Authorization` (accounting-service) all refactored into DDD aggregates with enforced state transitions and domain events. Cancel Order and Revise Order sagas both implemented (both modes) — all three `Order` sub-projects complete |
 | 6 | Event sourcing | Done — `Order` (order-service) gained a hand-rolled event-sourced persistence path (event store, snapshots, dedicated optimistic-lock version table), switchable against JPA via `PERSISTENCE_MODE`; covers all three `Order` sagas (create/cancel/revise) in both styles, including the book's full pseudo-event mechanism (`SagaCommandEvent`-style) for orchestration-mode sagas; publishes via the existing Ch.3 CDC pipeline |
 | 7 | Implementing queries | Done — two contrasting query patterns: API composition (`GET /orders/{id}/view` on order-service, parallel virtual-thread fan-out to restaurant/kitchen/accounting/delivery-service, per-service circuit breakers, `SectionResult` graceful degradation) and CQRS (new standalone `ftgo-order-history-service`, a pure Kafka consumer maintaining a denormalized `order_views` read model via an upsert-on-any-event pattern, `GET /order-views/{orderId}`, no Eureka, no synchronous calls) |
-| 8–13 | … | Not started |
+| 8 | External API patterns | Done — API gateway + Backends for Frontends: `ftgo-mobile-gateway` (routing + one hand-composed `GET /mobile/orders/{orderId}`) and `ftgo-public-gateway` (pure routing to 6 backends), sharing `ftgo-gateway-common`'s edge functions (request logging, API-key auth, per-key rate limiting); a RouterFunction-vs-Gateway-route filter-isolation finding documented in `docs/ARCHITECTURE.md` |
+| 9–13 | … | Not started |
 
 See [`CONTEXT.md`](CONTEXT.md) for detailed notes and concept understanding per chapter.

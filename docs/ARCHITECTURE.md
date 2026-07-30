@@ -798,3 +798,98 @@ Every one of the four `handle*Event` methods follows the identical shape: `order
 | Consistency guarantee | Strong per-section (each section reflects the current DB state of its owning service at call time) | Eventual — bounded by how far behind this service's Kafka consumer group is, typically sub-second in this setup |
 
 Both patterns solve the same underlying problem (a client needs data owned by more than one service) with opposite tradeoffs on the same axis: API composition pays latency and availability coupling at request time in exchange for always-current data; CQRS pays eventual consistency and the cost of a standing extra service/datastore in exchange for near-instant, fully decoupled reads. Neither is strictly better — the book's own framing (and this project's) is that API composition suits ad hoc, low-volume composite queries where freshness matters most, while CQRS suits high-volume, read-heavy queries (e.g. an order-history screen a consumer might poll or page through often) where the write-side services being briefly unreachable should never be visible to that screen at all.
+
+## API Gateway / Backends for Frontends (Ch. 8)
+
+Two new edge services front the six domain services from Ch. 1–7: `ftgo-mobile-gateway` (port 8090) and `ftgo-public-gateway` (port 8091), plus a shared library, `ftgo-gateway-common`, holding the cross-cutting edge functions both gateways need. Neither gateway contains any domain logic of its own — every route ultimately forwards to (or, for the mobile gateway's one composed endpoint, fans out to) an existing Ch.1–7 service.
+
+### Gateway ownership model (BFF)
+
+The book's Backends for Frontends pattern gives each class of client its own gateway, owned by the team that owns that client, rather than one shared gateway every client team has to coordinate changes through:
+
+| Gateway | Port | Owned by (per the book's BFF diagram) | Serves |
+|---|---|---|---|
+| `ftgo-mobile-gateway` | 8090 | Mobile client team | The mobile app — coarse-grained, mobile-shaped responses, including one hand-composed multi-service endpoint |
+| `ftgo-public-gateway` | 8091 | Public/3rd-party API team | External API consumers/partners — thin, uniform `/api/v1/...` passthrough routes, one per backend resource |
+
+Both depend on `ftgo-gateway-common` for their edge functions (request logging, API-key auth, per-key rate limiting) but are independently deployable, independently configured (their own API key, their own rate limit), and — per the book's ownership rationale — could evolve independently without either team blocking the other, even though in this single-learner project both happen to be built in the same session.
+
+### Routing table
+
+**`ftgo-public-gateway`** (pure Spring Cloud Gateway `RouteLocator`/YAML routes, no hand-written composition code), API key `public-dev-key`, 5 req/s per key:
+
+| Route id | Path | Rewritten to | Backend |
+|---|---|---|---|
+| `public-orders` | `/api/v1/orders/**` | `/orders**` | order-service |
+| `public-tickets` | `/api/v1/tickets/**` | `/tickets**` | kitchen-service |
+| `public-authorizations` | `/api/v1/authorizations/**` | `/authorizations**` | accounting-service |
+| `public-deliveries` | `/api/v1/deliveries/**` | `/deliveries**` | delivery-service |
+| `public-order-views` | `/api/v1/order-views/**` | `/order-views**` | order-history-service |
+| `public-restaurants` | `/api/v1/restaurants/**` | `/restaurants**` | restaurant-service |
+
+**`ftgo-mobile-gateway`**, API key `mobile-dev-key`, 20 req/s per key:
+
+| Route id / endpoint | Path | Kind | Backend(s) |
+|---|---|---|---|
+| `mobile-create-order` | `POST /mobile/orders` → `/orders` | Declared Gateway route | order-service |
+| `mobile-cancel-order` | `POST /mobile/orders/{id}/cancel` → `/orders/{id}/cancel` | Declared Gateway route | order-service |
+| `mobile-revise-order` | `POST /mobile/orders/{id}/revise` → `/orders/{id}/revise` | Declared Gateway route | order-service |
+| (none — hand-written) | `GET /mobile/orders/{orderId}` | `RouterFunction` (not a Gateway route — see callout below) | order-service, kitchen-service, accounting-service, delivery-service (parallel fan-out) |
+
+### Edge functions (`ftgo-gateway-common`)
+
+Both gateways compose the same three cross-cutting filters from `ftgo-gateway-common`, registered via a `GatewayCommonAutoConfiguration` (`@Import`-based, since a consuming gateway's `@SpringBootApplication` doesn't component-scan this library's package):
+
+- **`RequestLoggingFilter`** (`GlobalFilter`, `Ordered.getOrder() == Integer.MIN_VALUE`, i.e. runs first) — logs method/path/status/latency for every request, timed via `doFinally` around the rest of the chain so latency covers the whole filter pipeline.
+- **`ApiKeyAuthFilter`** (`GlobalFilter`, order `Integer.MIN_VALUE + 1`, i.e. runs immediately after logging) — validates the `X-Api-Key` header against `GatewayApiKeyProperties` (one shared secret per gateway, bound from `gateway.api-key.value`), returning `401` on a missing or wrong key.
+- **`PerKeyRateLimiterGatewayFilterFactory`** (a named, per-route `AbstractGatewayFilterFactory<Config>`, registered under the filter name `PerKeyRateLimiter` in YAML) — an in-memory, per-API-key fixed-window token count (`Config.requestsPerSecond`), returning `429` once a key exceeds its configured rate within the current 1-second window. Chosen over Spring Cloud Gateway's built-in `RequestRateLimiter` specifically because that filter requires Redis, and this project has no Redis instance — trading away multi-instance correctness (each gateway instance counts independently) for zero new infrastructure, acceptable for a single-instance dev/learning deployment.
+
+**No real identity service, by design.** Both filters are explicitly named "stub" in their own Javadoc — `ApiKeyAuthFilter` checks a single shared-secret header, not a token, session, or user identity of any kind, matching this design's non-goals: Ch.8 is about the external-API-facing patterns (gateway routing, BFF composition, edge cross-cutting concerns), not authentication/authorization as a domain, which the book covers separately and this project has not built.
+
+### The mobile gateway's composed endpoint: `GET /mobile/orders/{orderId}`
+
+```mermaid
+sequenceDiagram
+    participant C as Mobile client
+    participant G as mobile-gateway<br/>(OrderDetailsRouterConfig)
+    participant O as order-service
+    participant K as kitchen-service
+    participant Ac as accounting-service
+    participant D as delivery-service
+
+    C->>G: GET /mobile/orders/{orderId}<br/>X-Api-Key: mobile-dev-key
+    G-->>G: inline auth check (see callout below)
+    par 4 backends, Mono.zip
+        G->>O: GET /orders/{orderId}
+        O-->>G: SectionResult<String>
+    and
+        G->>K: GET /tickets/order/{orderId}
+        K-->>G: SectionResult<String>
+    and
+        G->>Ac: GET /authorizations/order/{orderId}
+        Ac-->>G: SectionResult<String>
+    and
+        G->>D: GET /deliveries/order/{orderId}
+        D-->>G: SectionResult<String>
+    end
+    G-->>G: Mono.zip → OrderDetails(order, ticket, authorization, delivery)
+    G-->>C: 200 OK (always — each section degrades independently)
+```
+
+Each of the 4 backend calls is wrapped in its own `ReactiveCircuitBreaker` (2s timeout, resilience4j instances `orderService`/`kitchenService`/`accountingService`/`deliveryService`), resolving to a `SectionResult<T>` (`Found`/`NotFound`/`Unavailable`) exactly like Ch.7's API composition — a `404` from a backend degrades that section to `NotFound`, any other failure (timeout, connection refused, open circuit) degrades it to `Unavailable`, and the endpoint always returns `200` with whatever mix of the three the four calls produced.
+
+**Contrast with Ch.7's `GET /orders/{id}/view`**: both are API composition in the general sense (assembling one response from several services' data), but *who* composes differs, and both now coexist in this codebase serving different callers. Ch.7's composition lives inside order-service itself (`OrderViewController`), fanning out via a dedicated virtual-thread executor to restaurant/kitchen/accounting/delivery-service, for any caller of order-service's own API. Ch.8's composition lives in the mobile gateway, an entirely separate service *in front of* order-service, fanning out reactively (`Mono.zip`) to order-service itself plus kitchen/accounting/delivery-service, exclusively for the mobile client. The mobile gateway's `GET /mobile/orders/{orderId}` deliberately does **not** delegate to order-service's `GET /{id}/view` — it composes independently, calling order-service's plain `GET /{id}` (added in this chapter) for the order section, so the two composition layers stay decoupled: order-service's own view endpoint can evolve to serve its own callers without constraining what the mobile gateway assembles for mobile clients, and vice versa.
+
+| | Ch.7 API composition (`order-service`'s `GET /{id}/view`) | Ch.8 mobile gateway (`GET /mobile/orders/{orderId}`) |
+|---|---|---|
+| Who composes | order-service, for its own callers | mobile-gateway, a separate edge service, for mobile clients only |
+| Concurrency mechanism | `CompletableFuture` on a dedicated virtual-thread `ExecutorService` (blocking `RestClient` calls) | `Mono.zip` (fully reactive `WebClient` calls) |
+| Backends composed | restaurant, kitchen, accounting, delivery-service | order-service itself, kitchen, accounting, delivery-service |
+| `SectionResult` type | `com.sanjay.ftgo.order.domain.SectionResult` (servlet-based) | `com.sanjay.ftgo.mobilegateway.orderdetails.SectionResult` (reactive) — same name, same 3-state pattern, independent implementations for two different stacks |
+| Auth/rate-limit applied | Whatever order-service's own controller stack applies (none added by Ch.7/Ch.8) | See the RouterFunction callout below — bypasses the gateway's own filters entirely |
+
+### Critical architectural finding: `RouterFunction` bypasses Gateway's own filter chain
+
+Spring Cloud Gateway's `GlobalFilter`s (`RequestLoggingFilter`, `ApiKeyAuthFilter`) and route-level `GatewayFilterFactory`s (`PerKeyRateLimiter`) only execute for requests matched by a declared `RouteLocator`/YAML route. The mobile gateway's composed endpoint, `GET /mobile/orders/{orderId}`, is a hand-written WebFlux `RouterFunction` bean (`OrderDetailsRouterConfig`/`OrderDetailsHandler`), **not** a Gateway route — it's dispatched by Spring WebFlux's own `RouterFunctionMapping`, which sits entirely outside Gateway's filter chain. Consequently none of `ftgo-gateway-common`'s three filters ever run for this one endpoint, even though it lives in the same Spring Boot application as the gateway routes that do get them.
+
+This was discovered, not assumed, while implementing the endpoint — it is the single most important, non-obvious lesson from this chapter, easy to get wrong because everything else in a Spring Cloud Gateway application looks like it shares one filter pipeline. The fix applied here: `OrderDetailsRouterConfig` wraps its `RouterFunction` with its own `.filter(...)` replicating `ApiKeyAuthFilter`'s exact logic (checks `X-Api-Key` against the same `GatewayApiKeyProperties` bean the declared routes use, `401` on missing/wrong key) — so the endpoint isn't left wide open. Request logging and rate limiting are **not** replicated for this endpoint; that gap is a known, deliberately parked limitation of this branch, not fixed here (see the session log for the full rationale).
