@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -40,6 +41,33 @@ class CreateOrderSagaOrchestratorTest {
         return instance;
     }
 
+    private static boolean isKitchenCommand(Object command, String commandType, Integer totalQuantity, String sagaType) {
+        return command instanceof KitchenCommand kitchenCommand
+                && commandType.equals(kitchenCommand.commandType())
+                && java.util.Objects.equals(totalQuantity, kitchenCommand.totalQuantity())
+                && sagaType.equals(kitchenCommand.sagaType());
+    }
+
+    private static boolean isDeliveryCommand(Object command, String commandType, Long restaurantId, String sagaType) {
+        return command instanceof DeliveryCommand deliveryCommand
+                && commandType.equals(deliveryCommand.commandType())
+                && java.util.Objects.equals(restaurantId, deliveryCommand.restaurantId())
+                && sagaType.equals(deliveryCommand.sagaType());
+    }
+
+    private static boolean isAccountingCommand(Object command, String commandType, Integer totalQuantity, String sagaType) {
+        return command instanceof AccountingCommand accountingCommand
+                && commandType.equals(accountingCommand.commandType())
+                && java.util.Objects.equals(totalQuantity, accountingCommand.totalQuantity())
+                && sagaType.equals(accountingCommand.sagaType());
+    }
+
+    private static boolean isVerifyConsumerCommand(Object command, Long orderId, Long consumerId) {
+        return command instanceof VerifyConsumerCommand verifyConsumerCommand
+                && orderId.equals(verifyConsumerCommand.orderId())
+                && consumerId.equals(verifyConsumerCommand.consumerId());
+    }
+
     @Test
     void startSendsThreeParallelCommands() {
         when(sagaInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -47,9 +75,12 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.start(pendingOrder());
 
         verify(sagaInstanceRepository).save(any());
-        verify(sagaCommandPublisher).publish(eq("consumer.commands"), any(), eq("VerifyConsumerCommand"), eq(42L), any());
-        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CreateTicket"), eq(42L), any());
-        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ScheduleDelivery"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("consumer.commands"), any(), eq("VerifyConsumerCommand"), eq(42L),
+                argThat(command -> isVerifyConsumerCommand(command, 42L, 1L)));
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CreateTicket"), eq(42L),
+                argThat(command -> isKitchenCommand(command, "CreateTicket", 2, "CreateOrder")));
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ScheduleDelivery"), eq(42L),
+                argThat(command -> isDeliveryCommand(command, "ScheduleDelivery", 1L, "CreateOrder")));
     }
 
     @Test
@@ -63,7 +94,8 @@ class CreateOrderSagaOrchestratorTest {
         verify(sagaCommandPublisher, never()).publish(eq("accounting.commands"), any(), any(), any(), any());
 
         orchestrator.handleReply("e3", "delivery", "DeliveryScheduled", 42L, null);
-        verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("AuthorizeCard"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("AuthorizeCard"), eq(42L),
+                argThat(command -> isAccountingCommand(command, "AuthorizeCard", 5, "CreateOrder")));
     }
 
     @Test
@@ -76,7 +108,8 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.handleReply("e2", "delivery", "DeliveryScheduled", 42L, null);
         orchestrator.handleReply("e3", "consumer", "ConsumerVerified", 42L, null);
 
-        verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("AuthorizeCard"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("accounting.commands"), any(), eq("AuthorizeCard"), eq(42L),
+                argThat(command -> isAccountingCommand(command, "AuthorizeCard", 5, "CreateOrder")));
     }
 
     @Test
@@ -88,7 +121,8 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.handleReply("e1", "delivery", "DeliverySchedulingFailed", 42L, "no courier available");
 
         verify(orderTransitions).reject(eq(42L), any());
-        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L),
+                argThat(command -> isKitchenCommand(command, "CancelTicket", null, "CreateOrder")));
     }
 
     @Test
@@ -100,7 +134,8 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.handleReply("e1", "kitchen", "TicketCreationFailed", 42L, "order exceeds kitchen capacity");
 
         verify(orderTransitions).reject(eq(42L), any());
-        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L),
+                argThat(command -> isDeliveryCommand(command, "ReleaseDelivery", null, "CreateOrder")));
     }
 
     @Test
@@ -112,8 +147,10 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.handleReply("e1", "accounting", "CardAuthorizationFailed", 42L, "order quantity exceeds authorization limit");
 
         verify(orderTransitions).reject(eq(42L), any());
-        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
-        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L),
+                argThat(command -> isKitchenCommand(command, "CancelTicket", null, "CreateOrder")));
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L),
+                argThat(command -> isDeliveryCommand(command, "ReleaseDelivery", null, "CreateOrder")));
     }
 
     @Test
@@ -134,8 +171,10 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.handleReply("e3", "delivery", "DeliveryCancelled", 42L, null);
 
         verify(sagaCommandPublisher, never()).publish(eq("accounting.commands"), any(), eq("AuthorizeCard"), any(), any());
-        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
-        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L),
+                argThat(command -> isKitchenCommand(command, "CancelTicket", null, "CreateOrder")));
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L),
+                argThat(command -> isDeliveryCommand(command, "ReleaseDelivery", null, "CreateOrder")));
     }
 
     @Test
@@ -148,7 +187,8 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.handleReply("e1", "consumer", "ConsumerVerificationFailed", 42L, "not found");
         orchestrator.handleReply("e2", "delivery", "DeliveryScheduled", 42L, null);
 
-        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("delivery.commands"), any(), eq("ReleaseDelivery"), eq(42L),
+                argThat(command -> isDeliveryCommand(command, "ReleaseDelivery", null, "CreateOrder")));
     }
 
     @Test
@@ -162,7 +202,8 @@ class CreateOrderSagaOrchestratorTest {
 
         verify(orderTransitions).approve(eq(42L), any());
         verify(orderTransitions, never()).reject(any(), any());
-        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("ConfirmTicket"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("ConfirmTicket"), eq(42L),
+                argThat(command -> isKitchenCommand(command, "ConfirmTicket", null, "CreateOrder")));
     }
 
     @Test
@@ -176,7 +217,8 @@ class CreateOrderSagaOrchestratorTest {
 
         verify(orderTransitions).reject(eq(42L), any());
         verify(orderTransitions, never()).approve(any(), any());
-        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L),
+                argThat(command -> isKitchenCommand(command, "CancelTicket", null, "CreateOrder")));
     }
 
     @Test
@@ -202,7 +244,8 @@ class CreateOrderSagaOrchestratorTest {
         orchestrator.handleReply("e1", "consumer", "ConsumerVerificationFailed", 42L, "not found");
         orchestrator.handleReply("e2", "kitchen", "TicketCreated", 42L, null);
 
-        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L), any());
+        verify(sagaCommandPublisher).publish(eq("kitchen.commands"), any(), eq("CancelTicket"), eq(42L),
+                argThat(command -> isKitchenCommand(command, "CancelTicket", null, "CreateOrder")));
     }
 
     @Test
