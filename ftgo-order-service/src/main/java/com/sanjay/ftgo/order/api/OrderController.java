@@ -6,6 +6,7 @@ import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
 import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderNotFoundException;
+import com.sanjay.ftgo.order.domain.OrderRepository;
 import com.sanjay.ftgo.order.domain.OrderRevision;
 import com.sanjay.ftgo.order.domain.OrderRevisionSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderService;
@@ -18,6 +19,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -35,14 +37,26 @@ public class OrderController {
     private final OrderTransitions orderTransitions;
     private final OrderCancellationSagaTrigger cancellationSagaTrigger;
     private final OrderRevisionSagaTrigger revisionSagaTrigger;
+    private final OrderRepository orderRepository;
 
     public OrderController(OrderService orderService, OrderTransitions orderTransitions,
                             OrderCancellationSagaTrigger cancellationSagaTrigger,
-                            OrderRevisionSagaTrigger revisionSagaTrigger) {
+                            OrderRevisionSagaTrigger revisionSagaTrigger,
+                            OrderRepository orderRepository) {
         this.orderService = orderService;
         this.orderTransitions = orderTransitions;
         this.cancellationSagaTrigger = cancellationSagaTrigger;
         this.revisionSagaTrigger = revisionSagaTrigger;
+        this.orderRepository = orderRepository;
+    }
+
+    // Lightweight raw-order lookup for callers (e.g. the mobile gateway's own independent
+    // fan-out composition) that need just this service's data, as opposed to /{id}/view
+    // which is order-service's own Ch.7 API-composed view across restaurant/kitchen/etc.
+    @GetMapping("/{id}")
+    public ResponseEntity<OrderResponse> getOrder(@PathVariable Long id) {
+        Order order = orderRepository.findById(id).orElseThrow(() -> new OrderNotFoundException(id));
+        return ResponseEntity.ok(OrderResponse.from(order));
     }
 
     @PostMapping

@@ -6,6 +6,7 @@ import com.sanjay.ftgo.order.domain.OrderCannotBeCancelledException;
 import com.sanjay.ftgo.order.domain.OrderCancellationSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderNotFoundException;
+import com.sanjay.ftgo.order.domain.OrderRepository;
 import com.sanjay.ftgo.order.domain.OrderRevisionSagaTrigger;
 import com.sanjay.ftgo.order.domain.OrderService;
 import com.sanjay.ftgo.order.domain.OrderStatus;
@@ -47,6 +48,30 @@ class OrderControllerTest {
 
     @MockitoBean
     private OrderRevisionSagaTrigger revisionSagaTrigger;
+
+    @MockitoBean
+    private OrderRepository orderRepository;
+
+    @Test
+    void getsOrderById() throws Exception {
+        Order order = new Order(1L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
+        when(orderRepository.findById(1L)).thenReturn(java.util.Optional.of(order));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/orders/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.consumerId").value(1))
+                .andExpect(jsonPath("$.restaurantId").value(1))
+                .andExpect(jsonPath("$.status").value("APPROVAL_PENDING"));
+    }
+
+    @Test
+    void returns404WhenGettingUnknownOrder() throws Exception {
+        when(orderRepository.findById(99L)).thenReturn(java.util.Optional.empty());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/orders/99"))
+                .andExpect(status().isNotFound());
+    }
 
     @Test
     void createsOrderSuccessfully() throws Exception {
