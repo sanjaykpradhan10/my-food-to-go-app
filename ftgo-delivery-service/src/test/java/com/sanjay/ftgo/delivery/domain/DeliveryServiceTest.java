@@ -10,6 +10,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -47,7 +48,8 @@ class DeliveryServiceTest {
         assertThat(courier.isAvailable()).isFalse();
         verify(courierRepository).save(courier);
         verify(deliveryRepository).save(any(Delivery.class));
-        verify(domainEventPublisher).publish(any(Delivery.class), any());
+        verify(domainEventPublisher).publish(any(Delivery.class),
+                eq(java.util.List.of(new DeliveryScheduledEvent(42L, courier.getId()))));
     }
 
     @Test
@@ -129,7 +131,12 @@ class DeliveryServiceTest {
 
         deliveryService.handleScheduleDeliveryCommand("evt-3", 42L, 7L);
 
-        verify(outboxEventRepository, times(1)).save(any());
+        org.mockito.ArgumentCaptor<com.sanjay.ftgo.common.outbox.OutboxEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(com.sanjay.ftgo.common.outbox.OutboxEvent.class);
+        verify(outboxEventRepository, times(1)).save(captor.capture());
+        assertThat(captor.getValue().getEventType()).isEqualTo("DeliveryScheduled");
+        assertThat(captor.getValue().getAggregateId()).isEqualTo(42L);
+        assertThat(captor.getValue().getTopic()).isEqualTo("saga.replies");
     }
 
     @Test
@@ -145,7 +152,12 @@ class DeliveryServiceTest {
 
         assertThat(delivery.getStatus()).isEqualTo(DeliveryStatus.CANCELLED);
         assertThat(courier.isAvailable()).isTrue();
-        verify(outboxEventRepository, times(1)).save(any());
+        org.mockito.ArgumentCaptor<com.sanjay.ftgo.common.outbox.OutboxEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(com.sanjay.ftgo.common.outbox.OutboxEvent.class);
+        verify(outboxEventRepository, times(1)).save(captor.capture());
+        assertThat(captor.getValue().getEventType()).isEqualTo("DeliveryCancelled");
+        assertThat(captor.getValue().getAggregateId()).isEqualTo(42L);
+        assertThat(captor.getValue().getTopic()).isEqualTo("saga.replies");
     }
 
     @Test
