@@ -58,6 +58,7 @@ dependencies {
     // the Groovy contract DSL file that the Spring Cloud Contract Gradle plugin uses to
     // generate the contractTest source at build time.
     testImplementation project(':ftgo-order-service-contracts')
+    testImplementation project(':ftgo-kitchen-service-contracts')
     testImplementation 'org.springframework.cloud:spring-cloud-contract-verifier'
     testImplementation 'io.rest-assured:rest-assured'
     // The generated provider test drives OrderController via MockMvc (no running server),

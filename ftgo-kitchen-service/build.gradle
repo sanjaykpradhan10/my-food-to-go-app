@@ -1,11 +1,30 @@
+apply plugin: 'org.springframework.cloud.contract'
+
 dependencyManagement {
     imports {
         mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2025.0.3'
     }
 }
 
+contracts {
+    // packageWithBaseClasses is intentionally omitted: it derives a per-folder base class name
+    // (e.g. "KitchenBase" from the contracts/kitchen/ folder) and takes priority over an
+    // explicit baseClassForTests (see ftgo-order-service/build.gradle's own comment on this) -
+    // not what we want with a single shared base class.
+    baseClassForTests = 'com.sanjay.ftgo.kitchen.contracttest.MessagingBase'
+    // Contracts live in the separate ftgo-kitchen-service-contracts module (mirrors
+    // ftgo-order-service's own contractsDslDir override) - point the plugin directly at that
+    // module's contracts directory on disk rather than the plugin's default
+    // src/test/resources/contracts location within this module, which doesn't exist here.
+    contractsDslDir = file("${project(':ftgo-kitchen-service-contracts').projectDir}/src/main/resources/contracts")
+}
+
 dependencies {
     // spring-kafka comes transitively via ftgo-common's `api` dependency
     implementation project(':ftgo-common')
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+
+    testImplementation project(':ftgo-kitchen-service-contracts')
+    testImplementation testFixtures(project(':ftgo-common'))
+    testImplementation 'org.springframework.cloud:spring-cloud-contract-verifier'
 }
