@@ -24,6 +24,16 @@ contracts {
     contractsDslDir = file('src/main/resources/contracts')
 }
 
+// The Spring Cloud Contract Gradle plugin always wires up a self-verifying `contractTest`
+// source set/task, on the assumption that the module holding the contracts is also the
+// producer under test. This module is contracts-and-stubs-only (no rest-assured / verifier
+// runtime / jsonassert deps, no application to test against) - the real producer-side
+// verification runs in ftgo-order-service's own contractTest via contractsDslDir. Disabling
+// these two tasks here removes the spurious compile step without affecting generateClientStubs
+// / verifierStubsJar, which don't depend on them.
+tasks.named('compileContractTestJava') { enabled = false }
+tasks.named('contractTest') { enabled = false }
+
 publishing {
     publications {
         maven(MavenPublication) {
