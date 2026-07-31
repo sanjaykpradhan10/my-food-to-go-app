@@ -24,6 +24,17 @@ contracts {
     // (e.g. "OrderBase" from the contracts/order/ folder) and takes priority over an explicit
     // baseClassForTests, which isn't what we want with a single shared base class.
     baseClassForTests = 'com.sanjay.ftgo.order.contracttest.HttpBase'
+    // baseClassMappings' contractPackageRegex matches against the contract's *containing
+    // directory*, dot-joined (verified against spring-cloud-contract-verifier 4.3.4's
+    // BaseClassProvider.retrieveBaseClass via javap: it never inspects the filename) - not the
+    // Groovy file's own `package` line and not a per-file match. Two contracts in the same
+    // contracts/order/ folder are therefore indistinguishable to this mapping, which is why
+    // orderCreated.groovy lives one level down, in contracts/order/messaging/ (see that
+    // module's build.gradle comment). shouldReturnOrderById.groovy stays directly under
+    // contracts/order/ and keeps resolving to HttpBase via the baseClassForTests fallback above.
+    baseClassMappings {
+        baseClassMapping('.*order\\.messaging.*', 'com.sanjay.ftgo.order.contracttest.MessagingBase')
+    }
     // Contracts live in the separate ftgo-order-service-contracts module (published for
     // Task 3's consumer-side Stub Runner test), not under this module's own src/main/resources.
     // Rather than round-trip through a jar/Maven-repo dependency resolution (which needs the
@@ -52,4 +63,7 @@ dependencies {
     // The generated provider test drives OrderController via MockMvc (no running server),
     // which needs rest-assured's MockMvc module - plain 'rest-assured' alone doesn't pull it in.
     testImplementation 'io.rest-assured:spring-mock-mvc'
+    // MessagingBase's Kafka bridge (KafkaContractTestSupport, KafkaMessageVerifierSender/Receiver)
+    // for the orderCreated pub/sub contract.
+    testImplementation testFixtures(project(':ftgo-common'))
 }
