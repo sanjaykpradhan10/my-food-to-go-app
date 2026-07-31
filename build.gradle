@@ -5,6 +5,10 @@ plugins {
     // cleanly against this project's Spring Cloud 2025.0.3 BOM setup; the Gradle plugin ships
     // from the same release train as the verifier artifact.
     id 'org.springframework.cloud.contract' version '4.3.4' apply false
+    // Brings up/tears down compose-component-test.yml around the componentTest task on
+    // ftgo-order-service (Ch.10 sub-project 2) — the same plugin the book uses for its own
+    // out-of-process component-test example.
+    id 'com.avast.gradle.docker-compose' version '0.17.12' apply false
 }
 
 subprojects {
