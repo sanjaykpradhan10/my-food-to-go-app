@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:kitchencontracttestdb;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  cloud:
+    discovery:
+      enabled: false
+
+# The real application.yml defaults saga.mode to choreography, which would leave
+# KitchenCommandListener (the bean this contract exercises) un-created by its
+# @ConditionalOnProperty guard; this contract test's whole point is verifying the
+# orchestration-mode command listener, so it's flipped on for the contractTest source set.
+saga:
+  mode: orchestration
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false

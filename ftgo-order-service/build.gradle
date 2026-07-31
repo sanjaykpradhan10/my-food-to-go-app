@@ -1,7 +1,47 @@
+apply plugin: 'org.springframework.cloud.contract'
+
 dependencyManagement {
     imports {
         mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2025.0.3'
     }
+}
+
+// The Spring Cloud Contract Gradle plugin's contractTestGeneratorRuntimeClasspath (used by the
+// generateClientStubs task, which converts contracts into WireMock stub-jar mappings) merges
+// this module's testRuntimeClasspath with the verifier's own WireMock dependency. This module's
+// existing proxy tests (DeliveryServiceProxyTest etc.) depend on wiremock-standalone:3.9.2, while
+// spring-cloud-contract-verifier 4.3.4 is compiled against wiremock-jre8-standalone:2.35.2's API
+// - having both shaded WireMock jars on the same classpath causes generateClientStubs to fail
+// with NoSuchMethodError (classpath order picks the wrong version's class). Exclude the newer
+// standalone jar only from the generator's own classpath; the proxy tests' testRuntimeClasspath
+// is untouched.
+configurations.matching { it.name == 'contractTestGeneratorRuntimeClasspath' }.all {
+    exclude group: 'org.wiremock', module: 'wiremock-standalone'
+}
+
+contracts {
+    // packageWithBaseClasses is intentionally omitted: it derives a per-folder base class name
+    // (e.g. "OrderBase" from the contracts/order/ folder) and takes priority over an explicit
+    // baseClassForTests, which isn't what we want with a single shared base class.
+    baseClassForTests = 'com.sanjay.ftgo.order.contracttest.HttpBase'
+    // baseClassMappings' contractPackageRegex matches against the contract's *containing
+    // directory*, dot-joined (verified against spring-cloud-contract-verifier 4.3.4's
+    // BaseClassProvider.retrieveBaseClass via javap: it never inspects the filename) - not the
+    // Groovy file's own `package` line and not a per-file match. Two contracts in the same
+    // contracts/order/ folder are therefore indistinguishable to this mapping, which is why
+    // orderCreated.groovy lives one level down, in contracts/order/messaging/ (see that
+    // module's build.gradle comment). shouldReturnOrderById.groovy stays directly under
+    // contracts/order/ and keeps resolving to HttpBase via the baseClassForTests fallback above.
+    baseClassMappings {
+        baseClassMapping('.*order\\.messaging.*', 'com.sanjay.ftgo.order.contracttest.MessagingBase')
+    }
+    // Contracts live in the separate ftgo-order-service-contracts module (published for
+    // Task 3's consumer-side Stub Runner test), not under this module's own src/main/resources.
+    // Rather than round-trip through a jar/Maven-repo dependency resolution (which needs the
+    // contracts module published to a repository the plugin can query), point the plugin
+    // directly at that module's contracts directory on disk — both modules live in the same
+    // Gradle build, so this stays in sync automatically without a publish step.
+    contractsDslDir = file("${project(':ftgo-order-service-contracts').projectDir}/src/main/resources/contracts")
 }
 
 dependencies {
@@ -13,4 +53,18 @@ dependencies {
     implementation 'org.springframework.cloud:spring-cloud-starter-loadbalancer'
 
     testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
+
+    // The order-service is the provider for the GET /orders/{id} and orderCreated contracts;
+    // contractsDslDir above (not this dependency) is what makes the plugin find the Groovy DSL
+    // files at build time. This dependency exists so contractTest source can reference
+    // ftgo-order-service-contracts' package/types directly if a base class ever needs to.
+    testImplementation project(':ftgo-order-service-contracts')
+    testImplementation 'org.springframework.cloud:spring-cloud-contract-verifier'
+    testImplementation 'io.rest-assured:rest-assured'
+    // The generated provider test drives OrderController via MockMvc (no running server),
+    // which needs rest-assured's MockMvc module - plain 'rest-assured' alone doesn't pull it in.
+    testImplementation 'io.rest-assured:spring-mock-mvc'
+    // MessagingBase's Kafka bridge (KafkaContractTestSupport, KafkaMessageVerifierSender/Receiver)
+    // for the orderCreated pub/sub contract.
+    testImplementation testFixtures(project(':ftgo-common'))
 }
