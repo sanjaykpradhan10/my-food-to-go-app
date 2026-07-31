@@ -45,9 +45,6 @@ public abstract class MessagingBase {
     @Autowired
     private OutboxPublisher outboxPublisher;
 
-    @Autowired
-    private OutboxEventRepository outboxEventRepository;
-
     protected void orderCreated() {
         Order order = new Order(1223232L, 1L, 1L,
                 List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
