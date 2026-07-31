@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/restaurants/1"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "id": 1,
+      "name": "Ajanta",
+      "menuItems": [
+        { "id": 1, "name": "Vindaloo", "price": 12.50 }
+      ]
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  }
+}
