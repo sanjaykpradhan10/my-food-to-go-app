@@ -17,6 +17,9 @@ public class KafkaContractVerifierMessaging extends ContractVerifierMessaging<by
         super(sender, receiver);
     }
 
+    // Map.of(): no contract in this project uses Contract DSL header() blocks yet - see
+    // KafkaMessageVerifierSender's matching note. Headers received on the embedded broker are
+    // also not read back here.
     @Override
     protected ContractVerifierMessage convert(byte[] payload) {
         return new ContractVerifierMessage(payload, Map.of());

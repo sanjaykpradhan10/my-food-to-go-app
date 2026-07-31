@@ -7,9 +7,7 @@ import com.sanjay.ftgo.common.outbox.OutboxPublisher;
 import com.sanjay.ftgo.order.domain.Order;
 import com.sanjay.ftgo.order.domain.OrderDomainEventPublisher;
 import com.sanjay.ftgo.order.domain.OrderEventSerializer;
-import com.sanjay.ftgo.order.domain.OrderLineItem;
 import com.sanjay.ftgo.order.domain.OrderRepository;
-import com.sanjay.ftgo.order.domain.OrderStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
@@ -18,8 +16,6 @@ import org.springframework.cloud.contract.verifier.messaging.boot.AutoConfigureM
 import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.kafka.test.context.EmbeddedKafka;
-
-import java.util.List;
 
 // order-service's real @SpringBootApplication pulls in Eureka, resilience4j and the REST
 // proxies for the other services - none of which this pub/sub contract needs and some of
@@ -34,7 +30,10 @@ import java.util.List;
 // @Import(KafkaContractTestSupport.class) - Spring's TestContextAnnotationUtils only walks the
 // test-class hierarchy, not @Import-reached classes (see KafkaContractTestSupport's own doc).
 @SpringBootTest(classes = MessagingBase.TestConfig.class)
-@EmbeddedKafka(partitions = 1, topics = {"order.events", "kitchen.commands", "saga.replies"})
+@EmbeddedKafka(partitions = 1, topics = {
+        KafkaContractTestSupport.TOPIC_ORDER_EVENTS,
+        KafkaContractTestSupport.TOPIC_KITCHEN_COMMANDS,
+        KafkaContractTestSupport.TOPIC_SAGA_REPLIES})
 @AutoConfigureMessageVerifier
 @Import(KafkaContractTestSupport.class)
 public abstract class MessagingBase {
@@ -46,8 +45,7 @@ public abstract class MessagingBase {
     private OutboxPublisher outboxPublisher;
 
     protected void orderCreated() {
-        Order order = new Order(1223232L, 1L, 1L,
-                List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
+        Order order = ContractFixtures.sampleOrder();
         orderDomainEventPublisher.publishOrderCreated(order, "11111111-1111-1111-1111-111111111111");
         outboxPublisher.publishPendingEvents();
     }

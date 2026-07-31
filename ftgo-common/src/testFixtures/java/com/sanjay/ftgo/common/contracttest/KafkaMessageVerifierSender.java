@@ -32,6 +32,9 @@ public class KafkaMessageVerifierSender implements MessageVerifierSender<byte[]>
         kafkaTemplate.send(destination, message == null ? null : new String(message, StandardCharsets.UTF_8));
     }
 
+    // headers is intentionally ignored - no contract in this project uses Contract DSL header()
+    // blocks yet. If one adds Kafka record headers, this method (and
+    // KafkaContractVerifierMessaging.convert()'s Map.of()) both need to actually carry them.
     @Override
     public <T> void send(T payload, Map<String, Object> headers, String destination, YamlContract contract) {
         kafkaTemplate.send(destination, payload == null ? null : payload.toString());

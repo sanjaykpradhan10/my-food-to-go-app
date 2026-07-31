@@ -1,5 +1,14 @@
 apply plugin: 'java-library'
 
+// This module ships only Groovy contract DSL files consumed by ftgo-kitchen-service's own
+// contractTest (via contractsDslDir). Unlike ftgo-order-service-contracts, no consumer resolves
+// this module's contracts as a published Stub Runner stub jar (ftgo-order-service's
+// OutboxSagaCommandPublisherContractTest hand-mirrors the contract JSON directly instead), so
+// this module deliberately omits the
+// org.springframework.cloud.contract plugin, maven-publish/verifierStubsJar wiring, and the
+// GenerateModuleMetadata suppression that ftgo-order-service-contracts/build.gradle carries. If
+// a future consumer needs real Stub Runner resolution against this module, use
+// ftgo-order-service-contracts/build.gradle as the template.
 bootJar {
     enabled = false
 }

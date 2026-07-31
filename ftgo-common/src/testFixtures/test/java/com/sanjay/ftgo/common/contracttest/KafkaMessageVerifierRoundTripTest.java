@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.test.context.EmbeddedKafka;
 
+import java.nio.charset.StandardCharsets;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 // Proves the bridge itself works (send via KafkaTemplate, receive via
@@ -20,7 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 // via @Import (like KafkaContractTestSupport). So @EmbeddedKafka must be repeated here (and by
 // every later service test that imports KafkaContractTestSupport) even though
 // KafkaContractTestSupport already carries it for its own documentation/self-containment.
-@EmbeddedKafka(partitions = 1, topics = {"order.events", "kitchen.commands", "saga.replies"})
+@EmbeddedKafka(partitions = 1, topics = {
+        KafkaContractTestSupport.TOPIC_ORDER_EVENTS,
+        KafkaContractTestSupport.TOPIC_KITCHEN_COMMANDS,
+        KafkaContractTestSupport.TOPIC_SAGA_REPLIES})
 @SpringBootTest(classes = KafkaMessageVerifierRoundTripTest.TestConfig.class)
 class KafkaMessageVerifierRoundTripTest {
 
@@ -41,6 +46,6 @@ class KafkaMessageVerifierRoundTripTest {
 
         var received = kafkaMessageVerifierReceiver.receive("order.events", null);
 
-        assertEquals("{\"eventType\":\"OrderCreated\"}", received.getPayload());
+        assertEquals("{\"eventType\":\"OrderCreated\"}", new String(received, StandardCharsets.UTF_8));
     }
 }

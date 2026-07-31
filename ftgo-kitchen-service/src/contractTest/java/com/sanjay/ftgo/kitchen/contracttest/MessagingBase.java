@@ -18,7 +18,10 @@ import org.springframework.kafka.test.context.EmbeddedKafka;
 // broker bean this test needs is never created, and constructor autowiring fails with
 // NoSuchBeanDefinitionException for EmbeddedKafkaBroker.
 @SpringBootTest
-@EmbeddedKafka(partitions = 1, topics = {"order.events", "kitchen.commands", "saga.replies"})
+@EmbeddedKafka(partitions = 1, topics = {
+        KafkaContractTestSupport.TOPIC_ORDER_EVENTS,
+        KafkaContractTestSupport.TOPIC_KITCHEN_COMMANDS,
+        KafkaContractTestSupport.TOPIC_SAGA_REPLIES})
 @AutoConfigureMessageVerifier
 @Import(KafkaContractTestSupport.class)
 public abstract class MessagingBase {

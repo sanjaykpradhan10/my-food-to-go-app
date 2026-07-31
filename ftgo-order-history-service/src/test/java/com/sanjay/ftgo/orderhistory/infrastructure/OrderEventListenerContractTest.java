@@ -14,12 +14,13 @@ import static org.mockito.Mockito.verify;
 
 class OrderEventListenerContractTest {
 
-    // The contract's example body (Task 4, Step 1) as literal JSON, matching what Stub Runner
-    // would replay from the published contract for a messaging interaction of this kind. This
-    // directly feeds the example into the real listener method rather than requiring a live
-    // embedded broker on the consumer side, since OrderEventListener.onMessage() takes the raw
-    // payload string directly -- the same boundary Ch.9's KitchenEventListenerTest already
-    // exercises for a sibling listener.
+    // This is a hand-copied mirror of the example body in
+    // ftgo-order-service-contracts/src/main/resources/contracts/order/messaging/orderCreated.groovy
+    // (Task 4) -- NOT resolved through Stub Runner, since OrderEventListener.onMessage() takes
+    // the raw payload string directly (the same boundary Ch.9's KitchenEventListenerTest already
+    // exercises for a sibling listener), so there's no stub jar to replay. Because this is a
+    // manual copy, it does not automatically track changes to the contract file: if
+    // orderCreated.groovy's fields or example values change, this literal must be updated too.
     private static final String ORDER_CREATED_CONTRACT_BODY = """
             {"eventId":"11111111-1111-1111-1111-111111111111","eventType":"OrderCreated",
              "orderId":1223232,"consumerId":1,"restaurantId":1,

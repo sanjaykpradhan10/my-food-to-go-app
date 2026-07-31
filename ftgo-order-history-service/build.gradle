@@ -8,6 +8,4 @@ dependencies {
     // spring-kafka comes transitively via ftgo-common's `api` dependency
     implementation project(':ftgo-common')
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
-    testImplementation project(path: ':ftgo-order-service-contracts')
-    testImplementation 'org.springframework.cloud:spring-cloud-starter-contract-stub-runner'
 }

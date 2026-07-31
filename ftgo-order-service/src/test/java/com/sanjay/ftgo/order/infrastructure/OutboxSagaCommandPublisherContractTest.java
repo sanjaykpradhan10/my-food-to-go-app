@@ -14,9 +14,12 @@ import static org.mockito.Mockito.verify;
 
 class OutboxSagaCommandPublisherContractTest {
 
-    // The contract's example input message (Task 6, Step 3) — verifying that this consumer's
-    // publish() call produces exactly this JSON shape confirms it stays compatible with what
-    // KitchenCommandListener (the real provider, per the shared contract) expects to receive.
+    // The command values and expected JSON below are a hand-copied mirror of the input message
+    // in ftgo-kitchen-service-contracts/src/main/resources/contracts/kitchen/shouldCreateTicket.groovy
+    // (Task 6) — NOT resolved through Stub Runner (see ftgo-kitchen-service-contracts/build.gradle
+    // for why this module publishes no stub jar). Because this is a manual copy, it does not
+    // automatically track changes to the contract file: if shouldCreateTicket.groovy's input
+    // fields or example values change, this literal must be updated too.
     @Test
     void publishesCreateTicketCommandMatchingTheContract() {
         OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);

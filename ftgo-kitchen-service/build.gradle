@@ -24,6 +24,10 @@ dependencies {
     implementation project(':ftgo-common')
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
 
+    // kitchen-service is the provider for the shouldCreateTicket contract; contractsDslDir above
+    // (not this dependency) is what makes the plugin find the Groovy DSL files at build time.
+    // This dependency exists so contractTest source can reference
+    // ftgo-kitchen-service-contracts' package/types directly if a base class ever needs to.
     testImplementation project(':ftgo-kitchen-service-contracts')
     testImplementation testFixtures(project(':ftgo-common'))
     testImplementation 'org.springframework.cloud:spring-cloud-contract-verifier'

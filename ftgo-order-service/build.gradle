@@ -54,11 +54,11 @@ dependencies {
 
     testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
 
-    // The order-service is the provider for the GET /orders/{id} contract; this pulls in
-    // the Groovy contract DSL file that the Spring Cloud Contract Gradle plugin uses to
-    // generate the contractTest source at build time.
+    // The order-service is the provider for the GET /orders/{id} and orderCreated contracts;
+    // contractsDslDir above (not this dependency) is what makes the plugin find the Groovy DSL
+    // files at build time. This dependency exists so contractTest source can reference
+    // ftgo-order-service-contracts' package/types directly if a base class ever needs to.
     testImplementation project(':ftgo-order-service-contracts')
-    testImplementation project(':ftgo-kitchen-service-contracts')
     testImplementation 'org.springframework.cloud:spring-cloud-contract-verifier'
     testImplementation 'io.rest-assured:rest-assured'
     // The generated provider test drives OrderController via MockMvc (no running server),

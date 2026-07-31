@@ -18,12 +18,28 @@ import org.springframework.kafka.test.utils.KafkaTestUtils;
 import java.util.Map;
 
 // Shared fixture imported by each service's messaging contract test (order-service,
-// order-history-service, kitchen-service - see later tasks). Centralizing the embedded broker,
-// KafkaTemplate, and MessageVerifierSender/Receiver beans here means the three topics only need
-// listing once instead of duplicated across each service's own @EmbeddedKafka annotation.
+// kitchen-service). Centralizes the embedded broker, KafkaTemplate, and
+// MessageVerifierSender/Receiver beans.
+//
+// NOTE: @EmbeddedKafka's topic list below does NOT propagate to classes that @Import this
+// config - Spring's @Import doesn't carry an imported class's own meta-annotations to the
+// importer. Each service's MessagingBase must declare its own @EmbeddedKafka with a topic list
+// kept in sync with the one below (see order-service's and kitchen-service's MessagingBase.java).
+// This class's own @EmbeddedKafka exists only so this file (and its own
+// KafkaMessageVerifierRoundTripTest) is self-contained, not to save the importers any typing.
 @TestConfiguration
-@EmbeddedKafka(partitions = 1, topics = {"order.events", "kitchen.commands", "saga.replies"})
+@EmbeddedKafka(partitions = 1, topics = {
+        KafkaContractTestSupport.TOPIC_ORDER_EVENTS,
+        KafkaContractTestSupport.TOPIC_KITCHEN_COMMANDS,
+        KafkaContractTestSupport.TOPIC_SAGA_REPLIES})
 public class KafkaContractTestSupport {
+
+    // Each service's own @EmbeddedKafka topic list (see the class comment above for why it
+    // can't just be inherited) should reference these constants rather than re-typing the
+    // literal, so a typo or drift fails to compile instead of failing at test-run time.
+    public static final String TOPIC_ORDER_EVENTS = "order.events";
+    public static final String TOPIC_KITCHEN_COMMANDS = "kitchen.commands";
+    public static final String TOPIC_SAGA_REPLIES = "saga.replies";
 
     // @Primary: services whose @EnableAutoConfiguration also pulls in their own production
     // KafkaTemplate bean (e.g. ftgo-common's OutboxAutoConfiguration -> KafkaProducerConfig's
