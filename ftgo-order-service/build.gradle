@@ -68,3 +68,47 @@ dependencies {
     // for the orderCreated pub/sub contract.
     testImplementation testFixtures(project(':ftgo-common'))
 }
+
+apply plugin: 'com.avast.gradle.docker-compose'
+
+sourceSets {
+    componentTest {
+        // src/componentTest/java and src/componentTest/resources are already the default
+        // convention dirs for a source set named "componentTest" - explicitly adding them
+        // again via .srcDir duplicated every resource file and broke processComponentTestResources.
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    componentTestImplementation.extendsFrom implementation
+    componentTestRuntimeOnly.extendsFrom runtimeOnly
+}
+
+dependencies {
+    componentTestImplementation 'io.cucumber:cucumber-java:7.20.1'
+    componentTestImplementation 'io.cucumber:cucumber-junit-platform-engine:7.20.1'
+    componentTestImplementation 'org.junit.platform:junit-platform-suite'
+    componentTestImplementation 'org.junit.jupiter:junit-jupiter-api'
+    // jackson-databind and kafka-clients both come transitively through `implementation`
+    // (spring-boot-starter-web and spring-kafka respectively), inherited via
+    // componentTestImplementation.extendsFrom implementation above.
+}
+
+tasks.register('componentTest', Test) {
+    description = 'Runs out-of-process Cucumber component tests against a Dockerized order-service'
+    group = 'verification'
+    testClassesDirs = sourceSets.componentTest.output.classesDirs
+    classpath = sourceSets.componentTest.runtimeClasspath
+    useJUnitPlatform()
+    // Compose state (fresh containers/data each run) makes result caching meaningless here.
+    outputs.upToDateWhen { false }
+}
+
+dockerCompose {
+    useComposeFiles = ["${rootDir}/compose-component-test.yml"]
+    projectName = 'ftgo-component-test'
+    isRequiredBy(tasks.componentTest)
+    waitForTcpPorts = true
+}

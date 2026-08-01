@@ -166,3 +166,16 @@ Every Kafka-driven state change (all 3 sagas, both modes) is guarded by the `pro
 ```
 
 Runs against H2 in-memory (`MODE=MySQL`) — no Docker needed for unit tests. To run live, start the full stack (`docker compose up -d`) — this service needs MySQL, Kafka, service-registry, and restaurant-service to actually serve traffic.
+
+## Component tests (Ch.10)
+
+```bash
+./gradlew :ftgo-order-service:componentTest
+```
+
+Requires Docker running locally. An out-of-process Cucumber suite (`src/componentTest`) that drives the real, packaged order-service over its actual HTTP API (`http://localhost:8082`) against a slimmed Docker Compose stack (root `compose-component-test.yml`): MySQL, Zookeeper, Kafka, WireMock, and order-service itself all run as real containers. What's stubbed:
+
+- **restaurant-service** — a static WireMock mapping (`src/componentTest/resources/wiremock/mappings/find-restaurant.json`) stands in for `GET /restaurants/{id}`, reached via Spring Cloud LoadBalancer's `SimpleDiscoveryClient` (Eureka disabled) under the `componenttest` Spring profile.
+- **consumer-service, kitchen-service, delivery-service, accounting-service** — none run as containers; a single plain KafkaConsumer/KafkaProducer stub (`SagaParticipantStub`) watches all four saga command topics (`consumer.commands`/`kitchen.commands`/`delivery.commands`/`accounting.commands`) and replies on `saga.replies`, standing in for all four services' saga-participant roles at once.
+
+Scope: Place Order (Create Order saga) only, orchestration mode only, JPA persistence mode only — 2 scenarios (`src/componentTest/resources/features/PlaceOrder.feature`), order authorized and order rejected due to expired credit card. Choreography mode, the Cancel/Revise Order sagas, other services' own component tests, and event-sourced persistence are deferred — see the "Deferred to a future sub-project" list in [`docs/superpowers/specs/2026-07-31-ch10-component-tests-design.md`](../docs/superpowers/specs/2026-07-31-ch10-component-tests-design.md) for the full design rationale. This task is kept out of the default `test`/`check` task graph (it's slow and requires Docker) — run it explicitly.

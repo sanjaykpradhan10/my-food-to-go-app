@@ -1,0 +1,15 @@
+eureka:
+  client:
+    enabled: false
+
+spring:
+  cloud:
+    discovery:
+      client:
+        simple:
+          instances:
+            ftgo-restaurant-service:
+              - uri: http://wiremock:8080
+
+saga:
+  mode: orchestration
