@@ -33,10 +33,12 @@ Feature: Place, Revise, and Cancel Order (end-to-end)
     When the consumer places an order for 2 of the menu item at the restaurant
     Then the order is eventually approved
     When the consumer revises the order to 12 of the menu item
-    Then the order is eventually rejected
+    Then the revision is eventually declined and the order keeps its original quantity of 2
     When the consumer cancels the order
     Then the order is eventually cancelled
 ```
+
+**Declined-revision terminal state:** `Order.rejectRevision()` returns the order's status to `APPROVED`, not `REJECTED` — that status is reserved for a declined *initial* CreateOrder authorization. A declined revision is only observable via the line items reverting to their pre-revision quantity while status returns to `APPROVED`; the scenario and step definitions assert on quantity for this leg, not status.
 
 **Approve/decline mechanism:** accounting-service's `SagaJoinService.isAuthorized(totalQuantity)` approves iff total line-item quantity ≤ `AUTHORIZATION_QUANTITY_LIMIT` (10) — this is the only decline trigger that exists anywhere in this codebase (there is no card-expiry or amount-based sentinel). The scenario places an order with quantity 2 (approves), then revises to quantity 12 (declines), exercising both the CreateOrder saga's approval path and the ReviseOrder saga's rejection path in one flow, followed by a CancelOrder saga to close out the journey. This is a deliberate adaptation of the book's own example (which uses an "expired credit card" framing not present in this codebase's domain logic) to the actual mechanism this application implements.
 
