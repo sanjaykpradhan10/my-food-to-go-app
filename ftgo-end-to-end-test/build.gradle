@@ -17,13 +17,22 @@ dependencies {
     testImplementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
 }
 
+// Detached from the default `test` task (and thus from the root `test`/`check`/`build`
+// aggregate) so a plain `./gradlew build` doesn't require Docker or a full-stack compose up
+// for every contributor. Run explicitly via `./gradlew :ftgo-end-to-end-test:e2eTest`.
+tasks.test.enabled = false
+
+tasks.register('e2eTest', Test) {
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    // Compose state (fresh containers/data each run) makes result caching meaningless here.
+    outputs.upToDateWhen { false }
+}
+
 dockerCompose {
     useComposeFiles = ["${rootDir}/compose.yml"]
     projectName = 'ftgo-e2e-test'
-    isRequiredBy(tasks.test)
+    isRequiredBy(tasks.named('e2eTest'))
     waitForTcpPorts = true
     environment.put 'SAGA_MODE', 'orchestration'
 }
-
-// Compose state (fresh containers/data each run) makes result caching meaningless here.
-tasks.test.outputs.upToDateWhen { false }
