@@ -25,6 +25,10 @@ tasks.test.enabled = false
 tasks.register('e2eTest', Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
+    // The root build's subprojects{} block only configures the built-in `test` task with
+    // useJUnitPlatform() — a separately registered Test task needs it applied again, or it
+    // silently falls back to the legacy JUnit4 runner and discovers no Cucumber tests.
+    useJUnitPlatform()
     // Compose state (fresh containers/data each run) makes result caching meaningless here.
     outputs.upToDateWhen { false }
 }
