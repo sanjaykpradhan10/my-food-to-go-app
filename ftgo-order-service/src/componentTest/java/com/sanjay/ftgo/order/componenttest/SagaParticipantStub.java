@@ -117,8 +117,16 @@ public class SagaParticipantStub implements AutoCloseable {
 
     @Override
     public void close() {
+        // KafkaConsumer is not thread-safe: closing it from this thread while pollLoop (running on
+        // the executor) is still mid-poll() throws ConcurrentModificationException. Signal the loop
+        // to stop and wait for it to actually exit before touching the consumer/producer here.
         running = false;
         executor.shutdown();
+        try {
+            executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         consumer.close();
         producer.close();
     }

@@ -73,8 +73,9 @@ apply plugin: 'com.avast.gradle.docker-compose'
 
 sourceSets {
     componentTest {
-        java.srcDir 'src/componentTest/java'
-        resources.srcDir 'src/componentTest/resources'
+        // src/componentTest/java and src/componentTest/resources are already the default
+        // convention dirs for a source set named "componentTest" - explicitly adding them
+        // again via .srcDir duplicated every resource file and broke processComponentTestResources.
         compileClasspath += sourceSets.main.output
         runtimeClasspath += sourceSets.main.output
     }
