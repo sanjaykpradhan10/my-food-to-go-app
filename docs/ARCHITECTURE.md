@@ -893,3 +893,80 @@ Each of the 4 backend calls is wrapped in its own `ReactiveCircuitBreaker` (2s t
 Spring Cloud Gateway's `GlobalFilter`s (`RequestLoggingFilter`, `ApiKeyAuthFilter`) and route-level `GatewayFilterFactory`s (`PerKeyRateLimiter`) only execute for requests matched by a declared `RouteLocator`/YAML route. The mobile gateway's composed endpoint, `GET /mobile/orders/{orderId}`, is a hand-written WebFlux `RouterFunction` bean (`OrderDetailsRouterConfig`/`OrderDetailsHandler`), **not** a Gateway route — it's dispatched by Spring WebFlux's own `RouterFunctionMapping`, which sits entirely outside Gateway's filter chain. Consequently none of `ftgo-gateway-common`'s three filters ever run for this one endpoint, even though it lives in the same Spring Boot application as the gateway routes that do get them.
 
 This was discovered, not assumed, while implementing the endpoint — it is the single most important, non-obvious lesson from this chapter, easy to get wrong because everything else in a Spring Cloud Gateway application looks like it shares one filter pipeline. The fix applied here: `OrderDetailsRouterConfig` wraps its `RouterFunction` with its own `.filter(...)` replicating `ApiKeyAuthFilter`'s exact logic (checks `X-Api-Key` against the same `GatewayApiKeyProperties` bean the declared routes use, `401` on missing/wrong key) — so the endpoint isn't left wide open. Request logging and rate limiting are **not** replicated for this endpoint; that gap is a known, deliberately parked limitation of this branch, not fixed here (see the session log for the full rationale).
+
+## End-to-end testing (Ch.10, §10.3)
+
+§10.3 places end-to-end tests at the very top of the test pyramid — the fewest in number, deliberately, because they're slow and brittle relative to the unit tests (Ch.9), consumer-driven contract tests (Ch.10 sub-project 1), and component tests (Ch.10 sub-project 2, `ftgo-order-service`'s `componentTest` source set) that sit below them. Where sub-project 2 deliberately isolated one service (order-service) and stubbed everything around it (restaurant-service via WireMock, the four saga participants via a single `SagaParticipantStub`), this sub-project is the complementary case: the *entire* application runs for real — all seven business services, both gateways, and infrastructure — and exactly one Gherkin scenario drives a full user journey through it, per the book's own guidance (§10.3.1) to minimize the number of end-to-end tests rather than write one per operation.
+
+### The `ftgo-end-to-end-test` module
+
+A new Gradle module (matching the book's own name for this concern), Cucumber over the JUnit Platform engine, following the same `com.avast.gradle.docker-compose` plugin wiring sub-project 2 introduced — but pointed at the root `compose.yml` unmodified, not a slimmed test-only compose file. `compose.yml` already stands up the full stack (MySQL, Zookeeper, Kafka, Kafka Connect/connector-registrar, service-registry, all seven business services, both gateways); the module overrides one environment variable at compose-up time, `SAGA_MODE=orchestration` (the file's own default is `choreography`), consistent with sub-project 2 and the book's own orchestration-based worked examples for these three sagas. `PERSISTENCE_MODE` is left at the file's existing default, `jpa` — event-sourced mode is out of scope here, same deferral sub-project 2 made. The module is not wired into the default `test`/`check` graph (same reasoning as sub-project 2: slow, requires Docker) — run it explicitly via `./gradlew :ftgo-end-to-end-test:test`.
+
+### The journey: Create → Revise → Cancel, one scenario
+
+```gherkin
+Feature: Place, Revise, and Cancel Order (end-to-end)
+
+  Scenario: A consumer places, revises, and cancels an order
+    Given a restaurant "Ajanta E2E" with a menu item "Chicken Vindaloo" priced at 12.00
+    And an active consumer "E2E Consumer"
+    When the consumer places an order for 2 of the menu item at the restaurant
+    Then the order is eventually approved
+    When the consumer revises the order to 12 of the menu item
+    Then the revision is eventually declined and the order keeps its original quantity of 2
+    When the consumer cancels the order
+    Then the order is eventually cancelled
+```
+
+Neither restaurant-service nor consumer-service had a way to create fresh data before this sub-project — both only ever seeded fixed fixtures via `DataSeeder` on startup. Rather than hardcode the test against those seeded ids (which sub-project 2's component test and every manual `docker compose up` verification since Ch.3 already depend on continuing to exist unchanged), this sub-project added `POST /restaurants` (`ftgo-restaurant-service/README.md`) and `POST /consumers` (`ftgo-consumer-service/README.md`, this service's first-ever REST controller) so the journey creates its own restaurant/menu-item/consumer. Both calls go directly to their service's own port (8085, 8081) inside the compose network — neither is exposed through a gateway, since creating restaurants/consumers isn't a public-facing operation in this application's design. Every order operation (create, poll status, revise, cancel), by contrast, goes through `ftgo-public-gateway` at `http://localhost:8091/api/v1/orders/...` with header `X-Api-Key: public-dev-key`, exactly as a real client would.
+
+**Why quantity > 10 is the decline trigger:** accounting-service's `SagaJoinService.isAuthorized(totalQuantity)` approves iff total line-item quantity is ≤ `AUTHORIZATION_QUANTITY_LIMIT` (10) — this is the *only* decline mechanism that exists anywhere in this codebase; there is no card-expiry or amount-based sentinel to borrow from the book's own "expired credit card" framing. The scenario places quantity 2 (approves, exercising the Create Order saga's happy path) then revises to quantity 12 (declines, exercising the Revise Order saga's rejection path), chaining all three saga types into the one journey per §10.3.1's own recommendation, before finally cancelling to close it out (Cancel Order saga's happy path).
+
+**Declined-revision terminal state, easy to get wrong:** `Order.rejectRevision()` returns the order's status to `APPROVED`, not `REJECTED` — `REJECTED` is reserved for a declined *initial* CreateOrder authorization, not a declined revision. A declined revision is observable only via the line items reverting to their pre-revision quantity while status returns to `APPROVED`; the scenario and its step definitions assert on quantity for that leg, not on status, for exactly this reason.
+
+### Sequence: CreateOrder-approved leg (orchestration mode)
+
+```mermaid
+sequenceDiagram
+    participant T as e2e test
+    participant PG as public-gateway
+    participant O as order-service
+    participant Con as consumer-service
+    participant K as kitchen-service
+    participant D as delivery-service
+    participant A as accounting-service
+
+    T->>PG: POST /api/v1/orders (X-Api-Key: public-dev-key)
+    PG->>O: POST /orders (routed, rewritten)
+    O-->>O: Order{APPROVAL_PENDING}<br/>CreateOrderSagaInstance created
+    par parallel commands
+        O-)Con: VerifyConsumerCommand (consumer.commands)
+    and
+        O-)K: CreateTicketCommand (kitchen.commands)
+    and
+        O-)D: ScheduleDeliveryCommand (delivery.commands)
+    end
+    Con-->>Con: consumer active → verified
+    Con-)O: ConsumerVerified (saga.replies)
+    K-->>K: totalQuantity (2) within capacity → Ticket{CREATE_PENDING}
+    K-)O: TicketCreated (saga.replies)
+    D-->>D: courier available → Delivery{SCHEDULED}
+    D-)O: DeliveryScheduled (saga.replies)
+    O-->>O: all 3 replies received → AuthorizeCardCommand
+    O-)A: AuthorizeCardCommand (accounting.commands)
+    A-->>A: totalQuantity (2) ≤ limit (10) → authorize
+    A-)O: CardAuthorized (saga.replies)
+    O-)K: ConfirmCreateTicketCommand (kitchen.commands)
+    K-->>K: Ticket{AWAITING_ACCEPTANCE}
+    K-)O: TicketConfirmed (saga.replies)
+    O-->>O: Order{APPROVED}
+    T->>PG: GET /api/v1/orders/{id} (poll)
+    PG->>O: GET /orders/{id}
+    O-->>T: Order{APPROVED} (via gateway)
+```
+
+The Revise and Cancel legs that follow reuse the same orchestration mechanics already documented above ("Revise Order saga — orchestration", "Cancel Order saga — orchestration") — the only new ground this sub-project covers is that the request now genuinely originates outside the cluster, through the public gateway, against the real containerized stack, rather than being asserted against mocked or stubbed collaborators.
+
+### Deferred
+
+Choreography-mode end-to-end coverage, event-sourced-persistence-mode end-to-end coverage, and additional user journeys beyond Create/Revise/Cancel (e.g. courier assignment, delivery completion) are all deliberately out of scope, consistent with §10.3.1's guidance to keep the number of end-to-end tests small — see [`docs/superpowers/specs/2026-07-31-ch10-e2e-tests-design.md`](superpowers/specs/2026-07-31-ch10-e2e-tests-design.md) for the full design rationale.

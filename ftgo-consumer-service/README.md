@@ -11,7 +11,19 @@ In the Create Order saga (Ch.4), consumer-service is the first participant consu
 
 ## API
 
-None. This service has no REST controllers — it's purely event/message-driven, participating only via Kafka.
+`POST /consumers`
+
+Request:
+```json
+{"name": "E2E Consumer", "active": true}
+```
+
+Response (`201`):
+```json
+{"id": 7, "name": "E2E Consumer", "active": true}
+```
+
+Added in Ch.10 sub-project 3 (end-to-end tests, §10.3) so the end-to-end test can create its own consumer rather than depend on `DataSeeder`'s fixed seed ids. This is this service's only REST controller — everything else below is still purely event/message-driven via Kafka. Not exposed through either gateway. `DataSeeder` is untouched and still separately seeds "Sanjay" (active) / "Blocked Consumer" (inactive) on every startup against an empty table.
 
 ## Events
 
