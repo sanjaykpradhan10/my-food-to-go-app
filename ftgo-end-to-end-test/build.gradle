@@ -1,0 +1,29 @@
+apply plugin: 'com.avast.gradle.docker-compose'
+
+// Not a runnable Spring Boot app (no main class) — same opt-out as ftgo-common/ftgo-gateway-common.
+bootJar {
+    enabled = false
+}
+
+jar {
+    enabled = true
+}
+
+dependencies {
+    testImplementation 'io.cucumber:cucumber-java:7.20.1'
+    testImplementation 'io.cucumber:cucumber-junit-platform-engine:7.20.1'
+    testImplementation 'org.junit.platform:junit-platform-suite'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api'
+    testImplementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
+}
+
+dockerCompose {
+    useComposeFiles = ["${rootDir}/compose.yml"]
+    projectName = 'ftgo-e2e-test'
+    isRequiredBy(tasks.test)
+    waitForTcpPorts = true
+    environment.put 'SAGA_MODE', 'orchestration'
+}
+
+// Compose state (fresh containers/data each run) makes result caching meaningless here.
+tasks.test.outputs.upToDateWhen { false }
