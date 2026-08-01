@@ -42,7 +42,7 @@ subprojects {
 // its own minimal dependency set in its own build.gradle instead of inheriting the runnable
 // services' web/mysql/test stack, so its classpath isn't bloated with dependencies it never uses.
 // The gateway modules are WebFlux-based and need reactive starters, not servlet web/JPA.
-def reactiveModules = ['ftgo-common', 'ftgo-gateway-common', 'ftgo-mobile-gateway', 'ftgo-public-gateway']
+def reactiveModules = ['ftgo-common', 'ftgo-gateway-common', 'ftgo-mobile-gateway', 'ftgo-public-gateway', 'ftgo-end-to-end-test']
 
 configure(subprojects.findAll { !reactiveModules.contains(it.name) }) {
     dependencies {

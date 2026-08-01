@@ -53,6 +53,7 @@ spring:
           uri: lb://ftgo-restaurant-service
           predicates:
             - Path=/api/v1/restaurants/**
+            - Method=GET
           filters:
             - RewritePath=/api/v1/restaurants(?<segment>/?.*), /restaurants$\{segment}
             - name: PerKeyRateLimiter

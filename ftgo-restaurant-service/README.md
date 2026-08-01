@@ -25,6 +25,20 @@ Response:
 
 Returns `404` (empty body) if no restaurant exists with that id.
 
+`POST /restaurants`
+
+Request:
+```json
+{
+  "name": "Ajanta E2E",
+  "menuItems": [
+    {"name": "Chicken Vindaloo", "price": 12.00}
+  ]
+}
+```
+
+Response (`201`): same `RestaurantResponse` shape as `GET /restaurants/{id}` above, with server-generated ids (`GenerationType.IDENTITY`) for both the restaurant and its menu items. Added in Ch.10 sub-project 3 (end-to-end tests, §10.3) purely so the end-to-end test can create its own fixture data rather than depend on `DataSeeder`'s fixed seed ids — not exposed through either gateway (creating restaurants/menus isn't a public-facing operation in this application's design). `DataSeeder` is untouched and still separately seeds the two fixed restaurants below on every startup against an empty table.
+
 ## Events
 
 None. This service doesn't produce or consume any Kafka events — it's reached only via synchronous REST (from order-service, via a circuit breaker).

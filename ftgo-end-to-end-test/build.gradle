@@ -1,0 +1,42 @@
+apply plugin: 'com.avast.gradle.docker-compose'
+
+// Not a runnable Spring Boot app (no main class) — same opt-out as ftgo-common/ftgo-gateway-common.
+bootJar {
+    enabled = false
+}
+
+jar {
+    enabled = true
+}
+
+dependencies {
+    testImplementation 'io.cucumber:cucumber-java:7.20.1'
+    testImplementation 'io.cucumber:cucumber-junit-platform-engine:7.20.1'
+    testImplementation 'org.junit.platform:junit-platform-suite'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api'
+    testImplementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
+}
+
+// Detached from the default `test` task (and thus from the root `test`/`check`/`build`
+// aggregate) so a plain `./gradlew build` doesn't require Docker or a full-stack compose up
+// for every contributor. Run explicitly via `./gradlew :ftgo-end-to-end-test:e2eTest`.
+tasks.test.enabled = false
+
+tasks.register('e2eTest', Test) {
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    // The root build's subprojects{} block only configures the built-in `test` task with
+    // useJUnitPlatform() — a separately registered Test task needs it applied again, or it
+    // silently falls back to the legacy JUnit4 runner and discovers no Cucumber tests.
+    useJUnitPlatform()
+    // Compose state (fresh containers/data each run) makes result caching meaningless here.
+    outputs.upToDateWhen { false }
+}
+
+dockerCompose {
+    useComposeFiles = ["${rootDir}/compose.yml"]
+    projectName = 'ftgo-e2e-test'
+    isRequiredBy(tasks.named('e2eTest'))
+    waitForTcpPorts = true
+    environment.put 'SAGA_MODE', 'orchestration'
+}
