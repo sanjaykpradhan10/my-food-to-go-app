@@ -90,7 +90,11 @@ public class OrderServiceComponentTestStepDefinitions {
     }
 
     private String pollForFinalStatus() throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(10));
+        // 30s: the Place Order flow crosses the outbox poller (fixed-delay 2000ms) at least
+        // twice — command fan-out, then AuthorizeCard after the three earlier replies land —
+        // so worst-case outbox latency alone is ~4s before Kafka delivery/consumer lag/our own
+        // 500ms polling granularity. 10s left too little headroom on a cold or loaded machine.
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(30));
         String lastStatus = "APPROVAL_PENDING";
         while (Instant.now().isBefore(deadline)) {
             HttpRequest request = HttpRequest.newBuilder()
@@ -105,7 +109,7 @@ public class OrderServiceComponentTestStepDefinitions {
             }
             Thread.sleep(500);
         }
-        fail("Order " + placedOrderId + " did not leave APPROVAL_PENDING within 10s; last status: " + lastStatus);
+        fail("Order " + placedOrderId + " did not leave APPROVAL_PENDING within 30s; last status: " + lastStatus);
         return lastStatus;
     }
 }

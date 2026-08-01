@@ -34,6 +34,10 @@ public class SagaParticipantStub implements AutoCloseable {
     private static final String ACCOUNTING_COMMANDS = "accounting.commands";
     private static final String SAGA_REPLIES = "saga.replies";
     private static final String SAGA_TYPE = "CreateOrder";
+    // Stable group id (not a random UUID per scenario) so consumer offsets carry forward across
+    // scenarios: a fresh random group.id + auto.offset.reset=earliest would replay every prior
+    // scenario's already-consumed commands from the start of each topic on every new scenario.
+    private static final String STUB_GROUP_ID = "component-test-saga-stub";
 
     private final KafkaConsumer<String, String> consumer;
     private final KafkaProducer<String, String> producer;
@@ -45,7 +49,7 @@ public class SagaParticipantStub implements AutoCloseable {
     public SagaParticipantStub(String bootstrapServers) {
         Properties consumerProps = new Properties();
         consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "saga-participant-stub-" + UUID.randomUUID());
+        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, STUB_GROUP_ID);
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
@@ -73,7 +77,10 @@ public class SagaParticipantStub implements AutoCloseable {
                     handleCommand(record.topic(), record.value());
                 } catch (Exception e) {
                     // A malformed or not-yet-understood command shouldn't kill the poll loop —
-                    // the test itself will time out and fail if a reply never arrives.
+                    // the test itself will time out and fail if a reply never arrives. Still log
+                    // it, otherwise a real failure here manifests only as an opaque step timeout.
+                    System.err.println("[SagaParticipantStub] failed to handle command from topic "
+                            + record.topic() + ": " + e.getMessage());
                 }
             }
         }
