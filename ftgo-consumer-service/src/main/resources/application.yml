@@ -25,3 +25,12 @@ outbox:
 
 saga:
   mode: choreography
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
