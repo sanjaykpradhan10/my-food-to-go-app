@@ -88,6 +88,33 @@ class OrderViewControllerTest {
     }
 
     @Test
+    void forbidsConsumerFromViewingAnotherConsumersOrder() throws Exception {
+        Order order = new Order(1L, 42L, 7L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+
+        mockMvc.perform(get("/orders/1/view").with(jwt().jwt(b -> b.claim("sub", "99").claim("roles", List.of("CONSUMER")))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanViewAnyOrderRegardlessOfConsumerId() throws Exception {
+        Order order = new Order(1L, 42L, 7L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+        when(restaurantServicePort.findRestaurantForView(7L))
+                .thenReturn(new Found<>(new RestaurantInfo(7L, "Ajanta", List.of())));
+        when(kitchenServicePort.findTicket(1L))
+                .thenReturn(new Found<>(new TicketInfo(1L, 1L, "ACCEPTED", null)));
+        when(accountingServicePort.findAuthorization(1L))
+                .thenReturn(new Found<>(new AuthorizationInfo(1L, 1L, "AUTHORIZED")));
+        when(deliveryServicePort.findDelivery(1L))
+                .thenReturn(new Found<>(new DeliveryInfo(1L, 1L, "SCHEDULED", 3L)));
+
+        mockMvc.perform(get("/orders/1/view").with(jwt().jwt(b -> b.claim("sub", "999").claim("roles", List.of("ADMIN")))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.order.id").value(1));
+    }
+
+    @Test
     void returns404WhenOrderNotFound() throws Exception {
         when(orderRepository.findById(99L)).thenReturn(Optional.empty());
 

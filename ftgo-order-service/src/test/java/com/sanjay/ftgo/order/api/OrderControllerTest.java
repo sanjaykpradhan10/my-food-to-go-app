@@ -104,6 +104,25 @@ class OrderControllerTest {
     }
 
     @Test
+    void derivesConsumerIdFromJwtRatherThanRequestBody() throws Exception {
+        Order order = new Order(1L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVAL_PENDING);
+        when(orderService.createOrder(eq(1L), eq(1L), any())).thenReturn(order);
+
+        // Body claims consumerId 999, but the authenticated JWT subject is "1" - the controller
+        // must trust the JWT, not the body, so orderService is invoked with consumerId 1.
+        mockMvc.perform(post("/orders")
+                        .with(jwt().jwt(b -> b.claim("sub", "1").claim("roles", List.of("CONSUMER"))).authorities(new SimpleGrantedAuthority("ROLE_CONSUMER")))
+                        .contentType("application/json")
+                        .content("""
+                                {"consumerId":999,"restaurantId":1,"lineItems":[{"menuItemId":10,"quantity":2}]}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.consumerId").value(1));
+
+        verify(orderService).createOrder(eq(1L), eq(1L), any());
+    }
+
+    @Test
     void returns404WhenRestaurantNotFound() throws Exception {
         when(orderService.createOrder(eq(1L), eq(99L), any())).thenThrow(new RestaurantNotFoundException(99L));
 
