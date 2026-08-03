@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cloud.client.circuitbreaker.ReactiveCircuitBreaker;
 import org.springframework.cloud.client.circuitbreaker.ReactiveCircuitBreakerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
@@ -27,15 +28,15 @@ public class OrderDetailsHandler {
         this.circuitBreakerFactory = circuitBreakerFactory;
     }
 
-    public Mono<OrderDetails> fetchOrderDetails(Long orderId) {
+    public Mono<OrderDetails> fetchOrderDetails(Long orderId, String bearerToken) {
         Mono<SectionResult<String>> order = fetchSection(
-                "orderService", clients.orderServiceClient(), "/orders/" + orderId);
+                "orderService", clients.orderServiceClient(), "/orders/" + orderId, bearerToken);
         Mono<SectionResult<String>> ticket = fetchSection(
-                "kitchenService", clients.kitchenServiceClient(), "/tickets/order/" + orderId);
+                "kitchenService", clients.kitchenServiceClient(), "/tickets/order/" + orderId, bearerToken);
         Mono<SectionResult<String>> authorization = fetchSection(
-                "accountingService", clients.accountingServiceClient(), "/authorizations/order/" + orderId);
+                "accountingService", clients.accountingServiceClient(), "/authorizations/order/" + orderId, bearerToken);
         Mono<SectionResult<String>> delivery = fetchSection(
-                "deliveryService", clients.deliveryServiceClient(), "/deliveries/order/" + orderId);
+                "deliveryService", clients.deliveryServiceClient(), "/deliveries/order/" + orderId, bearerToken);
 
         return Mono.zip(order, ticket, authorization, delivery)
                 .map(tuple -> new OrderDetails(tuple.getT1(), tuple.getT2(), tuple.getT3(), tuple.getT4()));
@@ -48,11 +49,15 @@ public class OrderDetailsHandler {
     // e.g. no delivery yet scheduled) from any other failure (timeout, connection refused, 5xx,
     // open circuit) so the client can tell "not created yet" apart from "backend unavailable"
     // while still degrading gracefully either way instead of failing the whole composed response.
-    private Mono<SectionResult<String>> fetchSection(String circuitBreakerName, WebClient client, String path) {
+    private Mono<SectionResult<String>> fetchSection(String circuitBreakerName, WebClient client, String path, String bearerToken) {
         ReactiveCircuitBreaker circuitBreaker = circuitBreakerFactory.create(circuitBreakerName);
 
+        // Forward the caller's own validated token rather than a separate service identity, so
+        // each backend's instance-based ACL (e.g. order-service's per-consumer ACL) still applies
+        // to the actual requesting user instead of being bypassed by a gateway-wide credential.
         Mono<SectionResult<String>> call = client.get()
                 .uri(path)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                 .retrieve()
                 .bodyToMono(String.class)
                 .timeout(SECTION_TIMEOUT)

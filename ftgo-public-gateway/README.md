@@ -9,7 +9,7 @@ The public/3rd-party-facing gateway from the book's Backends for Frontends patte
 
 ## Routes
 
-All six routes rewrite `/api/v1/<resource>/**` to `/<resource>**` on the target service (resolved via Eureka, `lb://` scheme) and apply the shared `PerKeyRateLimiter` filter (from `ftgo-gateway-common`) at 5 requests/second per API key:
+All six routes rewrite `/api/v1/<resource>/**` to `/<resource>**` on the target service (resolved via Eureka, `lb://` scheme) and apply the shared `PerKeyRateLimiter` filter (from `ftgo-gateway-common`) at 5 requests/second per caller (keyed off the validated JWT's `sub` claim):
 
 | Route id | Path | Rewritten to | Backend |
 |---|---|---|---|
@@ -27,8 +27,8 @@ No route composes across services — every request this gateway handles is answ
 Applied via `ftgo-gateway-common`'s auto-configuration (see that module's own README for full detail):
 
 - **Request logging** (`RequestLoggingFilter`) — every request, all six routes.
-- **API-key auth** (`ApiKeyAuthFilter`) — this gateway's own key is `public-dev-key` (`gateway.api-key.value`), independent of the mobile gateway's key. Missing/wrong `X-Api-Key` header → `401`.
-- **Per-key rate limiting** (`PerKeyRateLimiter`) — 5 req/s per API key, applied identically to all six routes (a public/3rd-party-facing gateway is deliberately throttled tighter than the mobile gateway's 20 req/s, since it's the surface exposed to less-trusted external callers).
+- **JWT bearer-token auth** (`JwtValidationFilter`) — validates the caller's `Authorization: Bearer <JWT>` against `ftgo-authorization-server`'s JWK Set (`gateway.jwt.jwk-set-uri`). Missing/invalid token → `401`. The token is forwarded unchanged to the routed-to backend service, which validates it again as its own OAuth2 resource server.
+- **Per-caller rate limiting** (`PerKeyRateLimiter`) — 5 req/s per caller (keyed off the validated JWT's `sub` claim), applied identically to all six routes (a public/3rd-party-facing gateway is deliberately throttled tighter than the mobile gateway's 20 req/s, since it's the surface exposed to less-trusted external callers).
 
 ## Dependencies
 
@@ -51,7 +51,11 @@ given in the business services' READMEs. Verified against the real, running stac
 Needs the full docker-compose stack (Eureka registry plus every routed-to backend service registered and running) to exercise live — see the root [README](../README.md) for `docker compose up`. Example live call:
 
 ```bash
-curl -H "X-Api-Key: public-dev-key" http://localhost:8091/api/v1/restaurants/1
+TOKEN=$(curl -s -u ftgo-gateway:gateway-secret \
+  -d "grant_type=password&username=consumer1&password=password" \
+  http://localhost:9000/oauth2/token | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8091/api/v1/restaurants/1
 ```
 
 Key environment variables (see `application.yml`):
@@ -61,4 +65,4 @@ Key environment variables (see `application.yml`):
 | `EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE` | `http://localhost:8761/eureka/` | Eureka registry URL (note the exact casing — `SERVICE_URL`, not `SERVICEURL`) |
 | `SERVER_PORT` | `8091` | HTTP port |
 
-No `gateway.api-key.value` env override is wired in `compose.yml` — the key is fixed at `public-dev-key` via `application.yml` for this learning project, not sourced from a secret store.
+`gateway.jwt.jwk-set-uri` is fixed at `http://localhost:9000/oauth2/jwks` via `application.yml` for this learning project, pointing at the co-started `ftgo-authorization-server`.

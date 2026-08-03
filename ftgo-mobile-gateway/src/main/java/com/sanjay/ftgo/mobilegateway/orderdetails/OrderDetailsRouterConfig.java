@@ -59,7 +59,9 @@ public class OrderDetailsRouterConfig {
             } catch (NumberFormatException e) {
                 return ServerResponse.status(HttpStatus.BAD_REQUEST).bodyValue("orderId must be numeric");
             }
-            return handler.fetchOrderDetails(orderId)
+            String authorization = request.headers().firstHeader(HttpHeaders.AUTHORIZATION);
+            String token = authorization.substring("Bearer ".length());
+            return handler.fetchOrderDetails(orderId, token)
                     .flatMap(details -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(details));
         });
 

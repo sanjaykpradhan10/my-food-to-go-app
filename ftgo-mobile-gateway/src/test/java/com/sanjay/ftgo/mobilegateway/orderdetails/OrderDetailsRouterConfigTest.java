@@ -75,7 +75,7 @@ class OrderDetailsRouterConfigTest {
                 new SectionResult.Found<>("{\"ticketId\":1}"),
                 new SectionResult.Found<>("{\"status\":\"AUTHORIZED\"}"),
                 new SectionResult.Found<>("{\"status\":\"SCHEDULED\"}"));
-        Mockito.when(handler.fetchOrderDetails(1L)).thenReturn(Mono.just(stubDetails));
+        Mockito.when(handler.fetchOrderDetails(1L, VALID_TOKEN)).thenReturn(Mono.just(stubDetails));
 
         client(handler, decoderAcceptingOnly(VALID_TOKEN)).get().uri("/mobile/orders/1")
                 .header("Authorization", "Bearer " + VALID_TOKEN)
@@ -83,6 +83,9 @@ class OrderDetailsRouterConfigTest {
                 .expectStatus().isOk()
                 .expectHeader().contentType(MediaType.APPLICATION_JSON);
 
-        Mockito.verify(handler).fetchOrderDetails(1L);
+        // Regression guard for the finding where the caller's token was validated but never
+        // forwarded to the handler: verifies the raw token string (not just orderId) is passed
+        // through, so it can be relayed on to the four backend calls.
+        Mockito.verify(handler).fetchOrderDetails(1L, VALID_TOKEN);
     }
 }

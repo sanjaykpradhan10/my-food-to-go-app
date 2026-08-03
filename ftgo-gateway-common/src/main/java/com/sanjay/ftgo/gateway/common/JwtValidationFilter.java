@@ -5,6 +5,7 @@ import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.stereotype.Component;
@@ -21,6 +22,10 @@ import reactor.core.publisher.Mono;
 @Component
 public class JwtValidationFilter implements GlobalFilter, Ordered {
 
+    // Exposed so downstream filters (e.g. PerKeyRateLimiterGatewayFilterFactory) can key off the
+    // caller's identity without re-decoding/re-validating a token this filter already verified.
+    public static final String VALIDATED_JWT_ATTRIBUTE = "com.sanjay.ftgo.gateway.common.VALIDATED_JWT";
+
     private final ReactiveJwtDecoder jwtDecoder;
 
     public JwtValidationFilter(ReactiveJwtDecoder jwtDecoder) {
@@ -35,6 +40,7 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
         }
         String token = authorization.substring("Bearer ".length());
         return jwtDecoder.decode(token)
+                .doOnNext(jwt -> exchange.getAttributes().put(VALIDATED_JWT_ATTRIBUTE, jwt))
                 .then(chain.filter(exchange))
                 .onErrorResume(JwtException.class, ex -> unauthorized(exchange));
     }

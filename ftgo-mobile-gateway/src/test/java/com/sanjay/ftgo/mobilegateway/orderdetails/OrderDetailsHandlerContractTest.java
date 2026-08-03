@@ -58,7 +58,7 @@ class OrderDetailsHandlerContractTest {
         // contract governs.
         OrderDetailsHandler handler = new OrderDetailsHandler(clients, new PassthroughReactiveCircuitBreakerFactory());
 
-        OrderDetails orderDetails = handler.fetchOrderDetails(1223232L)
+        OrderDetails orderDetails = handler.fetchOrderDetails(1223232L, "contract-test-token")
                 .block(Duration.ofSeconds(5));
 
         // The contract's example order id is 1223232 (Task 2, Step 3) - verifying the order
