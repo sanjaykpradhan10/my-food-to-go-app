@@ -3,6 +3,7 @@ package com.sanjay.ftgo.orderhistory.api;
 import com.sanjay.ftgo.orderhistory.domain.OrderView;
 import com.sanjay.ftgo.orderhistory.domain.OrderViewRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,6 +19,7 @@ public class OrderHistoryController {
         this.orderViewRepository = orderViewRepository;
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{orderId}")
     public ResponseEntity<OrderViewResponse> view(@PathVariable Long orderId) {
         return orderViewRepository.findById(orderId)
