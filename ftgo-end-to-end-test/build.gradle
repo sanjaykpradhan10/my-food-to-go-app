@@ -11,6 +11,11 @@ jar {
 
 dependencies {
     testImplementation 'io.cucumber:cucumber-java:7.20.1'
+    // The default reflection-based ObjectFactory only supports no-arg constructors; sharing
+    // OrderIdHolder between PlaceReviseCancelOrderStepDefinitions and
+    // OrderAccessControlStepDefinitions needs constructor injection, which requires this
+    // PicoContainer-backed factory instead.
+    testImplementation 'io.cucumber:cucumber-picocontainer:7.20.1'
     testImplementation 'io.cucumber:cucumber-junit-platform-engine:7.20.1'
     testImplementation 'org.junit.platform:junit-platform-suite'
     testImplementation 'org.junit.jupiter:junit-jupiter-api'

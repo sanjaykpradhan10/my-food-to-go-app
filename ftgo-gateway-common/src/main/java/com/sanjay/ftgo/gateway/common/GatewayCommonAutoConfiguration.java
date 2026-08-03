@@ -14,7 +14,7 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 // META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports.
 @AutoConfiguration
 @EnableConfigurationProperties(GatewayJwtProperties.class)
-@Import({RequestLoggingFilter.class, JwtValidationFilter.class, PerKeyRateLimiterGatewayFilterFactory.class})
+@Import({RequestLoggingFilter.class, JwtValidationFilter.class, PerKeyRateLimiterGatewayFilterFactory.class, GatewaySecurityConfig.class})
 public class GatewayCommonAutoConfiguration {
 
     @Bean

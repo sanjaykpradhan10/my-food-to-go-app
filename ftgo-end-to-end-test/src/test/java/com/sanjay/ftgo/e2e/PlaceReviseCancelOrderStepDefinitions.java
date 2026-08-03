@@ -21,22 +21,30 @@ public class PlaceReviseCancelOrderStepDefinitions {
     private static final String RESTAURANT_SERVICE_BASE_URL = "http://localhost:8085";
     private static final String CONSUMER_SERVICE_BASE_URL = "http://localhost:8081";
     private static final String GATEWAY_BASE_URL = "http://localhost:8091/api/v1";
-    private static final String GATEWAY_API_KEY = "public-dev-key";
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final TokenClient tokenClient = new TokenClient();
+    private final OrderIdHolder orderIdHolder;
 
     private long restaurantId;
     private long menuItemId;
     private long consumerId;
     private long orderId;
 
+    public PlaceReviseCancelOrderStepDefinitions(OrderIdHolder orderIdHolder) {
+        this.orderIdHolder = orderIdHolder;
+    }
+
     @Given("a restaurant {string} with a menu item {string} priced at {double}")
     public void aRestaurantWithAMenuItemPricedAt(String restaurantName, String menuItemName, double price) throws Exception {
         String body = String.format(
                 "{\"name\":\"%s\",\"menuItems\":[{\"name\":\"%s\",\"price\":%s}]}",
                 restaurantName, menuItemName, price);
-        JsonNode response = postWithRetry(RESTAURANT_SERVICE_BASE_URL + "/restaurants", body, false);
+        // Direct (non-gateway) call to restaurant-service, which now requires a RESTAURANT or
+        // ADMIN token per Task 4's @PreAuthorize on POST /restaurants.
+        JsonNode response = postWithRetry(RESTAURANT_SERVICE_BASE_URL + "/restaurants", body,
+                "Bearer " + tokenClient.tokenFor("restaurant1", "password"));
         restaurantId = response.get("id").asLong();
         menuItemId = response.get("menuItems").get(0).get("id").asLong();
     }
@@ -44,7 +52,10 @@ public class PlaceReviseCancelOrderStepDefinitions {
     @Given("an active consumer {string}")
     public void anActiveConsumer(String consumerName) throws Exception {
         String body = String.format("{\"name\":\"%s\",\"active\":true}", consumerName);
-        JsonNode response = postWithRetry(CONSUMER_SERVICE_BASE_URL + "/consumers", body, false);
+        // Direct (non-gateway) call to consumer-service, which now requires an ADMIN token per
+        // Task 4's @PreAuthorize on POST /consumers.
+        JsonNode response = postWithRetry(CONSUMER_SERVICE_BASE_URL + "/consumers", body,
+                "Bearer " + tokenClient.tokenFor("admin1", "password"));
         consumerId = response.get("id").asLong();
     }
 
@@ -55,8 +66,10 @@ public class PlaceReviseCancelOrderStepDefinitions {
                 consumerId, restaurantId, menuItemId, quantity);
         // Order-service and the gateway's route to it may still be registering with Eureka even
         // after restaurant/consumer setup succeeded, so this call gets the same retry treatment.
-        JsonNode response = postWithRetry(GATEWAY_BASE_URL + "/orders", body, true);
+        JsonNode response = postWithRetry(GATEWAY_BASE_URL + "/orders", body,
+                "Bearer " + tokenClient.tokenFor("consumer1", "password"));
         orderId = response.get("id").asLong();
+        orderIdHolder.set(orderId);
     }
 
     @When("the consumer revises the order to {int} of the menu item")
@@ -65,7 +78,7 @@ public class PlaceReviseCancelOrderStepDefinitions {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(GATEWAY_BASE_URL + "/orders/" + orderId + "/revise"))
                 .header("Content-Type", "application/json")
-                .header("X-Api-Key", GATEWAY_API_KEY)
+                .header("Authorization", "Bearer " + tokenClient.tokenFor("consumer1", "password"))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -76,7 +89,7 @@ public class PlaceReviseCancelOrderStepDefinitions {
     public void theConsumerCancelsTheOrder() throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(GATEWAY_BASE_URL + "/orders/" + orderId + "/cancel"))
-                .header("X-Api-Key", GATEWAY_API_KEY)
+                .header("Authorization", "Bearer " + tokenClient.tokenFor("consumer1", "password"))
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -106,7 +119,7 @@ public class PlaceReviseCancelOrderStepDefinitions {
     private JsonNode fetchOrder() throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(GATEWAY_BASE_URL + "/orders/" + orderId))
-                .header("X-Api-Key", GATEWAY_API_KEY)
+                .header("Authorization", "Bearer " + tokenClient.tokenFor("consumer1", "password"))
                 .GET()
                 .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -117,17 +130,15 @@ public class PlaceReviseCancelOrderStepDefinitions {
     // finished registering with Eureka after container startup (this includes order-service
     // itself, reached via the gateway) — retry with backoff instead of requiring a separate
     // explicit readiness wait in the compose config.
-    private JsonNode postWithRetry(String url, String body, boolean throughGateway) throws Exception {
+    private JsonNode postWithRetry(String url, String body, String authorizationHeaderValue) throws Exception {
         Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
         Exception lastFailure = null;
         while (Instant.now().isBefore(deadline)) {
             try {
                 HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                         .uri(URI.create(url))
-                        .header("Content-Type", "application/json");
-                if (throughGateway) {
-                    requestBuilder.header("X-Api-Key", GATEWAY_API_KEY);
-                }
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", authorizationHeaderValue);
                 HttpRequest request = requestBuilder.POST(HttpRequest.BodyPublishers.ofString(body)).build();
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() == 201) {
@@ -150,7 +161,7 @@ public class PlaceReviseCancelOrderStepDefinitions {
         while (Instant.now().isBefore(deadline)) {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(GATEWAY_BASE_URL + "/orders/" + orderId))
-                    .header("X-Api-Key", GATEWAY_API_KEY)
+                    .header("Authorization", "Bearer " + tokenClient.tokenFor("consumer1", "password"))
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
