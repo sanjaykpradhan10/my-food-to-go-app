@@ -48,6 +48,18 @@ services:
     ports:
       - "8761:8761"
 
+  authorization-server:
+    build:
+      context: .
+      dockerfile: ftgo-authorization-server/Dockerfile
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/oauth2/jwks"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   kafka-connect:
     # 3.0.0.Final: 2.7.x issues SHOW MASTER STATUS against MySQL, which 8.4 removed
     # (renamed to SHOW BINARY LOG STATUS) — connector reports RUNNING while silently
@@ -273,10 +285,13 @@ services:
         condition: service_healthy
       delivery-service:
         condition: service_healthy
+      authorization-server:
+        condition: service_healthy
     ports:
       - "8090:8090"
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+      GATEWAY_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health"]
       interval: 10s
@@ -302,10 +317,13 @@ services:
         condition: service_healthy
       restaurant-service:
         condition: service_healthy
+      authorization-server:
+        condition: service_healthy
     ports:
       - "8091:8091"
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+      GATEWAY_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8091/actuator/health"]
       interval: 10s

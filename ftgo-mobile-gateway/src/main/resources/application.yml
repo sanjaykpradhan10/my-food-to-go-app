@@ -36,8 +36,8 @@ spring:
                 requestsPerSecond: 20
 
 gateway:
-  api-key:
-    value: mobile-dev-key
+  jwt:
+    jwk-set-uri: http://localhost:9000/oauth2/jwks
 
 server:
   port: 8090
