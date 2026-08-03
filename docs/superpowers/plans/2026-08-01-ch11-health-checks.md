@@ -326,17 +326,25 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 public class HealthCheckStepDefinitions {
 
-    // Every DB-backed business service; each must report both "db" and "kafka" components UP,
-    // in addition to the "discoveryComposite" (Eureka) component all 9 services share.
+    // Every DB-backed business service except consumer-service; each must report a "db"
+    // component UP, in addition to the "discoveryComposite" (Eureka) component. There is no
+    // "kafka" component to assert on: Spring Boot's actuator-autoconfigure no longer ships a
+    // Kafka health contributor (verified absent from spring-boot-actuator-autoconfigure 3.5.16
+    // -- only KafkaMetricsAutoConfiguration remains under actuate.autoconfigure.kafka), and none
+    // of the 9 services registers a custom one, so live health JSON never has a "kafka" key.
     private static final List<Map.Entry<String, Integer>> DB_BACKED_SERVICES = List.of(
             Map.entry("order-service", 8082),
             Map.entry("kitchen-service", 8083),
-            Map.entry("consumer-service", 8081),
             Map.entry("restaurant-service", 8085),
             Map.entry("accounting-service", 8084),
             Map.entry("delivery-service", 8086),
             Map.entry("order-history-service", 8088)
     );
+
+    // consumer-service is DB-backed but, unlike the other 6, has no eureka-client dependency at
+    // all (pre-existing, unrelated to Ch.11) -- it never registers with Eureka, so it has no
+    // "discoveryComposite" component either.
+    private static final Map.Entry<String, Integer> CONSUMER_SERVICE = Map.entry("consumer-service", 8081);
 
     // Gateways: no DB/Kafka of their own, but still register with Eureka.
     private static final List<Map.Entry<String, Integer>> GATEWAY_SERVICES = List.of(
@@ -353,8 +361,12 @@ public class HealthCheckStepDefinitions {
             JsonNode health = fetchHealthWithRetry(service.getKey(), service.getValue());
             assertEquals("UP", health.get("status").asText(), service.getKey() + " overall status");
             assertEquals("UP", health.get("components").get("db").get("status").asText(), service.getKey() + " db component");
-            assertEquals("UP", health.get("components").get("kafka").get("status").asText(), service.getKey() + " kafka component");
             assertEquals("UP", health.get("components").get("discoveryComposite").get("status").asText(), service.getKey() + " discoveryComposite component");
+        }
+        {
+            JsonNode health = fetchHealthWithRetry(CONSUMER_SERVICE.getKey(), CONSUMER_SERVICE.getValue());
+            assertEquals("UP", health.get("status").asText(), CONSUMER_SERVICE.getKey() + " overall status");
+            assertEquals("UP", health.get("components").get("db").get("status").asText(), CONSUMER_SERVICE.getKey() + " db component");
         }
         for (Map.Entry<String, Integer> service : GATEWAY_SERVICES) {
             JsonNode health = fetchHealthWithRetry(service.getKey(), service.getValue());
@@ -420,7 +432,7 @@ git commit -m "test: add full-stack health check scenario to ftgo-end-to-end-tes
 
 - [ ] **Step 1: Add a "Health check" section to each of the 7 DB-backed services' README**
 
-Add this section (adjust the two component names' explanation only if a service genuinely has no Kafka producer/consumer of its own — all 7 do, so use this exact text for all 7):
+Add this section (adjust only for `ftgo-consumer-service`, which has no `discoveryComposite` component — see the note below):
 
 ```markdown
 ## Health check (Ch.11, §11.3.1)
@@ -428,14 +440,23 @@ Add this section (adjust the two component names' explanation only if a service 
 `GET /actuator/health` — Spring Boot Actuator, auto-configured indicators only (no custom
 `HealthIndicator` code). Reports:
 - `db` — MySQL reachability via the service's `DataSource`.
-- `kafka` — broker reachability via the auto-configured `KafkaAdmin` bean.
 - `discoveryComposite` — Eureka registration status.
+
+There is no `kafka` component: Spring Boot's actuator-autoconfigure no longer ships a Kafka
+health contributor as of this project's Spring Boot version (3.5.16) — verified directly against
+the built jars (`spring-boot-actuator-autoconfigure` retains only `KafkaMetricsAutoConfiguration`
+under `actuate.autoconfigure.kafka`; `spring-kafka` ships no health-indicator class either) — and
+adding a custom one is out of scope for this sub-project.
 
 `management.endpoint.health.show-details: always` — safe here since these ports aren't exposed
 to untrusted clients in this project; full component detail is the point of exercising this
 pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
 `AllServicesReportHealthy.feature`.
 ```
+
+For `ftgo-consumer-service/README.md` specifically, drop the `discoveryComposite` bullet and add
+instead: "`ftgo-consumer-service` has no `eureka-client` dependency (pre-existing, unrelated to
+Ch.11), so it never registers with Eureka and has no `discoveryComposite` component — only `db`."
 
 Insert this section into each of these 7 files: `ftgo-order-service/README.md`, `ftgo-kitchen-service/README.md`, `ftgo-consumer-service/README.md`, `ftgo-restaurant-service/README.md`, `ftgo-accounting-service/README.md`, `ftgo-delivery-service/README.md`, `ftgo-order-history-service/README.md`. Place it directly after each file's existing `## API` section (or after the equivalent top-level section documenting the service's endpoints, if the heading name differs slightly) — check each file's existing structure with `grep -n "^## " <file>` before inserting, since not every one of these 7 READMEs necessarily has an identically named section immediately before where this belongs.
 
@@ -464,9 +485,13 @@ Every business service (7) and both gateways (2) expose `GET /actuator/health` v
 Actuator's auto-configured indicators — no custom `HealthIndicator` code. `ftgo-service-registry`
 is excluded (it's the Eureka server, not a business service).
 
-- **DB-backed services** (order, kitchen, consumer, restaurant, accounting, delivery,
-  order-history): `db` (DataSource reachability), `kafka` (broker reachability via the
-  auto-configured `KafkaAdmin` bean), `discoveryComposite` (Eureka registration).
+- **DB-backed services** (order, kitchen, restaurant, accounting, delivery, order-history):
+  `db` (DataSource reachability), `discoveryComposite` (Eureka registration). No `kafka`
+  component — Spring Boot 3.5.16's actuator-autoconfigure ships no Kafka health contributor
+  (verified against the built jars; only `KafkaMetricsAutoConfiguration` remains), and a custom
+  one is out of scope for this sub-project.
+- **`ftgo-consumer-service`**: DB-backed like the other 6, but has no `eureka-client` dependency
+  at all (pre-existing, unrelated to Ch.11) — reports `db` only, no `discoveryComposite`.
 - **Gateways** (mobile, public): `discoveryComposite` only — no DB or Kafka of their own.
 
 `compose.yml` adds a `healthcheck` block per service (`curl -f
