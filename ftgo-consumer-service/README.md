@@ -25,6 +25,26 @@ Response (`201`):
 
 Added in Ch.10 sub-project 3 (end-to-end tests, §10.3) so the end-to-end test can create its own consumer rather than depend on `DataSeeder`'s fixed seed ids. This is this service's only REST controller — everything else below is still purely event/message-driven via Kafka. Not exposed through either gateway. `DataSeeder` is untouched and still separately seeds "Sanjay" (active) / "Blocked Consumer" (inactive) on every startup against an empty table.
 
+## Health check (Ch.11, §11.3.1)
+
+`GET /actuator/health` — Spring Boot Actuator, auto-configured indicators only (no custom
+`HealthIndicator` code). Reports:
+- `db` — MySQL reachability via the service's `DataSource`.
+
+`ftgo-consumer-service` has no `eureka-client` dependency (pre-existing, unrelated to
+Ch.11), so it never registers with Eureka and has no `discoveryComposite` component — only `db`.
+
+There is no `kafka` component: Spring Boot's actuator-autoconfigure no longer ships a Kafka
+health contributor as of this project's Spring Boot version (3.5.16) — verified directly against
+the built jars (`spring-boot-actuator-autoconfigure` retains only `KafkaMetricsAutoConfiguration`
+under `actuate.autoconfigure.kafka`; `spring-kafka` ships no health-indicator class either) — and
+adding a custom one is out of scope for this sub-project.
+
+`management.endpoint.health.show-details: always` — safe here since these ports aren't exposed
+to untrusted clients in this project; full component detail is the point of exercising this
+pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
+`AllServicesReportHealthy.feature`.
+
 ## Events
 
 ### Publishes

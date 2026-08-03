@@ -31,6 +31,24 @@ Consequently this service has **no Eureka registration** and **makes no synchron
 
 `restaurantId` is carried through from `OrderCreated` unchanged and never resolved to a restaurant name/address — this service has no dependency on restaurant-service at all, deliberately: restaurant-service is the one service in this codebase that publishes no domain events, so there is no event this service could react to even if it wanted to enrich the view with restaurant details. `restaurantId` is opaque data here, exactly as it arrives on the wire.
 
+## Health check (Ch.11, §11.3.1)
+
+`GET /actuator/health` — Spring Boot Actuator, auto-configured indicators only (no custom
+`HealthIndicator` code). Reports:
+- `db` — MySQL reachability via the service's `DataSource`.
+- `discoveryComposite` — Eureka registration status.
+
+There is no `kafka` component: Spring Boot's actuator-autoconfigure no longer ships a Kafka
+health contributor as of this project's Spring Boot version (3.5.16) — verified directly against
+the built jars (`spring-boot-actuator-autoconfigure` retains only `KafkaMetricsAutoConfiguration`
+under `actuate.autoconfigure.kafka`; `spring-kafka` ships no health-indicator class either) — and
+adding a custom one is out of scope for this sub-project.
+
+`management.endpoint.health.show-details: always` — safe here since these ports aren't exposed
+to untrusted clients in this project; full component detail is the point of exercising this
+pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
+`AllServicesReportHealthy.feature`.
+
 ## Events consumed
 
 One `@KafkaListener` per topic, all sharing Kafka consumer group `order-history-service`, all deserializing with Jackson and routing into one shared `OrderViewService`:

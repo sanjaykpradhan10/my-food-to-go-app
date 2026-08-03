@@ -970,3 +970,31 @@ The Revise and Cancel legs that follow reuse the same orchestration mechanics al
 ### Deferred
 
 Choreography-mode end-to-end coverage, event-sourced-persistence-mode end-to-end coverage, and additional user journeys beyond Create/Revise/Cancel (e.g. courier assignment, delivery completion) are all deliberately out of scope, consistent with §10.3.1's guidance to keep the number of end-to-end tests small — see [`docs/superpowers/specs/2026-07-31-ch10-e2e-tests-design.md`](superpowers/specs/2026-07-31-ch10-e2e-tests-design.md) for the full design rationale.
+
+---
+
+## Health check API (Ch.11, §11.3.1)
+
+Every business service (7) and both gateways (2) expose `GET /actuator/health` via Spring Boot
+Actuator's auto-configured indicators — no custom `HealthIndicator` code. `ftgo-service-registry`
+is excluded (it's the Eureka server, not a business service).
+
+- **DB-backed services** (order, kitchen, restaurant, accounting, delivery, order-history):
+  `db` (DataSource reachability), `discoveryComposite` (Eureka registration). No `kafka`
+  component — Spring Boot 3.5.16's actuator-autoconfigure ships no Kafka health contributor
+  (verified against the built jars; only `KafkaMetricsAutoConfiguration` remains), and a custom
+  one is out of scope for this sub-project.
+- **`ftgo-consumer-service`**: DB-backed like the other 6, but has no `eureka-client` dependency
+  at all (pre-existing, unrelated to Ch.11) — reports `db` only, no `discoveryComposite`.
+- **Gateways** (mobile, public): `discoveryComposite` only — no DB or Kafka of their own.
+
+`compose.yml` adds a `healthcheck` block per service (`curl -f
+http://localhost:<port>/actuator/health`) and upgrades `depends_on` to `condition:
+service_healthy` for real inter-service dependencies (order-service → restaurant-service; both
+gateways → the business services they route to), so the stack won't route traffic to a service
+before it's actually ready. Verified end-to-end by `ftgo-end-to-end-test`'s
+`AllServicesReportHealthy.feature`.
+
+A full dedicated section with sequence diagrams, matching this file's other patterns, is deferred
+to Ch.11's eventual chapter-completion documentation sweep — this is sub-project 1 of an
+unscheduled number of Ch.11 sub-projects.

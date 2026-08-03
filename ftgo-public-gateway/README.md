@@ -34,6 +34,14 @@ Applied via `ftgo-gateway-common`'s auto-configuration (see that module's own RE
 
 `spring-cloud-starter-gateway`, `spring-cloud-starter-netflix-eureka-client` (to resolve `lb://ftgo-*-service` URIs dynamically), `ftgo-gateway-common`.
 
+## Health check (Ch.11, §11.3.1)
+
+`GET /actuator/health` — Spring Boot Actuator, auto-configured indicators only. Reports
+`discoveryComposite` (Eureka registration status) — no `db`/`kafka` components, since gateways
+have neither of their own. `management.endpoint.health.show-details: always` for the same reason
+given in the business services' READMEs. Verified against the real, running stack by
+`ftgo-end-to-end-test`'s `AllServicesReportHealthy.feature`.
+
 ## Running standalone
 
 ```bash
