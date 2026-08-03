@@ -4,9 +4,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
+// @EnableWebSecurity (in addition to @EnableMethodSecurity) is required so that @WebMvcTest slice
+// tests importing this class pick up AuthenticationPrincipalArgumentResolver - without it,
+// @AuthenticationPrincipal Jwt silently resolves to null in a sliced ApplicationContext even
+// though the same wiring works automatically in the full application context.
 @Configuration
+@EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
 

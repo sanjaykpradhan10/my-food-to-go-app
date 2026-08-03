@@ -14,6 +14,8 @@ import com.sanjay.ftgo.order.domain.SectionResult;
 import com.sanjay.ftgo.order.domain.TicketInfo;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -49,8 +51,9 @@ public class OrderViewController {
     }
 
     @GetMapping("/{id}/view")
-    public ResponseEntity<OrderViewResponse> view(@PathVariable Long id) {
+    public ResponseEntity<OrderViewResponse> view(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
         Order order = orderRepository.findById(id).orElseThrow(() -> new OrderNotFoundException(id));
+        OrderAccessControl.enforce(order, jwt);
 
         // Fire all 4 downstream section lookups concurrently on virtual threads - each is an
         // independent, degradable section (see SectionResult), so none should block the others.

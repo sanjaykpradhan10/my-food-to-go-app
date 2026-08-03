@@ -18,6 +18,8 @@ import com.sanjay.ftgo.order.domain.UnsupportedStateTransitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -55,14 +57,17 @@ public class OrderController {
     // fan-out composition) that need just this service's data, as opposed to /{id}/view
     // which is order-service's own Ch.7 API-composed view across restaurant/kitchen/etc.
     @GetMapping("/{id}")
-    public ResponseEntity<OrderResponse> getOrder(@PathVariable Long id) {
+    public ResponseEntity<OrderResponse> getOrder(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
         Order order = orderRepository.findById(id).orElseThrow(() -> new OrderNotFoundException(id));
+        OrderAccessControl.enforce(order, jwt);
         return ResponseEntity.ok(OrderResponse.from(order));
     }
 
     @PreAuthorize("hasAnyRole('CONSUMER', 'ADMIN')")
     @PostMapping
-    public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest request) {
+    public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest request, @AuthenticationPrincipal Jwt jwt) {
+        // consumerId is still validated as a required field for request-shape/contract-test
+        // stability, even though its value is no longer trusted for authorization purposes below.
         if (request.consumerId() == null) {
             return ResponseEntity.badRequest().body("consumerId is required");
         }
@@ -73,11 +78,15 @@ public class OrderController {
             return ResponseEntity.badRequest().body("lineItems must not be empty");
         }
 
+        // consumerId is derived from the authenticated caller's JWT sub, not the request body,
+        // so a consumer can't create orders on another consumer's behalf by forging the field.
+        Long consumerId = Long.valueOf(jwt.getSubject());
+
         List<OrderLineItem> lineItems = request.lineItems().stream()
                 .map(item -> new OrderLineItem(item.menuItemId(), item.quantity()))
                 .toList();
 
-        Order order = orderService.createOrder(request.consumerId(), request.restaurantId(), lineItems);
+        Order order = orderService.createOrder(consumerId, request.restaurantId(), lineItems);
         return ResponseEntity.status(HttpStatus.CREATED).body(OrderResponse.from(order));
     }
 

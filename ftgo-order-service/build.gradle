@@ -55,6 +55,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
 
     testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
+    // Needed for SecurityMockMvcRequestPostProcessors.jwt() used by OrderControllerAclTest and
+    // the ACL-aware slice tests in OrderControllerTest/OrderViewControllerTest.
+    testImplementation 'org.springframework.security:spring-security-test'
 
     // The order-service is the provider for the GET /orders/{id} and orderCreated contracts;
     // contractsDslDir above (not this dependency) is what makes the plugin find the Groovy DSL
