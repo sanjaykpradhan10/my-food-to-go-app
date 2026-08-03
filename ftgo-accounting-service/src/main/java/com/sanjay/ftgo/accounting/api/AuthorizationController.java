@@ -18,7 +18,9 @@ public class AuthorizationController {
         this.authorizationRepository = authorizationRepository;
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    // SERVICE covers order-service's internal lookups (order-detail view assembly); ADMIN
+    // remains for any direct human/administrative access to this endpoint.
+    @PreAuthorize("hasAnyRole('ADMIN', 'SERVICE')")
     @GetMapping("/order/{orderId}")
     public ResponseEntity<AuthorizationInfo> viewByOrderId(@PathVariable Long orderId) {
         return authorizationRepository.findByOrderId(orderId)

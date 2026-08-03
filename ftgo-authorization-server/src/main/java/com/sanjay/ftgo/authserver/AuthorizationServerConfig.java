@@ -67,7 +67,21 @@ public class AuthorizationServerConfig {
                         .accessTokenTimeToLive(Duration.ofMinutes(5))
                         .build())
                 .build();
-        return new InMemoryRegisteredClientRepository(gateway);
+
+        // order-service authenticates itself via client_credentials to call other services'
+        // internal read endpoints (RestaurantServiceProxy et al.) - no end user is present on
+        // those calls, so this is a service identity rather than a resource-owner login.
+        RegisteredClient orderService = RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId("ftgo-order-service")
+                .clientSecret(passwordEncoder.encode("order-service-secret"))
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .scope("internal")
+                .tokenSettings(TokenSettings.builder()
+                        .accessTokenTimeToLive(Duration.ofMinutes(5))
+                        .build())
+                .build();
+        return new InMemoryRegisteredClientRepository(gateway, orderService);
     }
 
     // Adds the `roles` claim to every access token this authorization server issues, reading
@@ -80,6 +94,13 @@ public class AuthorizationServerConfig {
     @Bean
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtCustomizer() {
         return context -> {
+            // client_credentials tokens authenticate the client itself (order-service), not a
+            // user - the client principal normally carries no ROLE_* authorities at all, so it
+            // needs an explicit SERVICE role rather than one derived from GrantedAuthority.
+            if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())) {
+                context.getClaims().claim("roles", List.of("SERVICE"));
+                return;
+            }
             Authentication principal = context.getPrincipal();
             List<String> roles = principal.getAuthorities().stream()
                     .map(GrantedAuthority::getAuthority)
