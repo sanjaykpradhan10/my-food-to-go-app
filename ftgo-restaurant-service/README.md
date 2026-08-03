@@ -39,6 +39,24 @@ Request:
 
 Response (`201`): same `RestaurantResponse` shape as `GET /restaurants/{id}` above, with server-generated ids (`GenerationType.IDENTITY`) for both the restaurant and its menu items. Added in Ch.10 sub-project 3 (end-to-end tests, §10.3) purely so the end-to-end test can create its own fixture data rather than depend on `DataSeeder`'s fixed seed ids — not exposed through either gateway (creating restaurants/menus isn't a public-facing operation in this application's design). `DataSeeder` is untouched and still separately seeds the two fixed restaurants below on every startup against an empty table.
 
+## Health check (Ch.11, §11.3.1)
+
+`GET /actuator/health` — Spring Boot Actuator, auto-configured indicators only (no custom
+`HealthIndicator` code). Reports:
+- `db` — MySQL reachability via the service's `DataSource`.
+- `discoveryComposite` — Eureka registration status.
+
+There is no `kafka` component: Spring Boot's actuator-autoconfigure no longer ships a Kafka
+health contributor as of this project's Spring Boot version (3.5.16) — verified directly against
+the built jars (`spring-boot-actuator-autoconfigure` retains only `KafkaMetricsAutoConfiguration`
+under `actuate.autoconfigure.kafka`; `spring-kafka` ships no health-indicator class either) — and
+adding a custom one is out of scope for this sub-project.
+
+`management.endpoint.health.show-details: always` — safe here since these ports aren't exposed
+to untrusted clients in this project; full component detail is the point of exercising this
+pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
+`AllServicesReportHealthy.feature`.
+
 ## Events
 
 None. This service doesn't produce or consume any Kafka events — it's reached only via synchronous REST (from order-service, via a circuit breaker).

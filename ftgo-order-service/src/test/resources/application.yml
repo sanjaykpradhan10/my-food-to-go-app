@@ -65,3 +65,14 @@ resilience4j:
         wait-duration-in-open-state: 2s
         permitted-number-of-calls-in-half-open-state: 2
         automatic-transition-from-open-to-half-open-enabled: true
+
+# Duplicated rather than inherited: this file's same name as the main application.yml means
+# it shadows it entirely on the test classpath, so main's management: block never applies here.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always

@@ -82,6 +82,24 @@ Response (`200 OK`):
 | Order not found | `404` |
 | Every downstream call succeeds, fails, or times out | `200` — a downstream problem never fails this endpoint; it shows up as `NotFound`/`Unavailable` in the corresponding section |
 
+## Health check (Ch.11, §11.3.1)
+
+`GET /actuator/health` — Spring Boot Actuator, auto-configured indicators only (no custom
+`HealthIndicator` code). Reports:
+- `db` — MySQL reachability via the service's `DataSource`.
+- `discoveryComposite` — Eureka registration status.
+
+There is no `kafka` component: Spring Boot's actuator-autoconfigure no longer ships a Kafka
+health contributor as of this project's Spring Boot version (3.5.16) — verified directly against
+the built jars (`spring-boot-actuator-autoconfigure` retains only `KafkaMetricsAutoConfiguration`
+under `actuate.autoconfigure.kafka`; `spring-kafka` ships no health-indicator class either) — and
+adding a custom one is out of scope for this sub-project.
+
+`management.endpoint.health.show-details: always` — safe here since these ports aren't exposed
+to untrusted clients in this project; full component detail is the point of exercising this
+pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
+`AllServicesReportHealthy.feature`.
+
 ## Restaurant/kitchen/accounting/delivery service integration
 
 `RestaurantServiceProxy`, `KitchenServiceProxy`, `AccountingServiceProxy`, and `DeliveryServiceProxy` each call their respective service via a `@LoadBalanced RestClient` (base URLs `http://ftgo-restaurant-service`/`http://ftgo-kitchen-service`/`http://ftgo-accounting-service`/`http://ftgo-delivery-service`, all resolved dynamically through Eureka), each wrapped in its own Resilience4j circuit breaker instance (`restaurantService`/`kitchenService`/`accountingService`/`deliveryService`) — all four instances share the exact same settings: sliding window 5, failure-rate threshold 50%, 5s wait-duration-in-open-state, 3 permitted calls in half-open. `RestaurantNotFoundException` is excluded from `restaurantService`'s failure count (a 404 isn't a service health signal) — the other three proxies don't need an equivalent exclusion, since their `findXForView`-style methods return `SectionResult.NotFound` directly on a `404` rather than throwing.

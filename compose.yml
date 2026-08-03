@@ -108,6 +108,11 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_restaurant
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   order-service:
     build:
@@ -121,7 +126,7 @@ services:
       service-registry:
         condition: service_started
       restaurant-service:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "8082:8082"
     environment:
@@ -131,6 +136,11 @@ services:
       OUTBOX_PUBLISH_MODE: ${OUTBOX_PUBLISH_MODE:-polling}
       SAGA_MODE: ${SAGA_MODE:-choreography}
       PERSISTENCE_MODE: ${PERSISTENCE_MODE:-jpa}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   kitchen-service:
     build:
@@ -150,6 +160,11 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   consumer-service:
     build:
@@ -166,6 +181,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_consumer
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   accounting-service:
     build:
@@ -185,6 +205,11 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   delivery-service:
     build:
@@ -204,6 +229,11 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   order-history-service:
     build:
@@ -222,38 +252,65 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order_history
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   mobile-gateway:
     build:
       context: .
       dockerfile: ftgo-mobile-gateway/Dockerfile
     depends_on:
-      - service-registry
-      - order-service
-      - kitchen-service
-      - accounting-service
-      - delivery-service
+      service-registry:
+        condition: service_started
+      order-service:
+        condition: service_healthy
+      kitchen-service:
+        condition: service_healthy
+      accounting-service:
+        condition: service_healthy
+      delivery-service:
+        condition: service_healthy
     ports:
       - "8090:8090"
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   public-gateway:
     build:
       context: .
       dockerfile: ftgo-public-gateway/Dockerfile
     depends_on:
-      - service-registry
-      - order-service
-      - kitchen-service
-      - accounting-service
-      - delivery-service
-      - order-history-service
-      - restaurant-service
+      service-registry:
+        condition: service_started
+      order-service:
+        condition: service_healthy
+      kitchen-service:
+        condition: service_healthy
+      accounting-service:
+        condition: service_healthy
+      delivery-service:
+        condition: service_healthy
+      order-history-service:
+        condition: service_healthy
+      restaurant-service:
+        condition: service_healthy
     ports:
       - "8091:8091"
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   mysql-data:

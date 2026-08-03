@@ -53,3 +53,18 @@ configure(subprojects.findAll { !reactiveModules.contains(it.name) }) {
         testRuntimeOnly    'com.h2database:h2'
     }
 }
+
+// The 9 services actually run as standalone processes/containers in compose.yml and benefit
+// from a real health endpoint (Ch.11, §11.3.1 Health check API pattern). Library modules
+// (ftgo-common, ftgo-gateway-common), contract-stub modules, ftgo-service-registry (the Eureka
+// server itself — out of scope for this pattern), and ftgo-end-to-end-test (a test-only module,
+// never runs standalone) are deliberately excluded.
+def actuatorModules = ['ftgo-order-service', 'ftgo-kitchen-service', 'ftgo-consumer-service',
+                        'ftgo-restaurant-service', 'ftgo-accounting-service', 'ftgo-delivery-service',
+                        'ftgo-order-history-service', 'ftgo-mobile-gateway', 'ftgo-public-gateway']
+
+configure(subprojects.findAll { actuatorModules.contains(it.name) }) {
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    }
+}

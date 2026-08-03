@@ -27,6 +27,24 @@ All four: `404` if the ticket doesn't exist, `409` on an illegal transition.
 
 This service now also registers with Eureka (`spring.application.name: ftgo-kitchen-service`) so order-service's `@LoadBalanced RestClient` can resolve it dynamically — previously kitchen-service only ever consumed Kafka topics and was never called synchronously by anything.
 
+## Health check (Ch.11, §11.3.1)
+
+`GET /actuator/health` — Spring Boot Actuator, auto-configured indicators only (no custom
+`HealthIndicator` code). Reports:
+- `db` — MySQL reachability via the service's `DataSource`.
+- `discoveryComposite` — Eureka registration status.
+
+There is no `kafka` component: Spring Boot's actuator-autoconfigure no longer ships a Kafka
+health contributor as of this project's Spring Boot version (3.5.16) — verified directly against
+the built jars (`spring-boot-actuator-autoconfigure` retains only `KafkaMetricsAutoConfiguration`
+under `actuate.autoconfigure.kafka`; `spring-kafka` ships no health-indicator class either) — and
+adding a custom one is out of scope for this sub-project.
+
+`management.endpoint.health.show-details: always` — safe here since these ports aren't exposed
+to untrusted clients in this project; full component detail is the point of exercising this
+pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
+`AllServicesReportHealthy.feature`.
+
 ## Events
 
 ### Publishes (`kitchen.events`, choreography)
