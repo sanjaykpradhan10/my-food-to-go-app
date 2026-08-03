@@ -8,6 +8,7 @@ import com.sanjay.ftgo.delivery.domain.DeliveryRepository;
 import com.sanjay.ftgo.delivery.domain.UnsupportedStateTransitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,6 +32,7 @@ public class DeliveryController {
         this.domainEventPublisher = domainEventPublisher;
     }
 
+    @PreAuthorize("hasAnyRole('COURIER', 'ADMIN')")
     @PostMapping("/{deliveryId}/picked-up")
     public ResponseEntity<Void> pickedUp(@PathVariable Long deliveryId) {
         Delivery delivery = findDelivery(deliveryId);
@@ -38,6 +40,7 @@ public class DeliveryController {
         return ResponseEntity.ok().build();
     }
 
+    @PreAuthorize("hasAnyRole('COURIER', 'ADMIN')")
     @PostMapping("/{deliveryId}/delivered")
     public ResponseEntity<Void> delivered(@PathVariable Long deliveryId) {
         Delivery delivery = findDelivery(deliveryId);
