@@ -9,7 +9,9 @@ Owns the `Restaurant` and `MenuItem` aggregates — the catalog of restaurants a
 
 ## API
 
-`GET /restaurants/{id}`
+All endpoints require a bearer JWT (Ch.11, §11.1) issued by `ftgo-authorization-server`, validated by this service as an OAuth2 resource server.
+
+`GET /restaurants/{id}` — **Auth:** any authenticated user (used internally by order-service via a service-to-service `client_credentials` token, Ch.11 §11.1).
 
 Response:
 ```json
@@ -25,7 +27,7 @@ Response:
 
 Returns `404` (empty body) if no restaurant exists with that id.
 
-`POST /restaurants`
+`POST /restaurants` — **Auth:** `RESTAURANT` or `ADMIN`.
 
 Request:
 ```json

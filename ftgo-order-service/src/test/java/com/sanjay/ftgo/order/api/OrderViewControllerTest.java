@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import com.sanjay.ftgo.order.security.SecurityConfig;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -35,8 +37,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // orderViewExecutor bean: a @MockitoBean ExecutorService is a no-op mock (execute() does
 // nothing), so any submitted CompletableFuture never completes and join() hangs forever.
 // Importing the real virtual-thread executor sidesteps that deadlock entirely.
+// SecurityConfig is imported explicitly: @WebMvcTest doesn't scan @Configuration classes, and
+// without it the AuthenticationPrincipalArgumentResolver is never registered, so
+// @AuthenticationPrincipal Jwt resolves to null regardless of what jwt() sets in the SecurityContext.
+// The real filter chain must stay enabled (no addFilters = false): jwt()'s authentication is only
+// propagated into SecurityContextHolder by SecurityContextHolderFilter, which addFilters = false
+// would skip - every request in this class supplies a jwt() principal accordingly.
 @WebMvcTest(OrderViewController.class)
-@Import(VirtualThreadExecutorConfig.class)
+@Import({VirtualThreadExecutorConfig.class, SecurityConfig.class})
 class OrderViewControllerTest {
 
     @Autowired
@@ -70,7 +78,7 @@ class OrderViewControllerTest {
         when(deliveryServicePort.findDelivery(1L))
                 .thenReturn(new Found<>(new DeliveryInfo(1L, 1L, "SCHEDULED", 3L)));
 
-        mockMvc.perform(get("/orders/1/view"))
+        mockMvc.perform(get("/orders/1/view").with(jwt().jwt(b -> b.claim("sub", "42").claim("roles", List.of("CONSUMER")))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.order.id").value(1))
                 .andExpect(jsonPath("$.restaurant.data.name").value("Ajanta"))
@@ -80,10 +88,38 @@ class OrderViewControllerTest {
     }
 
     @Test
+    void forbidsConsumerFromViewingAnotherConsumersOrder() throws Exception {
+        Order order = new Order(1L, 42L, 7L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+
+        mockMvc.perform(get("/orders/1/view").with(jwt().jwt(b -> b.claim("sub", "99").claim("roles", List.of("CONSUMER")))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanViewAnyOrderRegardlessOfConsumerId() throws Exception {
+        Order order = new Order(1L, 42L, 7L, List.of(new OrderLineItem(10L, 2)), OrderStatus.APPROVED);
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+        when(restaurantServicePort.findRestaurantForView(7L))
+                .thenReturn(new Found<>(new RestaurantInfo(7L, "Ajanta", List.of())));
+        when(kitchenServicePort.findTicket(1L))
+                .thenReturn(new Found<>(new TicketInfo(1L, 1L, "ACCEPTED", null)));
+        when(accountingServicePort.findAuthorization(1L))
+                .thenReturn(new Found<>(new AuthorizationInfo(1L, 1L, "AUTHORIZED")));
+        when(deliveryServicePort.findDelivery(1L))
+                .thenReturn(new Found<>(new DeliveryInfo(1L, 1L, "SCHEDULED", 3L)));
+
+        mockMvc.perform(get("/orders/1/view").with(jwt().jwt(b -> b.claim("sub", "999").claim("roles", List.of("ADMIN")))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.order.id").value(1));
+    }
+
+    @Test
     void returns404WhenOrderNotFound() throws Exception {
         when(orderRepository.findById(99L)).thenReturn(Optional.empty());
 
-        mockMvc.perform(get("/orders/99/view")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/orders/99/view").with(jwt().jwt(b -> b.claim("sub", "1").claim("roles", List.of("CONSUMER")))))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -96,7 +132,7 @@ class OrderViewControllerTest {
         when(accountingServicePort.findAuthorization(1L)).thenReturn(new NotFound<>());
         when(deliveryServicePort.findDelivery(1L)).thenReturn(new Unavailable<>("timeout"));
 
-        mockMvc.perform(get("/orders/1/view"))
+        mockMvc.perform(get("/orders/1/view").with(jwt().jwt(b -> b.claim("sub", "42").claim("roles", List.of("CONSUMER")))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.restaurant.data.name").value("Ajanta"))
                 .andExpect(jsonPath("$.ticket.data").doesNotExist())

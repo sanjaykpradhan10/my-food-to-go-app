@@ -11,7 +11,7 @@ In the Create Order saga (Ch.4), consumer-service is the first participant consu
 
 ## API
 
-`POST /consumers`
+`POST /consumers` — **Auth:** `ADMIN` (bearer JWT issued by `ftgo-authorization-server`, Ch.11 §11.1; validated by this service as an OAuth2 resource server).
 
 Request:
 ```json

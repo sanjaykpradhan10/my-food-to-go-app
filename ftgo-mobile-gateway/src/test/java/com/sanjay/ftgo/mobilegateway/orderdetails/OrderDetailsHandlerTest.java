@@ -71,12 +71,30 @@ class OrderDetailsHandlerTest {
         accountingServer.enqueue(new MockResponse().setBody("{\"status\":\"AUTHORIZED\"}").addHeader("Content-Type", "application/json"));
         deliveryServer.enqueue(new MockResponse().setBody("{\"status\":\"SCHEDULED\"}").addHeader("Content-Type", "application/json"));
 
-        OrderDetails result = handler.fetchOrderDetails(1L).block();
+        OrderDetails result = handler.fetchOrderDetails(1L, "caller-token").block();
 
         assertThat(result.order()).isInstanceOf(SectionResult.Found.class);
         assertThat(result.ticket()).isInstanceOf(SectionResult.Found.class);
         assertThat(result.authorization()).isInstanceOf(SectionResult.Found.class);
         assertThat(result.delivery()).isInstanceOf(SectionResult.Found.class);
+    }
+
+    @Test
+    void forwardsCallersBearerTokenToAllFourBackendCalls() throws InterruptedException {
+        // Regression test for the finding where the caller's validated JWT was never forwarded
+        // to the backend calls: each backend, with real auth enforcement, would reject a request
+        // missing this header, so asserting the raw header value here is the load-bearing check.
+        orderServer.enqueue(new MockResponse().setBody("{\"id\":1}").addHeader("Content-Type", "application/json"));
+        kitchenServer.enqueue(new MockResponse().setBody("{\"ticketId\":1}").addHeader("Content-Type", "application/json"));
+        accountingServer.enqueue(new MockResponse().setBody("{\"status\":\"AUTHORIZED\"}").addHeader("Content-Type", "application/json"));
+        deliveryServer.enqueue(new MockResponse().setBody("{\"status\":\"SCHEDULED\"}").addHeader("Content-Type", "application/json"));
+
+        handler.fetchOrderDetails(1L, "caller-token").block();
+
+        assertThat(orderServer.takeRequest().getHeader("Authorization")).isEqualTo("Bearer caller-token");
+        assertThat(kitchenServer.takeRequest().getHeader("Authorization")).isEqualTo("Bearer caller-token");
+        assertThat(accountingServer.takeRequest().getHeader("Authorization")).isEqualTo("Bearer caller-token");
+        assertThat(deliveryServer.takeRequest().getHeader("Authorization")).isEqualTo("Bearer caller-token");
     }
 
     @Test
@@ -95,7 +113,7 @@ class OrderDetailsHandlerTest {
                 .addHeader("Content-Type", "application/json").setBodyDelay(perCallDelay.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS));
 
         long start = System.nanoTime();
-        OrderDetails result = handler.fetchOrderDetails(1L).block();
+        OrderDetails result = handler.fetchOrderDetails(1L, "caller-token").block();
         Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
 
         assertThat(result.order()).isInstanceOf(SectionResult.Found.class);
@@ -109,7 +127,7 @@ class OrderDetailsHandlerTest {
         accountingServer.enqueue(new MockResponse().setBody("{\"status\":\"AUTHORIZED\"}").addHeader("Content-Type", "application/json"));
         deliveryServer.enqueue(new MockResponse().setBody("{\"status\":\"SCHEDULED\"}").addHeader("Content-Type", "application/json"));
 
-        OrderDetails result = handler.fetchOrderDetails(1L).block();
+        OrderDetails result = handler.fetchOrderDetails(1L, "caller-token").block();
 
         assertThat(result.order()).isInstanceOf(SectionResult.Found.class);
         assertThat(result.ticket()).isInstanceOf(SectionResult.NotFound.class);

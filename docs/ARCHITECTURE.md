@@ -812,11 +812,11 @@ The book's Backends for Frontends pattern gives each class of client its own gat
 | `ftgo-mobile-gateway` | 8090 | Mobile client team | The mobile app — coarse-grained, mobile-shaped responses, including one hand-composed multi-service endpoint |
 | `ftgo-public-gateway` | 8091 | Public/3rd-party API team | External API consumers/partners — thin, uniform `/api/v1/...` passthrough routes, one per backend resource |
 
-Both depend on `ftgo-gateway-common` for their edge functions (request logging, API-key auth, per-key rate limiting) but are independently deployable, independently configured (their own API key, their own rate limit), and — per the book's ownership rationale — could evolve independently without either team blocking the other, even though in this single-learner project both happen to be built in the same session.
+Both depend on `ftgo-gateway-common` for their edge functions (request logging, JWT bearer-token auth, per-caller rate limiting) but are independently deployable, independently configured (their own rate limit), and — per the book's ownership rationale — could evolve independently without either team blocking the other, even though in this single-learner project both happen to be built in the same session.
 
 ### Routing table
 
-**`ftgo-public-gateway`** (pure Spring Cloud Gateway `RouteLocator`/YAML routes, no hand-written composition code), API key `public-dev-key`, 5 req/s per key:
+**`ftgo-public-gateway`** (pure Spring Cloud Gateway `RouteLocator`/YAML routes, no hand-written composition code), JWT bearer-token auth, 5 req/s per caller:
 
 | Route id | Path | Rewritten to | Backend |
 |---|---|---|---|
@@ -827,7 +827,7 @@ Both depend on `ftgo-gateway-common` for their edge functions (request logging, 
 | `public-order-views` | `/api/v1/order-views/**` | `/order-views**` | order-history-service |
 | `public-restaurants` | `/api/v1/restaurants/**` | `/restaurants**` | restaurant-service |
 
-**`ftgo-mobile-gateway`**, API key `mobile-dev-key`, 20 req/s per key:
+**`ftgo-mobile-gateway`**, JWT bearer-token auth, 20 req/s per caller:
 
 | Route id / endpoint | Path | Kind | Backend(s) |
 |---|---|---|---|
@@ -841,10 +841,10 @@ Both depend on `ftgo-gateway-common` for their edge functions (request logging, 
 Both gateways compose the same three cross-cutting filters from `ftgo-gateway-common`, registered via a `GatewayCommonAutoConfiguration` (`@Import`-based, since a consuming gateway's `@SpringBootApplication` doesn't component-scan this library's package):
 
 - **`RequestLoggingFilter`** (`GlobalFilter`, `Ordered.getOrder() == Integer.MIN_VALUE`, i.e. runs first) — logs method/path/status/latency for every request, timed via `doFinally` around the rest of the chain so latency covers the whole filter pipeline.
-- **`ApiKeyAuthFilter`** (`GlobalFilter`, order `Integer.MIN_VALUE + 1`, i.e. runs immediately after logging) — validates the `X-Api-Key` header against `GatewayApiKeyProperties` (one shared secret per gateway, bound from `gateway.api-key.value`), returning `401` on a missing or wrong key.
-- **`PerKeyRateLimiterGatewayFilterFactory`** (a named, per-route `AbstractGatewayFilterFactory<Config>`, registered under the filter name `PerKeyRateLimiter` in YAML) — an in-memory, per-API-key fixed-window token count (`Config.requestsPerSecond`), returning `429` once a key exceeds its configured rate within the current 1-second window. Chosen over Spring Cloud Gateway's built-in `RequestRateLimiter` specifically because that filter requires Redis, and this project has no Redis instance — trading away multi-instance correctness (each gateway instance counts independently) for zero new infrastructure, acceptable for a single-instance dev/learning deployment.
+- **`JwtValidationFilter`** (`GlobalFilter`, order `Integer.MIN_VALUE + 1`, i.e. runs immediately after logging) — validates the incoming `Authorization: Bearer <JWT>` header's signature against `ftgo-authorization-server`'s JWK Set (via a `ReactiveJwtDecoder` bean, `gateway.jwt.jwk-set-uri`), returning `401` on a missing or invalid token. The same token is forwarded to the routed-to backend service unchanged, and the decoded `Jwt` is stashed on the exchange (`JwtValidationFilter.VALIDATED_JWT_ATTRIBUTE`) so a later filter can read the caller's identity without re-decoding.
+- **`PerKeyRateLimiterGatewayFilterFactory`** (a named, per-route `AbstractGatewayFilterFactory<Config>`, registered under the filter name `PerKeyRateLimiter` in YAML) — an in-memory, per-caller fixed-window token count (`Config.requestsPerSecond`), keyed off the validated JWT's `sub` claim (read from the exchange attribute `JwtValidationFilter` sets), returning `429` once a caller exceeds its configured rate within the current 1-second window. Chosen over Spring Cloud Gateway's built-in `RequestRateLimiter` specifically because that filter requires Redis, and this project has no Redis instance — trading away multi-instance correctness (each gateway instance counts independently) for zero new infrastructure, acceptable for a single-instance dev/learning deployment.
 
-**No real identity service, by design.** Both filters are explicitly named "stub" in their own Javadoc — `ApiKeyAuthFilter` checks a single shared-secret header, not a token, session, or user identity of any kind, matching this design's non-goals: Ch.8 is about the external-API-facing patterns (gateway routing, BFF composition, edge cross-cutting concerns), not authentication/authorization as a domain, which the book covers separately and this project has not built.
+**Real, JWT-based identity (Ch.11 §11.1).** This originally shipped in Ch.8 as an `ApiKeyAuthFilter` stub — a single shared-secret header, not a token, session, or user identity of any kind, deliberately out of scope for a chapter about external-API-facing patterns (gateway routing, BFF composition, edge cross-cutting concerns) rather than authentication/authorization as a domain. Ch.11 §11.1 replaced it with real OAuth2/JWT bearer-token auth sourced from `ftgo-authorization-server` (see that service's own README): `JwtValidationFilter` now validates a real signed token carrying the authenticated end user's identity and roles, which each business service independently re-validates as its own OAuth2 resource server.
 
 ### The mobile gateway's composed endpoint: `GET /mobile/orders/{orderId}`
 
@@ -857,7 +857,7 @@ sequenceDiagram
     participant Ac as accounting-service
     participant D as delivery-service
 
-    C->>G: GET /mobile/orders/{orderId}<br/>X-Api-Key: mobile-dev-key
+    C->>G: GET /mobile/orders/{orderId}<br/>Authorization: Bearer &lt;JWT&gt;
     G-->>G: inline auth check (see callout below)
     par 4 backends, Mono.zip
         G->>O: GET /orders/{orderId}
@@ -890,9 +890,9 @@ Each of the 4 backend calls is wrapped in its own `ReactiveCircuitBreaker` (2s t
 
 ### Critical architectural finding: `RouterFunction` bypasses Gateway's own filter chain
 
-Spring Cloud Gateway's `GlobalFilter`s (`RequestLoggingFilter`, `ApiKeyAuthFilter`) and route-level `GatewayFilterFactory`s (`PerKeyRateLimiter`) only execute for requests matched by a declared `RouteLocator`/YAML route. The mobile gateway's composed endpoint, `GET /mobile/orders/{orderId}`, is a hand-written WebFlux `RouterFunction` bean (`OrderDetailsRouterConfig`/`OrderDetailsHandler`), **not** a Gateway route — it's dispatched by Spring WebFlux's own `RouterFunctionMapping`, which sits entirely outside Gateway's filter chain. Consequently none of `ftgo-gateway-common`'s three filters ever run for this one endpoint, even though it lives in the same Spring Boot application as the gateway routes that do get them.
+Spring Cloud Gateway's `GlobalFilter`s (`RequestLoggingFilter`, `JwtValidationFilter`) and route-level `GatewayFilterFactory`s (`PerKeyRateLimiter`) only execute for requests matched by a declared `RouteLocator`/YAML route. The mobile gateway's composed endpoint, `GET /mobile/orders/{orderId}`, is a hand-written WebFlux `RouterFunction` bean (`OrderDetailsRouterConfig`/`OrderDetailsHandler`), **not** a Gateway route — it's dispatched by Spring WebFlux's own `RouterFunctionMapping`, which sits entirely outside Gateway's filter chain. Consequently none of `ftgo-gateway-common`'s three filters ever run for this one endpoint, even though it lives in the same Spring Boot application as the gateway routes that do get them.
 
-This was discovered, not assumed, while implementing the endpoint — it is the single most important, non-obvious lesson from this chapter, easy to get wrong because everything else in a Spring Cloud Gateway application looks like it shares one filter pipeline. The fix applied here: `OrderDetailsRouterConfig` wraps its `RouterFunction` with its own `.filter(...)` replicating `ApiKeyAuthFilter`'s exact logic (checks `X-Api-Key` against the same `GatewayApiKeyProperties` bean the declared routes use, `401` on missing/wrong key) — so the endpoint isn't left wide open. Request logging and rate limiting are **not** replicated for this endpoint; that gap is a known, deliberately parked limitation of this branch, not fixed here (see the session log for the full rationale).
+This was discovered, not assumed, while implementing the endpoint — it is the single most important, non-obvious lesson from this chapter, easy to get wrong because everything else in a Spring Cloud Gateway application looks like it shares one filter pipeline. The fix applied here: `OrderDetailsRouterConfig` wraps its `RouterFunction` with its own `.filter(...)` replicating `JwtValidationFilter`'s validation logic (decodes `Authorization: Bearer <JWT>` via the same `ReactiveJwtDecoder` bean the declared routes use, `401` on missing/invalid token) — so the endpoint isn't left wide open. The same validated token is then forwarded, as the caller's own identity, on each of the four outbound backend calls the endpoint composes (`OrderDetailsHandler.fetchOrderDetails(orderId, token)`), so each backend's own instance-based ACL still applies to the actual requesting user rather than being bypassed by a gateway-wide credential. Request logging and rate limiting are **not** replicated for this endpoint; that gap is a known, deliberately parked limitation of this branch, not fixed here (see the session log for the full rationale).
 
 ## End-to-end testing (Ch.10, §10.3)
 
@@ -918,7 +918,7 @@ Feature: Place, Revise, and Cancel Order (end-to-end)
     Then the order is eventually cancelled
 ```
 
-Neither restaurant-service nor consumer-service had a way to create fresh data before this sub-project — both only ever seeded fixed fixtures via `DataSeeder` on startup. Rather than hardcode the test against those seeded ids (which sub-project 2's component test and every manual `docker compose up` verification since Ch.3 already depend on continuing to exist unchanged), this sub-project added `POST /restaurants` (`ftgo-restaurant-service/README.md`) and `POST /consumers` (`ftgo-consumer-service/README.md`, this service's first-ever REST controller) so the journey creates its own restaurant/menu-item/consumer. Both calls go directly to their service's own port (8085, 8081) inside the compose network — neither is exposed through a gateway, since creating restaurants/consumers isn't a public-facing operation in this application's design. Every order operation (create, poll status, revise, cancel), by contrast, goes through `ftgo-public-gateway` at `http://localhost:8091/api/v1/orders/...` with header `X-Api-Key: public-dev-key`, exactly as a real client would.
+Neither restaurant-service nor consumer-service had a way to create fresh data before this sub-project — both only ever seeded fixed fixtures via `DataSeeder` on startup. Rather than hardcode the test against those seeded ids (which sub-project 2's component test and every manual `docker compose up` verification since Ch.3 already depend on continuing to exist unchanged), this sub-project added `POST /restaurants` (`ftgo-restaurant-service/README.md`) and `POST /consumers` (`ftgo-consumer-service/README.md`, this service's first-ever REST controller) so the journey creates its own restaurant/menu-item/consumer. Both calls go directly to their service's own port (8085, 8081) inside the compose network — neither is exposed through a gateway, since creating restaurants/consumers isn't a public-facing operation in this application's design. Every order operation (create, poll status, revise, cancel), by contrast, goes through `ftgo-public-gateway` at `http://localhost:8091/api/v1/orders/...` with a JWT obtained from `ftgo-authorization-server` (`Authorization: Bearer <token>`), exactly as a real client would.
 
 **Why quantity > 10 is the decline trigger:** accounting-service's `SagaJoinService.isAuthorized(totalQuantity)` approves iff total line-item quantity is ≤ `AUTHORIZATION_QUANTITY_LIMIT` (10) — this is the *only* decline mechanism that exists anywhere in this codebase; there is no card-expiry or amount-based sentinel to borrow from the book's own "expired credit card" framing. The scenario places quantity 2 (approves, exercising the Create Order saga's happy path) then revises to quantity 12 (declines, exercising the Revise Order saga's rejection path), chaining all three saga types into the one journey per §10.3.1's own recommendation, before finally cancelling to close it out (Cancel Order saga's happy path).
 
@@ -936,7 +936,7 @@ sequenceDiagram
     participant D as delivery-service
     participant A as accounting-service
 
-    T->>PG: POST /api/v1/orders (X-Api-Key: public-dev-key)
+    T->>PG: POST /api/v1/orders (Authorization: Bearer <JWT>)
     PG->>O: POST /orders (routed, rewritten)
     O-->>O: Order{APPROVAL_PENDING}<br/>CreateOrderSagaInstance created
     par parallel commands

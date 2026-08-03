@@ -13,10 +13,18 @@ import java.time.Duration;
 @Configuration
 public class RestClientConfig {
 
+    // Attaches order-service's own client_credentials bearer token to every outbound call this
+    // service makes to other services' internal read endpoints - those endpoints require an
+    // authenticated principal (Task 4) and order-service's proxies have no end-user token to
+    // forward, since they're invoked from saga/query code paths, not directly from a request.
     @Bean
     @LoadBalanced
-    public RestClient.Builder loadBalancedRestClientBuilder() {
-        return RestClient.builder();
+    public RestClient.Builder loadBalancedRestClientBuilder(ServiceTokenClient serviceTokenClient) {
+        return RestClient.builder()
+                .requestInterceptor((request, body, execution) -> {
+                    request.getHeaders().setBearerAuth(serviceTokenClient.currentToken());
+                    return execution.execute(request, body);
+                });
     }
 
     @Bean

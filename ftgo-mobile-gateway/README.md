@@ -9,7 +9,7 @@ The mobile-client-facing gateway from the book's Backends for Frontends pattern 
 
 ## Routes (declared Gateway routes)
 
-Applied to all three: `PerKeyRateLimiter` at 20 req/s per API key (via `ftgo-gateway-common`).
+Applied to all three: `PerKeyRateLimiter` at 20 req/s per caller (keyed off the validated JWT's `sub` claim, via `ftgo-gateway-common`).
 
 | Route id | Path | Rewritten to | Backend |
 |---|---|---|---|
@@ -32,7 +32,7 @@ Fans out in parallel (`Mono.zip`) to four backends, each call wrapped in its own
 
 Each section resolves to a `SectionResult<String>` (`Found`/`NotFound`/`Unavailable` — sealed interface with a `@JsonTypeInfo`/`@JsonSubTypes` `status` discriminator so the three states serialize to genuinely distinguishable JSON, not identical `{}` bodies for `NotFound` and `Unavailable`). A backend `404` maps to `NotFound`; any other failure (timeout past 2s, connection refused, open circuit) maps to `Unavailable`. The endpoint always returns `200` with whatever mix of the three the four calls produced.
 
-**Auth on this endpoint**: since Gateway's own `ApiKeyAuthFilter` never runs here, `OrderDetailsRouterConfig` wraps the `RouterFunction` with its own inline `.filter(...)` replicating that filter's exact logic (checks `X-Api-Key` against the same `GatewayApiKeyProperties` bean the declared routes use) — `401` on missing/wrong key.
+**Auth on this endpoint**: since Gateway's own `JwtValidationFilter` never runs here, `OrderDetailsRouterConfig` wraps the `RouterFunction` with its own inline `.filter(...)` replicating that filter's validation logic (decodes the `Authorization: Bearer <JWT>` header via the same `ReactiveJwtDecoder` bean the declared routes use) — `401` on missing/invalid token. The same validated token is then forwarded — unchanged, as the caller's own identity, not a separate service credential — on each of the four outbound backend calls (`OrderDetailsHandler.fetchOrderDetails(orderId, token)`), so each backend's own instance-based ACL (e.g. order-service's per-consumer ACL) still applies to the actual requesting user.
 
 **Contrast with Ch.7's `GET /orders/{id}/view`** (order-service's own API-composition endpoint): this endpoint composes independently rather than delegating to it — see `docs/ARCHITECTURE.md`'s side-by-side comparison table for why (decoupling the mobile gateway's view from order-service's own view endpoint, different concurrency mechanisms, different `SectionResult` implementations for the servlet vs. reactive stacks).
 
@@ -41,8 +41,8 @@ Each section resolves to a `SectionResult<String>` (`Found`/`NotFound`/`Unavaila
 Applied via `ftgo-gateway-common`'s auto-configuration, but **only to the three declared routes above** — not to the composed endpoint (see callout above):
 
 - **Request logging** (`RequestLoggingFilter`)
-- **API-key auth** (`ApiKeyAuthFilter`) — this gateway's own key is `mobile-dev-key`, independent of the public gateway's key
-- **Per-key rate limiting** (`PerKeyRateLimiter`) — 20 req/s per API key (looser than the public gateway's 5 req/s, since mobile clients are a more trusted, first-party caller)
+- **JWT bearer-token auth** (`JwtValidationFilter`) — validates the caller's `Authorization: Bearer <JWT>` against `ftgo-authorization-server`'s JWK Set (`gateway.jwt.jwk-set-uri`)
+- **Per-caller rate limiting** (`PerKeyRateLimiter`) — 20 req/s per caller, keyed off the validated JWT's `sub` claim (looser than the public gateway's 5 req/s, since mobile clients are a more trusted, first-party caller)
 
 ## Dependencies
 
@@ -65,11 +65,15 @@ given in the business services' READMEs. Verified against the real, running stac
 Needs the full docker-compose stack (Eureka registry, order-service, kitchen-service, accounting-service, delivery-service all registered and running) to exercise live — see the root [README](../README.md) for `docker compose up`. Example live calls:
 
 ```bash
-curl -X POST -H "X-Api-Key: mobile-dev-key" -H "Content-Type: application/json" \
+TOKEN=$(curl -s -u ftgo-gateway:gateway-secret \
+  -d "grant_type=password&username=consumer1&password=password" \
+  http://localhost:9000/oauth2/token | jq -r .access_token)
+
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"consumerId":1,"restaurantId":1,"lineItems":[{"menuItemId":101,"quantity":2}]}' \
   http://localhost:8090/mobile/orders
 
-curl -H "X-Api-Key: mobile-dev-key" http://localhost:8090/mobile/orders/1
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8090/mobile/orders/1
 ```
 
 Key environment variables (see `application.yml`):

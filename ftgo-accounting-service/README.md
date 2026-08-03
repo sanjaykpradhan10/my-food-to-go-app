@@ -9,7 +9,9 @@
 
 ## API
 
-**`GET /authorizations/order/{orderId}`** (API composition, Ch.7) — this service's first-ever REST controller (`AuthorizationController`); until now it participated entirely through Kafka. Looks up the authorization for a given order rather than by its own `id`, since the caller (order-service's composite `GET /orders/{id}/view`) only knows the `orderId`. Returns `200` with an `AuthorizationInfo{id, orderId, status}` projection if an authorization exists for that order, `404` otherwise — `order-service`'s `AccountingServiceProxy` turns that `404` into `SectionResult.NotFound`, not an error.
+All endpoints require a bearer JWT (Ch.11, §11.1) issued by `ftgo-authorization-server`, validated by this service as an OAuth2 resource server.
+
+**`GET /authorizations/order/{orderId}`** (API composition, Ch.7) — **Auth:** `ADMIN` or `SERVICE` — `SERVICE` was added in Ch.11 §11.1's service-to-service sub-project so order-service's internal read call (via its `client_credentials`-issued token, `ServiceTokenClient`) is authorized without granting a broader role; this endpoint is this service's first-ever REST controller (`AuthorizationController`); until now it participated entirely through Kafka. Looks up the authorization for a given order rather than by its own `id`, since the caller (order-service's composite `GET /orders/{id}/view`) only knows the `orderId`. Returns `200` with an `AuthorizationInfo{id, orderId, status}` projection if an authorization exists for that order, `404` otherwise — `order-service`'s `AccountingServiceProxy` turns that `404` into `SectionResult.NotFound`, not an error.
 
 This service now also registers with Eureka (`spring.application.name: ftgo-accounting-service`) so order-service's `@LoadBalanced RestClient` can resolve it dynamically.
 

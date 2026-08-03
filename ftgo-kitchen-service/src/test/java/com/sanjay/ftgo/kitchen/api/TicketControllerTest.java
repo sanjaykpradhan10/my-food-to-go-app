@@ -5,6 +5,7 @@ import com.sanjay.ftgo.kitchen.domain.TicketDomainEventPublisher;
 import com.sanjay.ftgo.kitchen.domain.TicketRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -18,7 +19,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+// addFilters = false: this slice test predates Ch.11 security and exercises TicketController's
+// business logic, not auth - it never sends a bearer token, so the Spring Security filter chain
+// would 401 every request. Auth enforcement is verified at the e2e layer per the design spec.
 @WebMvcTest(TicketController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class TicketControllerTest {
 
     @Autowired

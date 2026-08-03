@@ -3,6 +3,7 @@ package com.sanjay.ftgo.gateway.common;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -10,16 +11,20 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Simple in-memory, per-API-key fixed-window rate limiter. Spring Cloud Gateway's built-in
+ * Simple in-memory, per-caller fixed-window rate limiter. Spring Cloud Gateway's built-in
  * RequestRateLimiter requires Redis; this project has no Redis instance, so this trades away
  * multi-instance correctness (each gateway instance counts independently) for zero new
  * infrastructure, acceptable for a single-instance dev/learning deployment.
+ *
+ * Keys off the JWT 'sub' claim that JwtValidationFilter (a GlobalFilter ordered before any
+ * route-specific filter, including this one) stashes on the exchange after validating the
+ * caller's bearer token — replaces the Ch.8 X-Api-Key header, which nothing sends anymore now
+ * that API-key auth has been retired in favor of OAuth2/JWT.
  */
 @Component
 public class PerKeyRateLimiterGatewayFilterFactory
         extends AbstractGatewayFilterFactory<PerKeyRateLimiterGatewayFilterFactory.Config> {
 
-    private static final String API_KEY_HEADER = "X-Api-Key";
     private static final long WINDOW_MILLIS = 1000L;
 
     private final Map<String, Window> windowsByKey = new ConcurrentHashMap<>();
@@ -31,8 +36,11 @@ public class PerKeyRateLimiterGatewayFilterFactory
     @Override
     public GatewayFilter apply(Config config) {
         return (exchange, chain) -> {
-            String key = exchange.getRequest().getHeaders().getFirst(API_KEY_HEADER);
-            String effectiveKey = key != null ? key : "anonymous";
+            // Defensive fallback only: JwtValidationFilter runs first in the filter chain (order
+            // Integer.MIN_VALUE + 1) and rejects unauthenticated requests with 401 before they
+            // ever reach a route filter, so this attribute should always be present here.
+            Jwt jwt = exchange.getAttribute(JwtValidationFilter.VALIDATED_JWT_ATTRIBUTE);
+            String effectiveKey = jwt != null ? jwt.getSubject() : "anonymous";
             Window window = windowsByKey.computeIfAbsent(effectiveKey, k -> new Window());
 
             if (window.tryAcquire(config.getRequestsPerSecond())) {

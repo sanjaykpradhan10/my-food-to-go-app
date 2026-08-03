@@ -12,14 +12,19 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.TestPropertySource;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
+// See RestaurantServiceProxyTest for why the token URI is redirected to this class's own
+// WireMock instance.
 @SpringBootTest
+@TestPropertySource(properties = "ftgo.service-token.token-uri=http://localhost:8090/oauth2/token")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class KitchenServiceProxyTest {
 
@@ -28,10 +33,19 @@ class KitchenServiceProxyTest {
     @Autowired
     private KitchenServiceProxy kitchenServiceProxy;
 
+    @Autowired
+    private ServiceTokenClient serviceTokenClient;
+
     @BeforeEach
     void startWireMock() {
         wireMockServer = new WireMockServer(8090);
         wireMockServer.start();
+        wireMockServer.stubFor(post(urlEqualTo("/oauth2/token"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"access_token\":\"test-service-token\",\"expires_in\":300}")));
+        serviceTokenClient.currentToken();
     }
 
     @AfterEach

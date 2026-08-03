@@ -1,0 +1,10 @@
+dependencies {
+    // spring-security-oauth2-authorization-server does not transitively bring a servlet stack;
+    // this module needs the web starter directly (it's excluded from the root build.gradle's
+    // default web/JPA block since it has no database).
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.security:spring-security-oauth2-authorization-server'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+}

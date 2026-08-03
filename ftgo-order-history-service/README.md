@@ -11,7 +11,7 @@ Consequently this service has **no Eureka registration** and **makes no synchron
 
 ## API
 
-**`GET /order-views/{orderId}`** — returns `200` with an `OrderViewResponse` if a row exists for that `orderId`, `404` otherwise. There is no `POST`/`PUT`/`DELETE` — this service never originates a write, only reacts to events.
+**`GET /order-views/{orderId}`** — **Auth:** `ADMIN` (bearer JWT issued by `ftgo-authorization-server`, Ch.11 §11.1; validated by this service as an OAuth2 resource server). Returns `200` with an `OrderViewResponse` if a row exists for that `orderId`, `404` otherwise. There is no `POST`/`PUT`/`DELETE` — this service never originates a write, only reacts to events.
 
 ```json
 {

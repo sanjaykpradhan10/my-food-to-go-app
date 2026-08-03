@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: ftgo-authorization-server
+
+server:
+  port: 9000
