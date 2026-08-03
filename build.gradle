@@ -44,7 +44,14 @@ subprojects {
 // The gateway modules are WebFlux-based and need reactive starters, not servlet web/JPA.
 def reactiveModules = ['ftgo-common', 'ftgo-gateway-common', 'ftgo-mobile-gateway', 'ftgo-public-gateway', 'ftgo-end-to-end-test']
 
-configure(subprojects.findAll { !reactiveModules.contains(it.name) }) {
+// ftgo-authorization-server declares its own web starter directly (see its build.gradle) and
+// has no database of its own (hardcoded in-memory user store), so it's excluded here to avoid
+// pulling in JPA/MySQL it never uses. Unlike ftgo-authorization-server, ftgo-service-registry
+// stays on the default block below even though it also skips JPA — it already relies on that
+// block for its web starter (its own build.gradle only declares the Eureka server starter).
+def noDefaultWebJpaModules = reactiveModules + ['ftgo-authorization-server']
+
+configure(subprojects.findAll { !noDefaultWebJpaModules.contains(it.name) }) {
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-web'
         implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
