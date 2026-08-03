@@ -2,6 +2,7 @@ package com.sanjay.ftgo.accounting.api;
 
 import com.sanjay.ftgo.accounting.domain.AuthorizationRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,6 +18,7 @@ public class AuthorizationController {
         this.authorizationRepository = authorizationRepository;
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/order/{orderId}")
     public ResponseEntity<AuthorizationInfo> viewByOrderId(@PathVariable Long orderId) {
         return authorizationRepository.findByOrderId(orderId)
