@@ -28,6 +28,11 @@ spring:
               - uri: http://localhost:8091
             ftgo-delivery-service:
               - uri: http://localhost:8092
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:9000/oauth2/jwks
 
 eureka:
   client:

@@ -17,6 +17,7 @@ import com.sanjay.ftgo.order.domain.TransitionResult;
 import com.sanjay.ftgo.order.domain.UnsupportedStateTransitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,6 +60,7 @@ public class OrderController {
         return ResponseEntity.ok(OrderResponse.from(order));
     }
 
+    @PreAuthorize("hasAnyRole('CONSUMER', 'ADMIN')")
     @PostMapping
     public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest request) {
         if (request.consumerId() == null) {
@@ -79,6 +81,7 @@ public class OrderController {
         return ResponseEntity.status(HttpStatus.CREATED).body(OrderResponse.from(order));
     }
 
+    @PreAuthorize("hasAnyRole('CONSUMER', 'ADMIN')")
     @PostMapping("/{id}/cancel")
     @Transactional
     public ResponseEntity<OrderResponse> cancel(@PathVariable Long id) {
@@ -87,6 +90,7 @@ public class OrderController {
         return ResponseEntity.ok(OrderResponse.from(result.order()));
     }
 
+    @PreAuthorize("hasAnyRole('CONSUMER', 'ADMIN')")
     @PostMapping("/{id}/revise")
     @Transactional
     public ResponseEntity<OrderResponse> revise(@PathVariable Long id, @RequestBody ReviseOrderRequest request) {

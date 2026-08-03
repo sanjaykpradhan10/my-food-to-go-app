@@ -51,6 +51,8 @@ dependencies {
     // spring-kafka comes transitively via ftgo-common's `api` dependency
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
     implementation 'org.springframework.cloud:spring-cloud-starter-loadbalancer'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
 
     testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
 
