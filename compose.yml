@@ -115,11 +115,14 @@ services:
         condition: service_healthy
       service-registry:
         condition: service_started
+      authorization-server:
+        condition: service_healthy
     ports:
       - "8085:8085"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_restaurant
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
       interval: 10s
@@ -139,6 +142,8 @@ services:
         condition: service_started
       restaurant-service:
         condition: service_healthy
+      authorization-server:
+        condition: service_healthy
     ports:
       - "8082:8082"
     environment:
@@ -148,6 +153,7 @@ services:
       OUTBOX_PUBLISH_MODE: ${OUTBOX_PUBLISH_MODE:-polling}
       SAGA_MODE: ${SAGA_MODE:-choreography}
       PERSISTENCE_MODE: ${PERSISTENCE_MODE:-jpa}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
       interval: 10s
@@ -165,6 +171,8 @@ services:
         condition: service_started
       service-registry:
         condition: service_started
+      authorization-server:
+        condition: service_healthy
     ports:
       - "8083:8083"
     environment:
@@ -172,6 +180,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
       interval: 10s
@@ -187,12 +196,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      authorization-server:
+        condition: service_healthy
     ports:
       - "8081:8081"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_consumer
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
       interval: 10s
@@ -210,6 +222,8 @@ services:
         condition: service_started
       service-registry:
         condition: service_started
+      authorization-server:
+        condition: service_healthy
     ports:
       - "8084:8084"
     environment:
@@ -217,6 +231,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
       interval: 10s
@@ -234,6 +249,8 @@ services:
         condition: service_started
       service-registry:
         condition: service_started
+      authorization-server:
+        condition: service_healthy
     ports:
       - "8086:8086"
     environment:
@@ -241,6 +258,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SAGA_MODE: ${SAGA_MODE:-choreography}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8086/actuator/health"]
       interval: 10s
@@ -258,12 +276,15 @@ services:
         condition: service_started
       service-registry:
         condition: service_started
+      authorization-server:
+        condition: service_healthy
     ports:
       - "8088:8088"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order_history
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8088/actuator/health"]
       interval: 10s

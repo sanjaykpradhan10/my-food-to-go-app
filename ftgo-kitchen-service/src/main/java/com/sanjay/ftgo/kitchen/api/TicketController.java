@@ -8,6 +8,7 @@ import com.sanjay.ftgo.kitchen.domain.TicketRepository;
 import com.sanjay.ftgo.kitchen.domain.UnsupportedStateTransitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,6 +33,7 @@ public class TicketController {
         this.domainEventPublisher = domainEventPublisher;
     }
 
+    @PreAuthorize("hasAnyRole('RESTAURANT', 'ADMIN')")
     @PostMapping("/{ticketId}/accept")
     public ResponseEntity<Void> accept(@PathVariable Long ticketId, @RequestBody AcceptTicketRequest request) {
         Ticket ticket = findTicket(ticketId);
@@ -39,6 +41,7 @@ public class TicketController {
         return ResponseEntity.ok().build();
     }
 
+    @PreAuthorize("hasAnyRole('RESTAURANT', 'ADMIN')")
     @PostMapping("/{ticketId}/preparing")
     public ResponseEntity<Void> preparing(@PathVariable Long ticketId) {
         Ticket ticket = findTicket(ticketId);
@@ -46,6 +49,7 @@ public class TicketController {
         return ResponseEntity.ok().build();
     }
 
+    @PreAuthorize("hasAnyRole('RESTAURANT', 'ADMIN')")
     @PostMapping("/{ticketId}/ready-for-pickup")
     public ResponseEntity<Void> readyForPickup(@PathVariable Long ticketId) {
         Ticket ticket = findTicket(ticketId);
@@ -53,6 +57,7 @@ public class TicketController {
         return ResponseEntity.ok().build();
     }
 
+    @PreAuthorize("hasAnyRole('RESTAURANT', 'ADMIN')")
     @PostMapping("/{ticketId}/picked-up")
     public ResponseEntity<Void> pickedUp(@PathVariable Long ticketId) {
         Ticket ticket = findTicket(ticketId);
