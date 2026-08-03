@@ -6,7 +6,7 @@ A hands-on implementation of the FTGO (Food To Go) application from [*Microservi
 
 This project follows the book's progression, adding real code at each chapter. It is not a clone of the [reference implementation](https://github.com/microservices-patterns/ftgo-application) — it's a ground-up build used to develop a deep, working understanding of microservices patterns.
 
-**Progress:** Chapters 1–10 done. Sagas (Ch.4) and DDD aggregates (Ch.5) cover all three `Order` sub-sagas in both styles; event sourcing (Ch.6) adds a hand-rolled, switchable persistence path for the `Order` aggregate; queries (Ch.7) adds two contrasting patterns — API composition (`GET /orders/{id}/view` on order-service) and CQRS (a new standalone `ftgo-order-history-service`); external API patterns (Ch.8) adds two BFF-style gateways — `ftgo-mobile-gateway` and `ftgo-public-gateway` — sharing a `ftgo-gateway-common` edge-function library; testing (Ch.9) audited the existing test suite against the book's unit-testing techniques and tightened saga/event payload assertions plus added a value-object worked example (`OrderLineItemTest`) — no production code changed; testing part 2 (Ch.10) adds three layers on top of that: consumer-driven contract tests (Spring Cloud Contract Verifier), an out-of-process Cucumber component test for order-service's Place Order flow, and a new `ftgo-end-to-end-test` module driving a full-stack Create→Revise→Cancel Order journey through the real, containerized application via the public gateway.
+**Progress:** Chapters 1–10 done; Ch.11 (Security) in progress — §11.1 sub-projects 1–2 done. Sagas (Ch.4) and DDD aggregates (Ch.5) cover all three `Order` sub-sagas in both styles; event sourcing (Ch.6) adds a hand-rolled, switchable persistence path for the `Order` aggregate; queries (Ch.7) adds two contrasting patterns — API composition (`GET /orders/{id}/view` on order-service) and CQRS (a new standalone `ftgo-order-history-service`); external API patterns (Ch.8) adds two BFF-style gateways — `ftgo-mobile-gateway` and `ftgo-public-gateway` — sharing a `ftgo-gateway-common` edge-function library; testing (Ch.9) audited the existing test suite against the book's unit-testing techniques and tightened saga/event payload assertions plus added a value-object worked example (`OrderLineItemTest`) — no production code changed; testing part 2 (Ch.10) adds three layers on top of that: consumer-driven contract tests (Spring Cloud Contract Verifier), an out-of-process Cucumber component test for order-service's Place Order flow, and a new `ftgo-end-to-end-test` module driving a full-stack Create→Revise→Cancel Order journey through the real, containerized application via the public gateway.
 
 ## Services
 
@@ -20,6 +20,7 @@ This project follows the book's progression, adding real code at each chapter. I
 | ftgo-delivery-service | 8086 | Delivery tracking (separate bounded context from Order); Create Order saga's 3rd parallel-join leg and Cancel Order saga's delivery-release step (both saga modes) | `Delivery` is a DDD aggregate (`SCHEDULED → PICKED_UP → DELIVERED`, or `CANCELLED` from `SCHEDULED`) with a seeded 3-courier pool; `POST /deliveries/{id}/picked-up`/`delivered`; read-only `GET /deliveries/order/{orderId}` (API composition, Ch.7); registers with Eureka |
 | ftgo-order-history-service | 8088 | Order history / order view (CQRS read model, Ch.7 — no bounded context of its own, no aggregate) | Pure Kafka consumer (`order.events`/`kitchen.events`/`accounting.events`/`delivery.events`) maintaining a denormalized `order_views` table via an upsert-on-any-event pattern; `GET /order-views/{orderId}`; no Eureka, no synchronous calls to or from anything |
 | ftgo-service-registry | 8761 | Eureka service registry | Standalone |
+| ftgo-authorization-server | 9000 | OAuth2 Authorization Server (Ch.11, §11.1, not a bounded-context service) | Issues JWTs via a custom resource-owner-password grant (end users) and a `client_credentials` grant (`ftgo-order-service`'s service-to-service calls); hardcoded seed users, `/oauth2/jwks` public key endpoint; dev/learning project only — see its own README |
 | ftgo-mobile-gateway | 8090 | Mobile BFF gateway (Ch.8, mobile-team-owned) | 3 declared routes (create/cancel/revise order → order-service) plus one hand-composed `GET /mobile/orders/{orderId}` (a WebFlux `RouterFunction`, not a Gateway route) fanning out via `Mono.zip`/`ReactiveCircuitBreaker` to order/kitchen/accounting/delivery-service; API key `mobile-dev-key`, 20 req/s per key |
 | ftgo-public-gateway | 8091 | Public/3rd-party API gateway (Ch.8, public-API-team-owned) | Pure Spring Cloud Gateway routing (no composition code) to 6 backends under `/api/v1/...`; API key `public-dev-key`, 5 req/s per key |
 | ftgo-gateway-common | — | Shared WebFlux library (Ch.8, not a runnable service) | `RequestLoggingFilter`/`ApiKeyAuthFilter` (`GlobalFilter`s) and `PerKeyRateLimiterGatewayFilterFactory` (named `PerKeyRateLimiter`), consumed by both gateways above |
@@ -51,6 +52,7 @@ Services communicate via messaging (Apache Kafka), introduced in Chapter 3 and e
 | Database | MySQL 8.4 (one schema per service) |
 | Infrastructure | Docker Compose (local) |
 | Testing | JUnit 5, H2 (in-memory, MySQL mode); Spring Cloud Contract Verifier (Ch.10 consumer-driven contract tests); Cucumber (JUnit Platform engine) + `com.avast.gradle.docker-compose` Gradle plugin (Ch.10 component tests and end-to-end tests) |
+| Security | Spring Authorization Server (JWT issuance, `ftgo-authorization-server`, Ch.11 §11.1); Spring Security OAuth2 Resource Server (JWT validation at both gateways and all 7 business services); method-level `@PreAuthorize` role checks plus order-service's instance-based ACL for per-consumer order access |
 
 ## Running locally
 
@@ -89,7 +91,7 @@ docker compose down -v
 ```
 my-food-to-go-app/
 ├── build.gradle              ← shared plugin versions and dependencies
-├── settings.gradle           ← declares all 12 sub-projects
+├── settings.gradle           ← declares all 16 sub-projects
 ├── compose.yml               ← local MySQL + Kafka infrastructure
 ├── infrastructure/
 │   └── mysql/
@@ -106,6 +108,7 @@ my-food-to-go-app/
 ├── ftgo-gateway-common/       ← shared library: gateway edge functions (logging/auth/rate-limit), not a runnable service
 ├── ftgo-mobile-gateway/
 ├── ftgo-public-gateway/
+├── ftgo-authorization-server/ ← OAuth2 Authorization Server (Ch.11, §11.1, JWT issuance)
 ├── ftgo-end-to-end-test/     ← end-to-end test module (Ch.10, not a runnable service)
 └── docs/
     ├── ARCHITECTURE.md       ← event catalog, outbox pattern, saga sequence diagrams
@@ -129,6 +132,7 @@ my-food-to-go-app/
 | 8 | External API patterns | Done — API gateway + Backends for Frontends: `ftgo-mobile-gateway` (routing + one hand-composed `GET /mobile/orders/{orderId}`) and `ftgo-public-gateway` (pure routing to 6 backends), sharing `ftgo-gateway-common`'s edge functions (request logging, API-key auth, per-key rate limiting); a RouterFunction-vs-Gateway-route filter-isolation finding documented in `docs/ARCHITECTURE.md` |
 | 9 | Testing microservices: Part 1 | Done — §9.1 (test pyramid, solitary/sociable) is conceptual, no code. §9.2 unit-testing techniques audited against the existing suite: 4 of 6 already matched independently; tightened saga/event payload assertions in `CreateOrderSagaOrchestratorTest`, `CancelOrderSagaOrchestratorTest`, `DeliveryServiceTest`, and added a standalone `OrderLineItemTest` value-object worked example. No production code changed |
 | 10 | Testing microservices: Part 2 | Done — all 3 sub-projects complete. Sub-project 1 (consumer-driven contract tests): REST contract (`ftgo-mobile-gateway`↔`ftgo-order-service`), pub/sub contract (`ftgo-order-service`→`ftgo-order-history-service`), async request/response contract (`ftgo-order-service`↔`ftgo-kitchen-service`), all via Spring Cloud Contract Verifier with a hand-written embedded-Kafka messaging bridge for the two Kafka-based contracts (`ftgo-common`'s `KafkaContractTestSupport`). Sub-project 2 (component tests): an out-of-process Cucumber suite drives the real, containerized order-service through its Place Order flow (orchestration mode, JPA persistence) against a slimmed Docker Compose stack, restaurant-service stubbed via WireMock and the four saga participants stood in for by a single `SagaParticipantStub`. Sub-project 3 (end-to-end tests): a new `ftgo-end-to-end-test` module drives one Cucumber scenario — Create→Revise→Cancel Order — through the real, full-stack application (all 7 business services + both gateways, unmodified root `compose.yml`, `SAGA_MODE=orchestration`) entered via `ftgo-public-gateway`, exercising all three `Order` sagas in one journey. `POST /restaurants`/`POST /consumers` added as prerequisite fixture-creation endpoints for this sub-project |
-| 11–13 | … | Not started |
+| 11 | Security | In progress — §11.1 (authenticating/authorizing requests) sub-project 1 done: new `ftgo-authorization-server` module issuing JWTs (custom resource-owner-password grant); both gateways and all 7 business services (order/kitchen/restaurant/accounting/delivery/consumer/order-history) converted to OAuth2 resource servers with `@PreAuthorize` role requirements; order-service also gained an instance-based ACL (a consumer can only view their own order) with `consumerId` derived from the JWT rather than the request body. Sub-project 2 done: `client_credentials` grant added for service-to-service calls (order-service's internal calls to restaurant/kitchen/accounting/delivery-service now carry a `SERVICE`-role bearer token via `ServiceTokenClient`); accounting-service's authorization-lookup endpoint widened to accept `ADMIN` or `SERVICE`. §§11.2–11.3 (deployment/observability security topics) not started |
+| 12–13 | … | Not started |
 
 See [`CONTEXT.md`](CONTEXT.md) for detailed notes and concept understanding per chapter.

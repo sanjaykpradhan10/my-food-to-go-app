@@ -11,7 +11,11 @@ It also validates every order against restaurant-service before creating it, via
 
 ## API
 
-**`POST /orders`**
+All endpoints require a bearer JWT (Ch.11, §11.1) issued by `ftgo-authorization-server`, validated by this service as an OAuth2 resource server. `GET /orders/{id}` and `GET /orders/{id}/view` additionally enforce an instance-based ACL (`OrderAccessControl`): `ADMIN` unconditionally, or `CONSUMER` only when the JWT's `sub` matches the order's `consumerId` — anyone else gets `403`. `POST /orders` derives `consumerId` from the JWT `sub` rather than trusting the request body's `consumerId` field, so a consumer can't place orders on another consumer's behalf by forging it (the field is still required for request-shape/contract-test stability).
+
+**`GET /orders/{id}`** — **Auth:** any authenticated user; `CONSUMER` restricted to their own order, `ADMIN` unrestricted (see above).
+
+**`POST /orders`** — **Auth:** `CONSUMER` or `ADMIN`.
 
 Request:
 ```json
@@ -31,7 +35,7 @@ Response (`201 Created`):
 
 The order is always created in `APPROVAL_PENDING` — the Create Order saga (either style) transitions it asynchronously afterward.
 
-**`POST /orders/{id}/cancel`**
+**`POST /orders/{id}/cancel`** — **Auth:** `CONSUMER` or `ADMIN`.
 
 No request body. Legal only from `APPROVED` — moves the order to `CANCEL_PENDING` and triggers the Cancel Order saga (either style).
 
@@ -40,7 +44,7 @@ No request body. Legal only from `APPROVED` — moves the order to `CANCEL_PENDI
 | Order not found | `404` |
 | Order not in `APPROVED` | `409` |
 
-**`POST /orders/{id}/revise`**
+**`POST /orders/{id}/revise`** — **Auth:** `CONSUMER` or `ADMIN`.
 
 Request:
 ```json
@@ -54,7 +58,7 @@ Legal only from `APPROVED` — moves the order to `REVISION_PENDING`, records th
 | Order not found | `404` |
 | Order not in `APPROVED` | `409` |
 
-**`GET /orders/{id}/view`** (API composition, Ch.7)
+**`GET /orders/{id}/view`** (API composition, Ch.7) — **Auth:** same instance-based ACL as `GET /orders/{id}` above (see the note at the top of this section).
 
 A composite read: assembles a single response for the order-detail screen from data owned by four different services, fanned out in parallel rather than sequentially.
 

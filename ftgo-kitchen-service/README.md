@@ -11,19 +11,21 @@ Most interaction is Kafka-driven, either reacting to another service's domain ev
 
 ## API
 
-**`POST /tickets/{id}/accept`**
+All endpoints require a bearer JWT (Ch.11, §11.1) issued by `ftgo-authorization-server`, validated by this service as an OAuth2 resource server.
+
+**`POST /tickets/{id}/accept`** — **Auth:** `RESTAURANT` or `ADMIN`.
 
 Request: `{"readyBy": "2026-07-22T18:30:00Z"}`. Legal only from `AWAITING_ACCEPTANCE` — moves to `ACCEPTED`.
 
-**`POST /tickets/{id}/preparing`** — legal only from `ACCEPTED` — moves to `PREPARING`.
+**`POST /tickets/{id}/preparing`** — **Auth:** `RESTAURANT` or `ADMIN`. Legal only from `ACCEPTED` — moves to `PREPARING`.
 
-**`POST /tickets/{id}/ready-for-pickup`** — legal only from `PREPARING` — moves to `READY_FOR_PICKUP`.
+**`POST /tickets/{id}/ready-for-pickup`** — **Auth:** `RESTAURANT` or `ADMIN`. Legal only from `PREPARING` — moves to `READY_FOR_PICKUP`.
 
-**`POST /tickets/{id}/picked-up`** — legal only from `READY_FOR_PICKUP` — moves to `PICKED_UP`.
+**`POST /tickets/{id}/picked-up`** — **Auth:** `RESTAURANT` or `ADMIN`. Legal only from `READY_FOR_PICKUP` — moves to `PICKED_UP`.
 
 All four: `404` if the ticket doesn't exist, `409` on an illegal transition.
 
-**`GET /tickets/order/{orderId}`** (API composition, Ch.7) — looks up the ticket for a given order rather than by its own `id`, since the caller (order-service's composite `GET /orders/{id}/view`) only knows the `orderId`. Returns `200` with a `TicketInfo{id, orderId, status, readyBy}` projection if a ticket exists for that order, `404` otherwise — `order-service`'s `KitchenServiceProxy` turns that `404` into `SectionResult.NotFound`, not an error.
+**`GET /tickets/order/{orderId}`** (API composition, Ch.7) — **Auth:** any authenticated user (used internally by order-service via a service-to-service `client_credentials` token, Ch.11 §11.1). Looks up the ticket for a given order rather than by its own `id`, since the caller (order-service's composite `GET /orders/{id}/view`) only knows the `orderId`. Returns `200` with a `TicketInfo{id, orderId, status, readyBy}` projection if a ticket exists for that order, `404` otherwise — `order-service`'s `KitchenServiceProxy` turns that `404` into `SectionResult.NotFound`, not an error.
 
 This service now also registers with Eureka (`spring.application.name: ftgo-kitchen-service`) so order-service's `@LoadBalanced RestClient` can resolve it dynamically — previously kitchen-service only ever consumed Kafka topics and was never called synchronously by anything.
 
