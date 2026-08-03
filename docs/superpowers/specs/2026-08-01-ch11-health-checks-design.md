@@ -35,7 +35,7 @@ Config-only change; no new Java classes for the health mechanism itself:
          show-details: always
    ```
    `show-details: always` is safe here — this is a learning project with no external/untrusted clients hitting these ports directly, and seeing indicator detail (which component failed) is the entire point of exercising this pattern.
-3. No indicator-specific code: the DataSource indicator activates automatically wherever a `DataSource` bean exists (the 7 non-gateway services); the Kafka indicator activates automatically because `ftgo-common` already provides `spring-kafka` (`api` dependency) and every service sets `spring.kafka.bootstrap-servers`, which auto-configures a `KafkaAdmin` bean; the Eureka discovery-client indicator activates automatically for all 9 services since all already register with Eureka (`eureka.client.register-with-eureka: true`).
+3. No indicator-specific code: the DataSource indicator activates automatically wherever a `DataSource` bean exists (the 7 non-gateway services); the Eureka discovery-client indicator activates automatically for 8 of the 9 services since they already register with Eureka (`eureka.client.register-with-eureka: true`) — the exception is `ftgo-consumer-service`, which has no `eureka-client` dependency at all (a pre-existing architectural fact, unrelated to Ch.11) and so never gets a `discoveryComposite` component. **No Kafka indicator exists to activate**: verified directly against the built jars that `spring-boot-actuator-autoconfigure` 3.5.16 ships no Kafka health contributor (only `KafkaMetricsAutoConfiguration` remains under `actuate.autoconfigure.kafka`) and `spring-kafka` 3.3.16 ships no health-indicator class either — Spring Boot dropped the auto-configured Kafka health indicator in the 3.x line. Per this spec's "no custom `HealthIndicator` code" constraint, no `kafka` component is asserted anywhere in this sub-project.
 
 ## Docker Compose wiring
 
@@ -58,8 +58,8 @@ Extend the existing `ftgo-end-to-end-test` module (already brings up the full `c
 - Reuse the existing retry-with-backoff HTTP helper from `PlaceReviseCancelOrderStepDefinitions` (services may still be settling immediately after container startup).
 - Assertions per service:
   - HTTP 200, top-level `status == "UP"`.
-  - For the 7 DB-backed services: `components.db.status == "UP"` and `components.kafka.status == "UP"`.
-  - For all 9 services: `components.discoveryComposite.status == "UP"` (Eureka).
+  - For the 7 DB-backed services: `components.db.status == "UP"`. No `kafka` component is asserted (see Architecture §3 — no such indicator exists in this Spring Boot version).
+  - For all services except `ftgo-consumer-service` (8 of 9): `components.discoveryComposite.status == "UP"` (Eureka). `ftgo-consumer-service` has no Eureka registration, so only its `db` component and overall `status` are asserted.
 
 This scenario runs in the same `e2eTest` Gradle task/compose stack as `PlaceReviseCancelOrder.feature` — no new Docker Compose file or Gradle module.
 
