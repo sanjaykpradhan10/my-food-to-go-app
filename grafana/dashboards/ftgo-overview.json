@@ -1,0 +1,89 @@
+{
+  "title": "FTGO Overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Service Up/Down",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "targets": [{ "expr": "up", "legendFormat": "{{job}}" }]
+    },
+    {
+      "id": 2,
+      "title": "JVM Heap Used (bytes)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [{ "expr": "jvm_memory_used_bytes{area=\"heap\"}", "legendFormat": "{{job}}" }]
+    },
+    {
+      "id": 3,
+      "title": "HTTP Request Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [{ "expr": "rate(http_server_requests_seconds_count[1m])", "legendFormat": "{{job}} {{uri}}" }]
+    },
+    {
+      "id": 4,
+      "title": "Orders (rate/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        { "expr": "rate(orders_placed_total[1m])", "legendFormat": "placed" },
+        { "expr": "rate(orders_approved_total[1m])", "legendFormat": "approved" },
+        { "expr": "rate(orders_rejected_total[1m])", "legendFormat": "rejected" },
+        { "expr": "rate(orders_cancelled_total[1m])", "legendFormat": "cancelled" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Tickets (rate/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        { "expr": "rate(tickets_accepted_total[1m])", "legendFormat": "accepted" },
+        { "expr": "rate(tickets_preparing_total[1m])", "legendFormat": "preparing" },
+        { "expr": "rate(tickets_ready_for_pickup_total[1m])", "legendFormat": "ready_for_pickup" },
+        { "expr": "rate(tickets_picked_up_total[1m])", "legendFormat": "picked_up" },
+        { "expr": "rate(tickets_cancelled_total[1m])", "legendFormat": "cancelled" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Authorizations (rate/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [
+        { "expr": "rate(authorizations_approved_total[1m])", "legendFormat": "approved" },
+        { "expr": "rate(authorizations_declined_total[1m])", "legendFormat": "declined" },
+        { "expr": "rate(authorizations_reversed_total[1m])", "legendFormat": "reversed" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Deliveries (rate/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "targets": [
+        { "expr": "rate(deliveries_scheduled_total[1m])", "legendFormat": "scheduled" },
+        { "expr": "rate(deliveries_picked_up_total[1m])", "legendFormat": "picked_up" },
+        { "expr": "rate(deliveries_delivered_total[1m])", "legendFormat": "delivered" },
+        { "expr": "rate(deliveries_cancelled_total[1m])", "legendFormat": "cancelled" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Restaurants / Consumers / Order Views (rate/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+      "targets": [
+        { "expr": "rate(restaurants_created_total[1m])", "legendFormat": "restaurants_created" },
+        { "expr": "rate(consumers_created_total[1m])", "legendFormat": "consumers_created" },
+        { "expr": "rate(order_views_updated_total[1m])", "legendFormat": "order_views_updated" }
+      ]
+    }
+  ]
+}
