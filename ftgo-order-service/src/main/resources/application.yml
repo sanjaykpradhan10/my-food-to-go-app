@@ -17,6 +17,8 @@ spring:
       auto-offset-reset: earliest
     template:
       observation-enabled: true
+    listener:
+      observation-enabled: true
   security:
     oauth2:
       resourceserver:
@@ -87,4 +89,4 @@ management:
       probability: 1.0
   otlp:
     tracing:
-      endpoint: http://tempo:4318/v1/traces
+      endpoint: http://localhost:4318/v1/traces

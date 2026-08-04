@@ -123,6 +123,7 @@ services:
       - "8085:8085"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_restaurant
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
@@ -153,6 +154,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       OUTBOX_PUBLISH_MODE: ${OUTBOX_PUBLISH_MODE:-polling}
       SAGA_MODE: ${SAGA_MODE:-choreography}
@@ -184,6 +186,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_kitchen
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       SAGA_MODE: ${SAGA_MODE:-choreography}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
@@ -211,6 +214,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_consumer
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       SAGA_MODE: ${SAGA_MODE:-choreography}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
@@ -239,6 +243,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_accounting
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       SAGA_MODE: ${SAGA_MODE:-choreography}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
@@ -268,6 +273,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_delivery
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       SAGA_MODE: ${SAGA_MODE:-choreography}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
@@ -297,6 +303,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order_history
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
     healthcheck:
@@ -329,6 +336,7 @@ services:
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       GATEWAY_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health"]
       interval: 10s
@@ -363,6 +371,7 @@ services:
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       GATEWAY_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8091/actuator/health"]
       interval: 10s

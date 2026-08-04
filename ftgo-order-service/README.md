@@ -122,7 +122,9 @@ Scraped every 5s by the `prometheus` compose service; `orders_rejected_total` /
 
 ## Tracing (Ch.11, §11.3.3)
 
-Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 100% sampled
+Traces exported via OTLP/HTTP to Grafana Tempo (`http://localhost:4318/v1/traces` by default,
+overridden to `http://tempo:4318/v1/traces` via `MANAGEMENT_OTLP_TRACING_ENDPOINT` when running
+under Docker Compose), 100% sampled
 (`management.tracing.sampling.probability: 1.0`). HTTP and JDBC spans come free from Spring Boot's
 autoconfiguration; Kafka producer/consumer spans require
 `spring.kafka.template.observation-enabled`/`spring.kafka.listener.observation-enabled: true`,

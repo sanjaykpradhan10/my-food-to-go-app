@@ -1057,7 +1057,10 @@ than Spring Cloud Sleuth + Zipkin — Sleuth is deprecated (in maintenance mode 
 2.6, with Micrometer Tracing as its official replacement) and would be the wrong pattern to teach
 for a project already on Spring Boot 3.5.
 
-**Export target — Grafana Tempo.** Each service's `application.yml` sets:
+**Export target — Grafana Tempo.** Each service's `application.yml` sets a `localhost`-based
+default, following this project's usual convention for environment-dependent values (same pattern
+as `spring.kafka.bootstrap-servers`/`spring.datasource.url`): `compose.yml` overrides it per
+service via `MANAGEMENT_OTLP_TRACING_ENDPOINT`:
 
 ```yaml
 management:
@@ -1066,14 +1069,16 @@ management:
       probability: 1.0
   otlp:
     tracing:
-      endpoint: http://tempo:4318/v1/traces
+      endpoint: http://localhost:4318/v1/traces
 ```
 
 Traces ship over OTLP/HTTP to a new `tempo` `compose.yml` service (`grafana/tempo:2.6.1`, local
 disk backend, 24h block retention — `tempo/tempo.yaml`), exposing its OTLP HTTP receiver on 4318
-and its query API on 3200. A `grafana/provisioning/datasources/tempo.yml` datasource wires Tempo
-into the existing Grafana instance (the one already provisioned for Ch.11's application-metrics
-dashboard), so traces are browsable there alongside the Prometheus-backed panels.
+(published to the host, so the `localhost` default also works when running a service outside
+Docker against a Compose-hosted Tempo) and its query API on 3200. A
+`grafana/provisioning/datasources/tempo.yml` datasource wires Tempo into the existing Grafana
+instance (the one already provisioned for Ch.11's application-metrics dashboard), so traces are
+browsable there alongside the Prometheus-backed panels.
 
 **100% sampling** (`probability: 1.0`) is a deliberate choice for a learning project driven by
 manual/scripted e2e requests rather than production traffic volume: a percentage-based sampler
@@ -1093,16 +1098,28 @@ order/kitchen/accounting/delivery/consumer/order-history-service's `application.
 services that produce or consume Kafka events in this project; `ftgo-restaurant-service` has no
 Kafka involvement at all). `ftgo-consumer-service` only carries the `listener` property — it
 publishes its own events via the Ch.3 CDC/outbox pipeline rather than a `KafkaTemplate`, so there's
-no matching producer-side property to set. `ftgo-order-history-service` is the one exception that
-needed an extra line of code rather than just the property: its
-`KafkaConsumerConfig` hand-builds a `ConcurrentKafkaListenerContainerFactory` bean (to get retry
-behavior for optimistic-lock races across its four listeners — see the CQRS section above), and a
-hand-built factory bypasses Boot's property-driven autoconfiguration of the default listener
-factory entirely. The fix is one call in that factory's `@Bean` method:
+no matching producer-side property to set.
 
-```java
-factory.getContainerProperties().setObservationEnabled(true);
-```
+Two services in this project hand-build a Kafka bean instead of relying on Boot's
+property-driven autoconfiguration, and in both cases that bypasses the `spring.kafka.*`
+observation properties above — the property alone has no effect on a custom bean, and it needs an
+explicit `setObservationEnabled(true)` call instead:
+
+- `ftgo-order-history-service`'s `KafkaConsumerConfig` hand-builds a
+  `ConcurrentKafkaListenerContainerFactory` bean (to get retry behavior for optimistic-lock races
+  across its four listeners — see the CQRS section above):
+  ```java
+  factory.getContainerProperties().setObservationEnabled(true);
+  ```
+- `ftgo-common`'s `KafkaProducerConfig` hand-builds the one and only `KafkaTemplate` used across
+  the whole codebase (`eventKafkaTemplate`, shared by `OutboxPublisher` and order-service's
+  `SagaCommandRequestPublisher`). This was initially missed during implementation — the template
+  had no observation call, so `spring.kafka.template.observation-enabled: true` in every service's
+  `application.yml` was silently inert and no Kafka message anywhere carried a `traceparent`
+  header, breaking Kafka-side trace linkage project-wide. Fixed the same way:
+  ```java
+  template.setObservationEnabled(true);
+  ```
 
 **Gateway reactive context propagation.** Spring Boot 3.5's `ContextPropagationAutoConfiguration`
 is documented to enable Reactor's automatic context propagation once `context-propagation` and
@@ -1129,6 +1146,10 @@ application-metrics section above, but against Tempo's HTTP API instead of Prome
 `PlaceReviseCancelOrder.feature`'s tracing scenario places an order through the full stack, then
 polls `GET /api/search` on Tempo for a trace tagged with `service.name=ftgo-public-gateway`,
 fetches it via `GET /api/traces/{traceId}`, and asserts its spans cover at least 2 distinct
-`service.name` values — proof that a single trace actually crossed a service boundary (gateway →
-order-service, at minimum) rather than each service merely emitting disconnected traces of its
-own.
+`service.name` values *and* specifically include `ftgo-kitchen-service`. The plain `>= 2` check
+alone isn't sufficient proof of Kafka-side propagation — a gateway → order-service HTTP hop
+satisfies it even if every Kafka producer/consumer span is broken, which is exactly the failure
+mode a final whole-branch review caught in this sub-project (see below). `ftgo-kitchen-service` is
+only reachable in this scenario via the choreography saga's Kafka events fired after order
+placement, never a direct HTTP call from the gateway, so requiring its presence actually proves a
+trace crossed a Kafka hop rather than only an HTTP one.

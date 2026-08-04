@@ -145,14 +145,19 @@ public class PlaceReviseCancelOrderStepDefinitions {
             // trace. Scan every recent candidate rather than trusting traces.get(0).
             for (String traceId : findRecentTraceIds(serviceName, startNanos)) {
                 distinctServices = fetchTraceServiceNames(traceId);
-                if (distinctServices.size() >= 2) {
+                // >= 2 distinct services alone is too weak: the gateway -> order-service HTTP hop
+                // satisfies that even if every Kafka producer/consumer span is broken. kitchen-service
+                // is only reachable in this scenario via the choreography saga's Kafka events fired
+                // after order placement (never a direct HTTP call from the gateway), so requiring it
+                // in the trace actually proves Kafka-side trace propagation is working end-to-end.
+                if (distinctServices.size() >= 2 && distinctServices.contains("ftgo-kitchen-service")) {
                     return;
                 }
             }
             Thread.sleep(1000);
         }
         throw new AssertionError("Expected a Tempo trace for " + serviceName
-                + " spanning >= 2 services, last saw: " + distinctServices);
+                + " spanning >= 2 services including ftgo-kitchen-service, last saw: " + distinctServices);
     }
 
     private List<String> findRecentTraceIds(String serviceName, long startEpochSeconds) throws Exception {
