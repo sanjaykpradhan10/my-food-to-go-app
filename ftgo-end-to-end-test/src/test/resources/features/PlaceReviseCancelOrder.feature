@@ -9,3 +9,10 @@ Feature: Place, Revise, and Cancel Order (end-to-end)
     Then the revision is eventually declined and the order keeps its original quantity of 2
     When the consumer cancels the order
     Then the order is eventually cancelled
+
+  Scenario: Placing and approving an order increments the order-service Prometheus counters
+    Given a restaurant "Ajanta Metrics E2E" with a menu item "Lamb Biryani" priced at 14.00
+    And an active consumer "Metrics E2E Consumer"
+    When the consumer places an order for 1 of the menu item at the restaurant
+    Then the order is eventually approved
+    And the order-service Prometheus counters "orders_placed_total" and "orders_approved_total" both eventually read at least 1
