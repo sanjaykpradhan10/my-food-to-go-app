@@ -1,5 +1,6 @@
 package com.sanjay.ftgo.gateway.common;
 
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -20,5 +21,16 @@ public class GatewayCommonAutoConfiguration {
     @Bean
     public ReactiveJwtDecoder reactiveJwtDecoder(GatewayJwtProperties properties) {
         return NimbusReactiveJwtDecoder.withJwkSetUri(properties.jwkSetUri()).build();
+    }
+
+    // Spring Boot 3.5's ContextPropagationAutoConfiguration is expected to enable this
+    // automatically once micrometer's context-propagation and reactor-core are both on the
+    // classpath, but verification (ContextPropagationTest in each gateway module) showed
+    // Hooks.isAutomaticContextPropagationEnabled() is still false at runtime in this project's
+    // configuration, so it is enabled explicitly here to guarantee trace context survives the
+    // reactive filter chain (RequestLoggingFilter, JwtValidationFilter) in both gateways.
+    @Bean
+    public InitializingBean enableReactorContextPropagation() {
+        return () -> reactor.core.publisher.Hooks.enableAutomaticContextPropagation();
     }
 }
