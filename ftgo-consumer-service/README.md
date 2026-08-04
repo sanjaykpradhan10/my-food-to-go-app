@@ -45,6 +45,16 @@ to untrusted clients in this project; full component detail is the point of exer
 pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
 `AllServicesReportHealthy.feature`.
 
+## Metrics (Ch.11, §11.3.4)
+
+`GET /actuator/prometheus` — Micrometer `PrometheusMeterRegistry`, unauthenticated. Custom business
+counter:
+
+- `consumers_created` — `ConsumerController`, on consumer creation.
+
+Appears in the exposition output with a `_total` suffix (`consumers_created_total`). Scraped every
+5s by the `prometheus` compose service.
+
 ## Events
 
 ### Publishes

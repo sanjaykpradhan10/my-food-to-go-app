@@ -41,6 +41,18 @@ to untrusted clients in this project; full component detail is the point of exer
 pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
 `AllServicesReportHealthy.feature`.
 
+## Metrics (Ch.11, §11.3.4)
+
+`GET /actuator/prometheus` — Micrometer `PrometheusMeterRegistry`, unauthenticated. Custom business
+counters:
+
+- `deliveries_scheduled`, `deliveries_cancelled` — `DeliveryService` / `DeliveryController`,
+  incremented on both the direct-call helper path and the choreography (event-driven) path.
+- `deliveries_picked_up`, `deliveries_delivered` — `DeliveryController`.
+
+Each appears in the exposition output with a `_total` suffix (e.g. `deliveries_scheduled_total`).
+Scraped every 5s by the `prometheus` compose service.
+
 ## Events
 
 ### Publishes (`delivery.events`, choreography)
