@@ -7,11 +7,17 @@ import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -121,6 +127,86 @@ public class PlaceReviseCancelOrderStepDefinitions {
     public void theOrderServicePrometheusCountersBothEventuallyReadAtLeastOne(String counterA, String counterB) throws Exception {
         assertTrue(counterEventuallyAtLeastOne(counterA), "Counter " + counterA + " did not reach >= 1 within 30s");
         assertTrue(counterEventuallyAtLeastOne(counterB), "Counter " + counterB + " did not reach >= 1 within 30s");
+    }
+
+    @Then("Tempo eventually has a trace for {string} spanning at least 2 distinct services")
+    public void tempoEventuallyHasMultiServiceTrace(String serviceName) throws Exception {
+        // 60s rather than the 30s budget used elsewhere in this class: Tempo's OTLP batch span
+        // processor plus local block flush/indexing adds ingestion latency on top of the usual
+        // saga round-trip, and that latency is more pronounced under this sandbox's constrained
+        // CPU (observed: a trace fully indexed and queryable ~30-60s after the order was placed).
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
+        long startNanos = Instant.now().minus(Duration.ofMinutes(5)).getEpochSecond();
+        Set<String> distinctServices = Set.of();
+        while (Instant.now().isBefore(deadline)) {
+            // The gateway continuously emits single-service traces for actuator health/metrics
+            // polling (Tempo's search returns newest-first, so those dominate the top of the
+            // list), so the most-recent match for the gateway is almost never the actual order
+            // trace. Scan every recent candidate rather than trusting traces.get(0).
+            for (String traceId : findRecentTraceIds(serviceName, startNanos)) {
+                distinctServices = fetchTraceServiceNames(traceId);
+                if (distinctServices.size() >= 2) {
+                    return;
+                }
+            }
+            Thread.sleep(1000);
+        }
+        throw new AssertionError("Expected a Tempo trace for " + serviceName
+                + " spanning >= 2 services, last saw: " + distinctServices);
+    }
+
+    private List<String> findRecentTraceIds(String serviceName, long startEpochSeconds) throws Exception {
+        long endEpochSeconds = Instant.now().getEpochSecond();
+        String query = URLEncoder.encode(
+                "{resource.service.name=\"" + serviceName + "\"}", StandardCharsets.UTF_8);
+        // Tempo's default search page (20 results, newest-first) gets flooded by the gateway's own
+        // actuator/health and actuator/prometheus polling traces, which arrive far more often than
+        // real order traffic - without an explicit higher limit, the order trace we actually want
+        // can be pushed out of the page before this loop ever observes it. limit=200 keeps enough
+        // headroom for that noise while still being cheap for Tempo's local backend to serve.
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:3200/api/search?q=" + query
+                        + "&start=" + startEpochSeconds + "&end=" + endEpochSeconds + "&limit=200"))
+                .GET()
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            return List.of();
+        }
+        JsonNode root = objectMapper.readTree(response.body());
+        JsonNode traces = root.path("traces");
+        if (!traces.isArray() || traces.isEmpty()) {
+            return List.of();
+        }
+        List<String> traceIds = new ArrayList<>();
+        for (JsonNode trace : traces) {
+            String traceId = trace.path("traceID").asText(null);
+            if (traceId != null) {
+                traceIds.add(traceId);
+            }
+        }
+        return traceIds;
+    }
+
+    private Set<String> fetchTraceServiceNames(String traceId) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:3200/api/traces/" + traceId))
+                .GET()
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            return Set.of();
+        }
+        JsonNode root = objectMapper.readTree(response.body());
+        Set<String> serviceNames = new HashSet<>();
+        for (JsonNode resourceSpan : root.path("batches")) {
+            for (JsonNode attribute : resourceSpan.path("resource").path("attributes")) {
+                if ("service.name".equals(attribute.path("key").asText())) {
+                    serviceNames.add(attribute.path("value").path("stringValue").asText());
+                }
+            }
+        }
+        return serviceNames;
     }
 
     private boolean counterEventuallyAtLeastOne(String counterName) throws Exception {
