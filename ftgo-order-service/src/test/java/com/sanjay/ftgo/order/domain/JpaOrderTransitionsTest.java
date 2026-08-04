@@ -249,6 +249,50 @@ class JpaOrderTransitionsTest {
     }
 
     @Test
+    void approveDoesNotIncrementCounterWhenOrderNotFound() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        JpaOrderTransitions withMetrics = new JpaOrderTransitions(orderRepository, domainEventPublisher, meterRegistry);
+        when(orderRepository.findById(42L)).thenReturn(Optional.empty());
+
+        withMetrics.approve(42L, "evt-1");
+
+        assertThat(meterRegistry.counter("orders_approved").count()).isEqualTo(0.0);
+    }
+
+    @Test
+    void approveDoesNotIncrementCounterWhenTransitionUnsupported() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        JpaOrderTransitions withMetrics = new JpaOrderTransitions(orderRepository, domainEventPublisher, meterRegistry);
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(orderIn(OrderStatus.APPROVED)));
+
+        withMetrics.approve(42L, "evt-1");
+
+        assertThat(meterRegistry.counter("orders_approved").count()).isEqualTo(0.0);
+    }
+
+    @Test
+    void rejectDoesNotIncrementCounterWhenOrderNotFound() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        JpaOrderTransitions withMetrics = new JpaOrderTransitions(orderRepository, domainEventPublisher, meterRegistry);
+        when(orderRepository.findById(42L)).thenReturn(Optional.empty());
+
+        withMetrics.reject(42L, "evt-1");
+
+        assertThat(meterRegistry.counter("orders_rejected").count()).isEqualTo(0.0);
+    }
+
+    @Test
+    void rejectDoesNotIncrementCounterWhenTransitionUnsupported() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        JpaOrderTransitions withMetrics = new JpaOrderTransitions(orderRepository, domainEventPublisher, meterRegistry);
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(orderIn(OrderStatus.APPROVED)));
+
+        withMetrics.reject(42L, "evt-1");
+
+        assertThat(meterRegistry.counter("orders_rejected").count()).isEqualTo(0.0);
+    }
+
+    @Test
     void cancelIncrementsOrdersCancelledCounter() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         JpaOrderTransitions withMetrics = new JpaOrderTransitions(orderRepository, domainEventPublisher, meterRegistry);

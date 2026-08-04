@@ -63,15 +63,17 @@ public class JpaOrderTransitions implements OrderTransitions {
     @Override
     @Transactional
     public void approve(Long orderId, String eventId) {
-        applyBestEffort(orderId, Order::noteApproved, "approve");
-        meterRegistry.counter("orders_approved").increment();
+        if (applyBestEffort(orderId, Order::noteApproved, "approve")) {
+            meterRegistry.counter("orders_approved").increment();
+        }
     }
 
     @Override
     @Transactional
     public void reject(Long orderId, String eventId) {
-        applyBestEffort(orderId, Order::noteRejected, "reject");
-        meterRegistry.counter("orders_rejected").increment();
+        if (applyBestEffort(orderId, Order::noteRejected, "reject")) {
+            meterRegistry.counter("orders_rejected").increment();
+        }
     }
 
     @Override
@@ -112,17 +114,19 @@ public class JpaOrderTransitions implements OrderTransitions {
         domainEventPublisher.publishRevisionCompensationRequested(order, compensationEventId);
     }
 
-    private void applyBestEffort(Long orderId, Function<Order, List<OrderDomainEvent>> transition, String description) {
+    private boolean applyBestEffort(Long orderId, Function<Order, List<OrderDomainEvent>> transition, String description) {
         Order order = orderRepository.findById(orderId).orElse(null);
         if (order == null) {
-            return;
+            return false;
         }
         try {
             List<OrderDomainEvent> events = transition.apply(order);
             orderRepository.save(order);
             domainEventPublisher.publish(events);
+            return true;
         } catch (UnsupportedStateTransitionException e) {
             log.debug("Ignoring {} for order {}: {}", description, orderId, e.getMessage());
+            return false;
         }
     }
 
