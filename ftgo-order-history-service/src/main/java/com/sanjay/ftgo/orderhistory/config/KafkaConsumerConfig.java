@@ -28,6 +28,9 @@ public class KafkaConsumerConfig {
             ConsumerFactory<Object, Object> consumerFactory) {
         ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
+        // Hand-built factory bypasses Boot's spring.kafka.listener.observation-enabled property,
+        // which only applies to the autoconfigured factory this bean replaces - must opt in explicitly.
+        factory.getContainerProperties().setObservationEnabled(true);
         // 3 retries (4 attempts total), 200ms apart - long enough for the other thread's
         // transaction (a handful of simple column updates) to have already committed by the retry.
         factory.setCommonErrorHandler(new DefaultErrorHandler(new FixedBackOff(200L, 3)));
