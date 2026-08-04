@@ -1089,9 +1089,12 @@ needed anywhere in this sub-project's services.
 **Kafka span propagation** is not automatic in the same way: it requires two explicit properties
 per service, `spring.kafka.template.observation-enabled: true` (producer side) and
 `spring.kafka.listener.observation-enabled: true` (consumer side), set in
-order/kitchen/accounting/delivery/order-history-service's `application.yml` (the 5 services that
-produce or consume Kafka events in this project). `ftgo-order-history-service` is the one
-exception that needed an extra line of code rather than just the property: its
+order/kitchen/accounting/delivery/consumer/order-history-service's `application.yml` (the 6
+services that produce or consume Kafka events in this project; `ftgo-restaurant-service` has no
+Kafka involvement at all). `ftgo-consumer-service` only carries the `listener` property — it
+publishes its own events via the Ch.3 CDC/outbox pipeline rather than a `KafkaTemplate`, so there's
+no matching producer-side property to set. `ftgo-order-history-service` is the one exception that
+needed an extra line of code rather than just the property: its
 `KafkaConsumerConfig` hand-builds a `ConcurrentKafkaListenerContainerFactory` bean (to get retry
 behavior for optimistic-lock races across its four listeners — see the CQRS section above), and a
 hand-built factory bypasses Boot's property-driven autoconfiguration of the default listener
