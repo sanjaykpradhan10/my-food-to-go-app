@@ -1,0 +1,29 @@
+groups:
+  - name: ftgo-alerts
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} instance {{ $labels.instance }} is down"
+          description: "Prometheus has failed to scrape {{ $labels.job }} for at least 30 seconds."
+
+      - alert: HighOrderRejectionRate
+        expr: rate(orders_rejected_total[5m]) / rate(orders_placed_total[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High order rejection rate"
+          description: "More than 50% of orders placed in the last 5 minutes have been rejected."
+
+      - alert: HighAuthorizationDeclineRate
+        expr: rate(authorizations_declined_total[5m]) / (rate(authorizations_approved_total[5m]) + rate(authorizations_declined_total[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authorization decline rate"
+          description: "More than 50% of card authorizations in the last 5 minutes have been declined."
