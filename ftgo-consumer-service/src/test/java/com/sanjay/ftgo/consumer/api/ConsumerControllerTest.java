@@ -23,7 +23,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.BeforeEach;
-import java.util.List;
 
 // addFilters = false: this slice test predates Ch.11 security and exercises ConsumerController's
 // business logic, not auth - it never sends a bearer token, so the Spring Security filter chain
