@@ -6,6 +6,7 @@ import com.sanjay.ftgo.common.outbox.OutboxEvent;
 import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEvent;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,19 +24,22 @@ public class TicketService {
     private final OutboxEventRepository outboxEventRepository;
     private final TicketDomainEventPublisher domainEventPublisher;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
 
     public TicketService(TicketRepository ticketRepository,
                           ProcessedEventRepository processedEventRepository,
                           FailedOrderRepository failedOrderRepository,
                           OutboxEventRepository outboxEventRepository,
                           TicketDomainEventPublisher domainEventPublisher,
-                          ObjectMapper objectMapper) {
+                          ObjectMapper objectMapper,
+                          MeterRegistry meterRegistry) {
         this.ticketRepository = ticketRepository;
         this.processedEventRepository = processedEventRepository;
         this.failedOrderRepository = failedOrderRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.domainEventPublisher = domainEventPublisher;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
     }
 
     @Transactional
@@ -75,6 +79,9 @@ public class TicketService {
             return;
         }
 
+        // Cancellation increment is guarded per-branch since this switch also handles the
+        // CardAuthorized confirm path, which must never bump tickets_cancelled.
+        boolean cancelled = "CardAuthorizationFailed".equals(eventType);
         List<TicketDomainEvent> events = switch (eventType) {
             case "CardAuthorized" -> ticket.confirm();
             case "CardAuthorizationFailed" -> ticket.cancel();
@@ -84,6 +91,9 @@ public class TicketService {
             return;
         }
         ticketRepository.save(ticket);
+        if (cancelled) {
+            meterRegistry.counter("tickets_cancelled").increment();
+        }
         domainEventPublisher.publish(ticket, events);
     }
 
@@ -98,6 +108,7 @@ public class TicketService {
         if (ticket != null) {
             List<TicketDomainEvent> events = ticket.cancel();
             ticketRepository.save(ticket);
+            meterRegistry.counter("tickets_cancelled").increment();
             domainEventPublisher.publish(ticket, events);
         } else {
             failedOrderRepository.save(new FailedOrder(orderId));
@@ -154,6 +165,7 @@ public class TicketService {
         try {
             ticket.cancel();
             ticketRepository.save(ticket);
+            meterRegistry.counter("tickets_cancelled").increment();
             publishReply("TicketCancelled", orderId, null, sagaType);
         } catch (TicketCannotBeCancelledException | UnsupportedStateTransitionException e) {
             publishReply("TicketCancellationRejected", orderId, e.getMessage(), sagaType);
@@ -174,6 +186,7 @@ public class TicketService {
         try {
             List<TicketDomainEvent> events = ticket.cancel();
             ticketRepository.save(ticket);
+            meterRegistry.counter("tickets_cancelled").increment();
             domainEventPublisher.publish(ticket, events);
         } catch (TicketCannotBeCancelledException | UnsupportedStateTransitionException e) {
             domainEventPublisher.publish(ticket, List.of(new TicketCancellationRejectedEvent(orderId, e.getMessage())));

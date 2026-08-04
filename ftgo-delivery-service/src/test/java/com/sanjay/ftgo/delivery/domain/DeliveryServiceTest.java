@@ -3,6 +3,9 @@ package com.sanjay.ftgo.delivery.domain;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +13,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -26,13 +30,18 @@ class DeliveryServiceTest {
     private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
     private final DeliveryDomainEventPublisher domainEventPublisher = mock(DeliveryDomainEventPublisher.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final MeterRegistry meterRegistry = mock(MeterRegistry.class);
 
     private DeliveryService deliveryService;
 
     @BeforeEach
     void setUp() {
+        // Plain mock() fixtures (no MockitoExtension) - stub counter() to hand back a no-op
+        // Counter mock so schedule()/release()'s meterRegistry.counter(...).increment() calls
+        // don't NPE on the tests below that don't care about metrics.
+        when(meterRegistry.counter(anyString())).thenReturn(mock(Counter.class));
         deliveryService = new DeliveryService(deliveryRepository, courierRepository, processedEventRepository,
-                failedOrderRepository, outboxEventRepository, domainEventPublisher, objectMapper);
+                failedOrderRepository, outboxEventRepository, domainEventPublisher, objectMapper, meterRegistry);
     }
 
     @Test
@@ -179,5 +188,35 @@ class DeliveryServiceTest {
         verify(courierRepository, never()).findById(any());
         verify(courierRepository, never()).save(any());
         verify(outboxEventRepository, never()).save(any());
+    }
+
+    @Test
+    void handleOrderCreatedIncrementsDeliveriesScheduledCounter() {
+        SimpleMeterRegistry realMeterRegistry = new SimpleMeterRegistry();
+        DeliveryService withMetrics = new DeliveryService(deliveryRepository, courierRepository,
+                processedEventRepository, failedOrderRepository, outboxEventRepository,
+                domainEventPublisher, objectMapper, realMeterRegistry);
+        when(processedEventRepository.existsById("evt-1")).thenReturn(false);
+        when(failedOrderRepository.existsById(42L)).thenReturn(false);
+        when(courierRepository.findFirstByAvailableTrue()).thenReturn(Optional.of(new Courier("Alex")));
+
+        withMetrics.handleOrderCreated("evt-1", 42L, 7L);
+
+        assertThat(realMeterRegistry.counter("deliveries_scheduled").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void releaseIncrementsDeliveriesCancelledCounter() {
+        SimpleMeterRegistry realMeterRegistry = new SimpleMeterRegistry();
+        DeliveryService withMetrics = new DeliveryService(deliveryRepository, courierRepository,
+                processedEventRepository, failedOrderRepository, outboxEventRepository,
+                domainEventPublisher, objectMapper, realMeterRegistry);
+        when(processedEventRepository.existsById("evt-1")).thenReturn(false);
+        Delivery delivery = Delivery.schedule(42L, 7L, 1L).delivery();
+        when(deliveryRepository.findForUpdateByOrderId(42L)).thenReturn(Optional.of(delivery));
+
+        withMetrics.release("evt-1", 42L);
+
+        assertThat(realMeterRegistry.counter("deliveries_cancelled").count()).isEqualTo(1.0);
     }
 }

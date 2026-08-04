@@ -59,6 +59,16 @@ to untrusted clients in this project; full component detail is the point of exer
 pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
 `AllServicesReportHealthy.feature`.
 
+## Metrics (Ch.11, §11.3.4)
+
+`GET /actuator/prometheus` — Micrometer `PrometheusMeterRegistry`, unauthenticated. Custom business
+counter:
+
+- `restaurants_created` — `RestaurantController`, on restaurant creation.
+
+Appears in the exposition output with a `_total` suffix (`restaurants_created_total`). Scraped
+every 5s by the `prometheus` compose service.
+
 ## Events
 
 None. This service doesn't produce or consume any Kafka events — it's reached only via synchronous REST (from order-service, via a circuit breaker).

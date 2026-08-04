@@ -47,6 +47,18 @@ to untrusted clients in this project; full component detail is the point of exer
 pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
 `AllServicesReportHealthy.feature`.
 
+## Metrics (Ch.11, §11.3.4)
+
+`GET /actuator/prometheus` — Micrometer `PrometheusMeterRegistry`, unauthenticated. Custom business
+counters:
+
+- `tickets_cancelled` — `TicketService`, on `ticket.cancel()`.
+- `tickets_accepted`, `tickets_preparing`, `tickets_ready_for_pickup`, `tickets_picked_up` —
+  `TicketController`, on the corresponding ticket state-change endpoints.
+
+Each appears in the exposition output with a `_total` suffix (e.g. `tickets_cancelled_total`).
+Scraped every 5s by the `prometheus` compose service.
+
 ## Events
 
 ### Publishes (`kitchen.events`, choreography)

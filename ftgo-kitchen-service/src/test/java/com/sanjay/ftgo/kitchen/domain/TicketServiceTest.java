@@ -28,9 +28,12 @@ class TicketServiceTest {
     private final TicketDomainEventPublisher domainEventPublisher = mock(TicketDomainEventPublisher.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
     private final TicketService ticketService = new TicketService(
             ticketRepository, processedEventRepository, failedOrderRepository,
-            outboxEventRepository, domainEventPublisher, objectMapper);
+            outboxEventRepository, domainEventPublisher, objectMapper, meterRegistry);
 
     private final OrderCreatedEvent event = new OrderCreatedEvent(
             "event-1", "OrderCreated", 42L, 1L, List.of(new OrderCreatedEvent.LineItem(10L, 2)));
@@ -97,6 +100,7 @@ class TicketServiceTest {
         assertThat(ticket.getState()).isEqualTo(TicketState.AWAITING_ACCEPTANCE);
         verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
                 events.size() == 1 && events.get(0) instanceof TicketConfirmedEvent));
+        assertThat(meterRegistry.counter("tickets_cancelled").count()).isEqualTo(0.0);
     }
 
     @Test
@@ -111,6 +115,7 @@ class TicketServiceTest {
         assertThat(ticket.getState()).isEqualTo(TicketState.CANCELLED);
         verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
                 events.size() == 1 && events.get(0) instanceof TicketCancelledEvent));
+        assertThat(meterRegistry.counter("tickets_cancelled").count()).isEqualTo(1.0);
     }
 
     @Test
@@ -140,6 +145,7 @@ class TicketServiceTest {
         verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
                 events.size() == 1 && events.get(0) instanceof TicketCancelledEvent));
         verify(failedOrderRepository, never()).save(any());
+        assertThat(meterRegistry.counter("tickets_cancelled").count()).isEqualTo(1.0);
     }
 
     @Test
@@ -174,6 +180,18 @@ class TicketServiceTest {
         verify(ticketRepository, never()).save(any());
         verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
                 "TicketCreationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void handleCancelTicketCommandIncrementsTicketsCancelledCounter() {
+        when(processedEventRepository.existsById("evt-1")).thenReturn(false);
+        Ticket ticket = Ticket.createTicket(42L, 3).ticket();
+        when(ticketRepository.findByOrderId(42L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.handleCancelTicketCommand("evt-1", 42L, "CreateOrder");
+
+        assertThat(meterRegistry.counter("tickets_cancelled").count()).isEqualTo(1.0);
     }
 
     @Test
@@ -231,6 +249,7 @@ class TicketServiceTest {
         verify(outboxEventRepository).save(argThat((OutboxEvent e) ->
                 "TicketCancellationRejected".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())
                         && e.getPayload().contains("\"sagaType\":\"CancelOrder\"")));
+        assertThat(meterRegistry.counter("tickets_cancelled").count()).isEqualTo(0.0);
     }
 
     @Test
@@ -245,6 +264,7 @@ class TicketServiceTest {
         assertThat(ticket.getState()).isEqualTo(TicketState.CANCELLED);
         verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
                 events.size() == 1 && events.get(0) instanceof TicketCancelledEvent));
+        assertThat(meterRegistry.counter("tickets_cancelled").count()).isEqualTo(1.0);
     }
 
     @Test
@@ -263,6 +283,7 @@ class TicketServiceTest {
         verify(ticketRepository, never()).save(any());
         verify(domainEventPublisher).publish(any(Ticket.class), argThat(events ->
                 events.size() == 1 && events.get(0) instanceof TicketCancellationRejectedEvent));
+        assertThat(meterRegistry.counter("tickets_cancelled").count()).isEqualTo(0.0);
     }
 
     @Test

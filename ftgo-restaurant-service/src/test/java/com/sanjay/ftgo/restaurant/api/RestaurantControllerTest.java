@@ -3,6 +3,9 @@ package com.sanjay.ftgo.restaurant.api;
 import com.sanjay.ftgo.restaurant.domain.MenuItem;
 import com.sanjay.ftgo.restaurant.domain.Restaurant;
 import com.sanjay.ftgo.restaurant.infrastructure.RestaurantRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,8 +20,12 @@ import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Optional;
 
+import org.junit.jupiter.api.BeforeEach;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,6 +45,14 @@ class RestaurantControllerTest {
 
     @MockitoBean
     private RestaurantRepository restaurantRepository;
+
+    @MockitoBean
+    private MeterRegistry meterRegistry;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(meterRegistry.counter(anyString())).thenReturn(org.mockito.Mockito.mock(Counter.class));
+    }
 
     @Test
     void returnsRestaurantWhenFound() throws Exception {
@@ -105,6 +120,17 @@ class RestaurantControllerTest {
         verify(restaurantRepository).save(captor.capture());
         assertThat(captor.getValue().getName()).isEqualTo("Pizza E2E");
         assertThat(captor.getValue().getMenuItems()).extracting(MenuItem::getName).containsExactly("Slice");
+    }
+
+    @Test
+    void createRestaurantIncrementsRestaurantsCreatedCounter() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        RestaurantController withMetrics = new RestaurantController(restaurantRepository, meterRegistry);
+        when(restaurantRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        withMetrics.createRestaurant(new CreateRestaurantRequest("Test", List.of()));
+
+        assertThat(meterRegistry.counter("restaurants_created").count()).isEqualTo(1.0);
     }
 
     private static void setId(Object entity, Long id) throws Exception {

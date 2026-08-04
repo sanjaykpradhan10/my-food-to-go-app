@@ -6,6 +6,7 @@ import com.sanjay.ftgo.common.outbox.OutboxEvent;
 import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEvent;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ public class DeliveryService {
     private final OutboxEventRepository outboxEventRepository;
     private final DeliveryDomainEventPublisher domainEventPublisher;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
 
     public DeliveryService(DeliveryRepository deliveryRepository,
                             CourierRepository courierRepository,
@@ -30,7 +32,8 @@ public class DeliveryService {
                             FailedOrderRepository failedOrderRepository,
                             OutboxEventRepository outboxEventRepository,
                             DeliveryDomainEventPublisher domainEventPublisher,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            MeterRegistry meterRegistry) {
         this.deliveryRepository = deliveryRepository;
         this.courierRepository = courierRepository;
         this.processedEventRepository = processedEventRepository;
@@ -38,6 +41,7 @@ public class DeliveryService {
         this.outboxEventRepository = outboxEventRepository;
         this.domainEventPublisher = domainEventPublisher;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
     }
 
     // Choreography: delivery-service's own parallel-join leg, triggered directly by OrderCreated
@@ -76,6 +80,7 @@ public class DeliveryService {
 
         DeliveryScheduleResult result = Delivery.schedule(orderId, restaurantId, courier.getId());
         deliveryRepository.save(result.delivery());
+        meterRegistry.counter("deliveries_scheduled").increment();
         publishReply("DeliveryScheduled", orderId, null, "CreateOrder");
     }
 
@@ -91,6 +96,7 @@ public class DeliveryService {
 
         DeliveryScheduleResult result = Delivery.schedule(orderId, restaurantId, courier.getId());
         Delivery delivery = deliveryRepository.save(result.delivery());
+        meterRegistry.counter("deliveries_scheduled").increment();
         domainEventPublisher.publish(delivery, result.events());
     }
 
@@ -120,6 +126,7 @@ public class DeliveryService {
         // courier back to available if it's since been reassigned to a different order.
         if (!events.isEmpty()) {
             releaseCourier(delivery);
+            meterRegistry.counter("deliveries_cancelled").increment();
             domainEventPublisher.publish(delivery, events);
         }
     }
@@ -145,6 +152,7 @@ public class DeliveryService {
         // must not re-touch the courier or emit a duplicate DeliveryCancelled reply.
         if (!events.isEmpty()) {
             releaseCourier(delivery);
+            meterRegistry.counter("deliveries_cancelled").increment();
             publishReply("DeliveryCancelled", orderId, null, sagaType);
         }
     }

@@ -4,6 +4,9 @@ package com.sanjay.ftgo.delivery.api;
 import com.sanjay.ftgo.delivery.domain.Delivery;
 import com.sanjay.ftgo.delivery.domain.DeliveryDomainEventPublisher;
 import com.sanjay.ftgo.delivery.domain.DeliveryRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -13,6 +16,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -34,6 +39,16 @@ class DeliveryControllerTest {
 
     @MockitoBean
     private DeliveryDomainEventPublisher domainEventPublisher;
+
+    @MockitoBean
+    private MeterRegistry meterRegistry;
+
+    @BeforeEach
+    void setUp() {
+        // Stub so pickedUp/delivered's meterRegistry.counter(...).increment() call doesn't NPE
+        // on this @MockitoBean fixture - these tests assert HTTP status, not counter values.
+        when(meterRegistry.counter(anyString())).thenReturn(mock(Counter.class));
+    }
 
     @Test
     void movesScheduledDeliveryToPickedUp() throws Exception {

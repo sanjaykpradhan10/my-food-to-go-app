@@ -3,10 +3,12 @@ package com.sanjay.ftgo.accounting.domain;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
@@ -24,10 +26,11 @@ class SagaJoinServiceTest {
     private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
     private final AuthorizationDomainEventPublisher domainEventPublisher = mock(AuthorizationDomainEventPublisher.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private final SagaJoinService service = new SagaJoinService(
             sagaJoinStateRepository, authorizationRepository, processedEventRepository, outboxEventRepository,
-            domainEventPublisher, objectMapper);
+            domainEventPublisher, objectMapper, meterRegistry);
 
     @Test
     void authorizesWhenConsumerVerifiedArrivesFirstThenTicketCreatedUnderLimit() {
@@ -204,5 +207,23 @@ class SagaJoinServiceTest {
         verify(authorizationRepository, never()).save(any());
         verify(outboxEventRepository).save(argThat(e ->
                 "CardAuthorizationFailed".equals(e.getEventType()) && "saga.replies".equals(e.getTopic())));
+    }
+
+    @Test
+    void handleAuthorizeCardCommandIncrementsAuthorizationsApprovedCounterWhenAuthorized() {
+        when(processedEventRepository.existsById("cmd-approved")).thenReturn(false);
+
+        service.handleAuthorizeCardCommand("cmd-approved", 42L, 5);
+
+        assertThat(meterRegistry.counter("authorizations_approved").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void handleAuthorizeCardCommandIncrementsAuthorizationsDeclinedCounterWhenOverLimit() {
+        when(processedEventRepository.existsById("cmd-declined")).thenReturn(false);
+
+        service.handleAuthorizeCardCommand("cmd-declined", 42L, 15);
+
+        assertThat(meterRegistry.counter("authorizations_declined").count()).isEqualTo(1.0);
     }
 }

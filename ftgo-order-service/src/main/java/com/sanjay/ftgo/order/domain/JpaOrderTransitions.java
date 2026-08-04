@@ -1,5 +1,6 @@
 package com.sanjay.ftgo.order.domain;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -18,16 +19,21 @@ public class JpaOrderTransitions implements OrderTransitions {
 
     private final OrderRepository orderRepository;
     private final OrderDomainEventPublisher domainEventPublisher;
+    private final MeterRegistry meterRegistry;
 
-    public JpaOrderTransitions(OrderRepository orderRepository, OrderDomainEventPublisher domainEventPublisher) {
+    public JpaOrderTransitions(OrderRepository orderRepository, OrderDomainEventPublisher domainEventPublisher,
+                                MeterRegistry meterRegistry) {
         this.orderRepository = orderRepository;
         this.domainEventPublisher = domainEventPublisher;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
     @Transactional
     public Order create(Long consumerId, Long restaurantId, List<OrderLineItem> lineItems, String eventId) {
-        return orderRepository.save(new Order(consumerId, restaurantId, lineItems, OrderStatus.APPROVAL_PENDING));
+        Order order = orderRepository.save(new Order(consumerId, restaurantId, lineItems, OrderStatus.APPROVAL_PENDING));
+        meterRegistry.counter("orders_placed").increment();
+        return order;
     }
 
     @Override
@@ -41,6 +47,7 @@ public class JpaOrderTransitions implements OrderTransitions {
         Order order = findOrThrow(orderId);
         List<OrderDomainEvent> events = order.cancel();
         orderRepository.save(order);
+        meterRegistry.counter("orders_cancelled").increment();
         return new TransitionResult(order, events);
     }
 
@@ -56,13 +63,17 @@ public class JpaOrderTransitions implements OrderTransitions {
     @Override
     @Transactional
     public void approve(Long orderId, String eventId) {
-        applyBestEffort(orderId, Order::noteApproved, "approve");
+        if (applyBestEffort(orderId, Order::noteApproved, "approve")) {
+            meterRegistry.counter("orders_approved").increment();
+        }
     }
 
     @Override
     @Transactional
     public void reject(Long orderId, String eventId) {
-        applyBestEffort(orderId, Order::noteRejected, "reject");
+        if (applyBestEffort(orderId, Order::noteRejected, "reject")) {
+            meterRegistry.counter("orders_rejected").increment();
+        }
     }
 
     @Override
@@ -103,17 +114,19 @@ public class JpaOrderTransitions implements OrderTransitions {
         domainEventPublisher.publishRevisionCompensationRequested(order, compensationEventId);
     }
 
-    private void applyBestEffort(Long orderId, Function<Order, List<OrderDomainEvent>> transition, String description) {
+    private boolean applyBestEffort(Long orderId, Function<Order, List<OrderDomainEvent>> transition, String description) {
         Order order = orderRepository.findById(orderId).orElse(null);
         if (order == null) {
-            return;
+            return false;
         }
         try {
             List<OrderDomainEvent> events = transition.apply(order);
             orderRepository.save(order);
             domainEventPublisher.publish(events);
+            return true;
         } catch (UnsupportedStateTransitionException e) {
             log.debug("Ignoring {} for order {}: {}", description, orderId, e.getMessage());
+            return false;
         }
     }
 

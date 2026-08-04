@@ -73,5 +73,6 @@ def actuatorModules = ['ftgo-order-service', 'ftgo-kitchen-service', 'ftgo-consu
 configure(subprojects.findAll { actuatorModules.contains(it.name) }) {
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-actuator'
+        implementation 'io.micrometer:micrometer-registry-prometheus'
     }
 }

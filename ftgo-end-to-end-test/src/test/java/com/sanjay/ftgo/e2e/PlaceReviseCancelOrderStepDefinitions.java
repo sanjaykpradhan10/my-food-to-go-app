@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 public class PlaceReviseCancelOrderStepDefinitions {
@@ -114,6 +115,33 @@ public class PlaceReviseCancelOrderStepDefinitions {
     @Then("the order is eventually cancelled")
     public void theOrderIsEventuallyCancelled() throws Exception {
         assertEquals("CANCELLED", pollForFinalStatus("CANCEL_PENDING"));
+    }
+
+    @Then("the order-service Prometheus counters {string} and {string} both eventually read at least 1")
+    public void theOrderServicePrometheusCountersBothEventuallyReadAtLeastOne(String counterA, String counterB) throws Exception {
+        assertTrue(counterEventuallyAtLeastOne(counterA), "Counter " + counterA + " did not reach >= 1 within 30s");
+        assertTrue(counterEventuallyAtLeastOne(counterB), "Counter " + counterB + " did not reach >= 1 within 30s");
+    }
+
+    private boolean counterEventuallyAtLeastOne(String counterName) throws Exception {
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(30));
+        while (Instant.now().isBefore(deadline)) {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://localhost:8082/actuator/prometheus"))
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            for (String line : response.body().split("\n")) {
+                if (line.startsWith(counterName + " ")) {
+                    double value = Double.parseDouble(line.substring(counterName.length()).trim());
+                    if (value >= 1.0) {
+                        return true;
+                    }
+                }
+            }
+            Thread.sleep(500);
+        }
+        return false;
     }
 
     private JsonNode fetchOrder() throws Exception {

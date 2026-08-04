@@ -33,6 +33,19 @@ to untrusted clients in this project; full component detail is the point of exer
 pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
 `AllServicesReportHealthy.feature`.
 
+## Metrics (Ch.11, §11.3.4)
+
+`GET /actuator/prometheus` — Micrometer `PrometheusMeterRegistry`, unauthenticated. Custom business
+counters:
+
+- `authorizations_approved`, `authorizations_declined` — `SagaJoinService`.
+- `authorizations_reversed` — `AuthorizationCancelService`.
+
+Each appears in the exposition output with a `_total` suffix (e.g.
+`authorizations_approved_total`). Scraped every 5s by the `prometheus` compose service;
+`authorizations_declined_total` / (`authorizations_approved_total` + `authorizations_declined_total`)
+feeds the `HighAuthorizationDeclineRate` alert rule.
+
 ## Events
 
 ### Publishes (`accounting.events`, choreography)

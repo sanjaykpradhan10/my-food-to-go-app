@@ -998,3 +998,51 @@ before it's actually ready. Verified end-to-end by `ftgo-end-to-end-test`'s
 A full dedicated section with sequence diagrams, matching this file's other patterns, is deferred
 to Ch.11's eventual chapter-completion documentation sweep — this is sub-project 1 of an
 unscheduled number of Ch.11 sub-projects.
+
+## Application metrics (Ch.11, §11.3.4)
+
+All 9 services (7 business services + 2 gateways) expose Micrometer metrics via
+`GET /actuator/prometheus` in Prometheus exposition format (`PrometheusMeterRegistry`), alongside
+the existing `/actuator/health`. Access to `/actuator/prometheus` is unauthenticated on the 7
+business services (a security-config fix made mid-sub-project, since Spring Security's default
+actuator rules would otherwise block Prometheus's scrape requests, which carry no credentials).
+
+**Custom business counters** — plain `Counter`s registered against each service's injected
+`MeterRegistry`, incremented at the point in the code where the business event actually happens
+(not derived from HTTP status or Kafka offsets):
+
+| Service | Counter(s) | Where incremented |
+|---|---|---|
+| order-service | `orders_placed`, `orders_approved`, `orders_rejected`, `orders_cancelled` | `JpaOrderTransitions` (create/approve/reject/cancel) |
+| kitchen-service | `tickets_cancelled` | `TicketService` (`ticket.cancel()`) |
+| kitchen-service | `tickets_accepted`, `tickets_preparing`, `tickets_ready_for_pickup`, `tickets_picked_up` | `TicketController` |
+| accounting-service | `authorizations_approved`, `authorizations_declined` | `SagaJoinService` |
+| accounting-service | `authorizations_reversed` | `AuthorizationCancelService` |
+| delivery-service | `deliveries_scheduled`, `deliveries_cancelled` | `DeliveryService` / `DeliveryController` (both the direct-call helper and the choreography/event path) |
+| delivery-service | `deliveries_picked_up`, `deliveries_delivered` | `DeliveryController` |
+| restaurant-service | `restaurants_created` | `RestaurantController` |
+| consumer-service | `consumers_created` | `ConsumerController` |
+| order-history-service | `order_views_updated` | `OrderViewService` |
+
+Each counter appears in the `/actuator/prometheus` output with a `_total` suffix (e.g.
+`orders_placed_total`), per Micrometer's Prometheus naming convention for counters.
+
+**Prometheus** (`compose.yml` service, port 9090) scrapes all 9 services' `/actuator/prometheus`
+endpoints every 5s and loads 3 alert rules:
+
+- `ServiceDown` — `up == 0` for 30s.
+- `HighOrderRejectionRate` — `orders_rejected_total` / `orders_placed_total` ratio > 0.5 for 2m.
+- `HighAuthorizationDeclineRate` — `authorizations_declined_total` /
+  (`authorizations_approved_total` + `authorizations_declined_total`) ratio > 0.5 for 2m.
+
+Alertmanager and real alert-notification delivery are out of scope for this sub-project; the rules
+fire within Prometheus's own alert state but are not routed anywhere.
+
+**Grafana** (`compose.yml` service, port 3000, anonymous viewer access) auto-provisions one
+dashboard, "FTGO Overview," with 8 panels: per-service up/down, JVM heap usage, HTTP request rate,
+and the business counters listed above.
+
+Verified by `ftgo-end-to-end-test`'s Cucumber scenario exercising order-service's counters, plus
+manual Docker Compose verification (scrape targets up, alert rules loaded, dashboard renders) done
+live during this sub-project's build. A full dedicated section with sequence diagrams is deferred
+to Ch.11's eventual chapter-completion documentation sweep, same as the health-check section above.

@@ -104,6 +104,22 @@ to untrusted clients in this project; full component detail is the point of exer
 pattern. Verified against the real, running stack by `ftgo-end-to-end-test`'s
 `AllServicesReportHealthy.feature`.
 
+## Metrics (Ch.11, §11.3.4)
+
+`GET /actuator/prometheus` — Micrometer `PrometheusMeterRegistry`, unauthenticated (Prometheus's
+scraper sends no credentials). Custom business counters, incremented in `JpaOrderTransitions` at
+the point each order transition actually happens:
+
+- `orders_placed` — on order creation.
+- `orders_approved` — on order approval.
+- `orders_rejected` — on order rejection.
+- `orders_cancelled` — on order cancellation.
+
+Each appears in the exposition output with a `_total` suffix (e.g. `orders_placed_total`).
+Scraped every 5s by the `prometheus` compose service; `orders_rejected_total` /
+`orders_placed_total` feeds the `HighOrderRejectionRate` alert rule. Verified by
+`ftgo-end-to-end-test`'s Cucumber scenario for order-service counters.
+
 ## Restaurant/kitchen/accounting/delivery service integration
 
 `RestaurantServiceProxy`, `KitchenServiceProxy`, `AccountingServiceProxy`, and `DeliveryServiceProxy` each call their respective service via a `@LoadBalanced RestClient` (base URLs `http://ftgo-restaurant-service`/`http://ftgo-kitchen-service`/`http://ftgo-accounting-service`/`http://ftgo-delivery-service`, all resolved dynamically through Eureka), each wrapped in its own Resilience4j circuit breaker instance (`restaurantService`/`kitchenService`/`accountingService`/`deliveryService`) — all four instances share the exact same settings: sliding window 5, failure-rate threshold 50%, 5s wait-duration-in-open-state, 3 permitted calls in half-open. `RestaurantNotFoundException` is excluded from `restaurantService`'s failure count (a 404 isn't a service health signal) — the other three proxies don't need an equivalent exclusion, since their `findXForView`-style methods return `SectionResult.NotFound` directly on a `404` rather than throwing.

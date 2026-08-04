@@ -3,6 +3,7 @@ package com.sanjay.ftgo.restaurant.api;
 import com.sanjay.ftgo.restaurant.domain.MenuItem;
 import com.sanjay.ftgo.restaurant.domain.Restaurant;
 import com.sanjay.ftgo.restaurant.infrastructure.RestaurantRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,9 +22,11 @@ import java.util.List;
 public class RestaurantController {
 
     private final RestaurantRepository restaurantRepository;
+    private final MeterRegistry meterRegistry;
 
-    public RestaurantController(RestaurantRepository restaurantRepository) {
+    public RestaurantController(RestaurantRepository restaurantRepository, MeterRegistry meterRegistry) {
         this.restaurantRepository = restaurantRepository;
+        this.meterRegistry = meterRegistry;
     }
 
     @GetMapping("/{id}")
@@ -42,6 +45,7 @@ public class RestaurantController {
                 .map(item -> new MenuItem(item.name(), item.price()))
                 .toList();
         Restaurant restaurant = restaurantRepository.save(new Restaurant(request.name(), menuItems));
+        meterRegistry.counter("restaurants_created").increment();
         return RestaurantResponse.from(restaurant);
     }
 }
