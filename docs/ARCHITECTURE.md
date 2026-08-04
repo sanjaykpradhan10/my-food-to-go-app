@@ -1046,3 +1046,86 @@ Verified by `ftgo-end-to-end-test`'s Cucumber scenario exercising order-service'
 manual Docker Compose verification (scrape targets up, alert rules loaded, dashboard renders) done
 live during this sub-project's build. A full dedicated section with sequence diagrams is deferred
 to Ch.11's eventual chapter-completion documentation sweep, same as the health-check section above.
+
+## Distributed tracing (Ch.11, §11.3.3)
+
+All 9 services (7 business services + 2 gateways) export distributed traces via **Micrometer
+Tracing** bridged to **OpenTelemetry** (`micrometer-tracing-bridge-otel` +
+`opentelemetry-exporter-otlp`, added to the same `actuatorModules` block in the root `build.gradle`
+that already carries `spring-boot-starter-actuator` and `micrometer-registry-prometheus`), rather
+than Spring Cloud Sleuth + Zipkin — Sleuth is deprecated (in maintenance mode since Spring Boot
+2.6, with Micrometer Tracing as its official replacement) and would be the wrong pattern to teach
+for a project already on Spring Boot 3.5.
+
+**Export target — Grafana Tempo.** Each service's `application.yml` sets:
+
+```yaml
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://tempo:4318/v1/traces
+```
+
+Traces ship over OTLP/HTTP to a new `tempo` `compose.yml` service (`grafana/tempo:2.6.1`, local
+disk backend, 24h block retention — `tempo/tempo.yaml`), exposing its OTLP HTTP receiver on 4318
+and its query API on 3200. A `grafana/provisioning/datasources/tempo.yml` datasource wires Tempo
+into the existing Grafana instance (the one already provisioned for Ch.11's application-metrics
+dashboard), so traces are browsable there alongside the Prometheus-backed panels.
+
+**100% sampling** (`probability: 1.0`) is a deliberate choice for a learning project driven by
+manual/scripted e2e requests rather than production traffic volume: a percentage-based sampler
+tuned for production (e.g. 10%) would make the very requests this project uses to demonstrate the
+pattern likely to go unsampled, defeating the point. It guarantees the `ftgo-end-to-end-test`
+scenario's trace is always exported and queryable.
+
+**Automatic instrumentation.** HTTP server/client spans (Spring MVC controllers, `RestClient`
+calls) and JDBC spans come for free from Spring Boot's autoconfiguration once
+`micrometer-tracing-bridge-otel` is on the classpath — no manual `@NewSpan`/`Tracer` code was
+needed anywhere in this sub-project's services.
+
+**Kafka span propagation** is not automatic in the same way: it requires two explicit properties
+per service, `spring.kafka.template.observation-enabled: true` (producer side) and
+`spring.kafka.listener.observation-enabled: true` (consumer side), set in
+order/kitchen/accounting/delivery/order-history-service's `application.yml` (the 5 services that
+produce or consume Kafka events in this project). `ftgo-order-history-service` is the one
+exception that needed an extra line of code rather than just the property: its
+`KafkaConsumerConfig` hand-builds a `ConcurrentKafkaListenerContainerFactory` bean (to get retry
+behavior for optimistic-lock races across its four listeners — see the CQRS section above), and a
+hand-built factory bypasses Boot's property-driven autoconfiguration of the default listener
+factory entirely. The fix is one call in that factory's `@Bean` method:
+
+```java
+factory.getContainerProperties().setObservationEnabled(true);
+```
+
+**Gateway reactive context propagation.** Spring Boot 3.5's `ContextPropagationAutoConfiguration`
+is documented to enable Reactor's automatic context propagation once `context-propagation` and
+`reactor-core` are both on the classpath — which is necessary for a trace's span context to
+survive a WebFlux gateway's reactive filter chain rather than getting lost between the request
+thread and whatever thread completes the downstream `WebClient` call. Verification tests
+(`ContextPropagationTest` in each gateway module) showed
+`Hooks.isAutomaticContextPropagationEnabled()` was still `false` at runtime in this project's
+gateway configuration, so `ftgo-gateway-common`'s `GatewayCommonAutoConfiguration` adds an explicit
+fallback:
+
+```java
+@Bean
+public InitializingBean enableReactorContextPropagation() {
+    return () -> reactor.core.publisher.Hooks.enableAutomaticContextPropagation();
+}
+```
+
+This guarantees the trace context set up by `RequestLoggingFilter`/`JwtValidationFilter` survives
+across both gateways' reactive chains rather than only covering the initial Netty request thread.
+
+**End-to-end verification** mirrors the Prometheus-counter-polling pattern from the
+application-metrics section above, but against Tempo's HTTP API instead of Prometheus's:
+`PlaceReviseCancelOrder.feature`'s tracing scenario places an order through the full stack, then
+polls `GET /api/search` on Tempo for a trace tagged with `service.name=ftgo-public-gateway`,
+fetches it via `GET /api/traces/{traceId}`, and asserts its spans cover at least 2 distinct
+`service.name` values — proof that a single trace actually crossed a service boundary (gateway →
+order-service, at minimum) rather than each service merely emitting disconnected traces of its
+own.

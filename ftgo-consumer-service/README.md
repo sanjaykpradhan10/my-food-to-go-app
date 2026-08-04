@@ -55,6 +55,15 @@ counter:
 Appears in the exposition output with a `_total` suffix (`consumers_created_total`). Scraped every
 5s by the `prometheus` compose service.
 
+## Tracing (Ch.11, §11.3.3)
+
+Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 100% sampled
+(`management.tracing.sampling.probability: 1.0`). This service publishes its events via the
+Ch.3 CDC/outbox pipeline rather than a `KafkaTemplate`, and consumes no topics, so there's no
+`spring.kafka.*.observation-enabled` property to set — the automatic HTTP/JDBC span
+instrumentation from Spring Boot's autoconfiguration is all it needs. Viewable in Grafana via the
+provisioned Tempo datasource, or queried directly against Tempo's search API.
+
 ## Events
 
 ### Publishes

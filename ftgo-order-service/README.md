@@ -120,6 +120,15 @@ Scraped every 5s by the `prometheus` compose service; `orders_rejected_total` /
 `orders_placed_total` feeds the `HighOrderRejectionRate` alert rule. Verified by
 `ftgo-end-to-end-test`'s Cucumber scenario for order-service counters.
 
+## Tracing (Ch.11, §11.3.3)
+
+Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 100% sampled
+(`management.tracing.sampling.probability: 1.0`). HTTP and JDBC spans come free from Spring Boot's
+autoconfiguration; Kafka producer/consumer spans require
+`spring.kafka.template.observation-enabled`/`spring.kafka.listener.observation-enabled: true`,
+both set here. Viewable in Grafana via the provisioned Tempo datasource, or queried directly
+against Tempo's search API.
+
 ## Restaurant/kitchen/accounting/delivery service integration
 
 `RestaurantServiceProxy`, `KitchenServiceProxy`, `AccountingServiceProxy`, and `DeliveryServiceProxy` each call their respective service via a `@LoadBalanced RestClient` (base URLs `http://ftgo-restaurant-service`/`http://ftgo-kitchen-service`/`http://ftgo-accounting-service`/`http://ftgo-delivery-service`, all resolved dynamically through Eureka), each wrapped in its own Resilience4j circuit breaker instance (`restaurantService`/`kitchenService`/`accountingService`/`deliveryService`) — all four instances share the exact same settings: sliding window 5, failure-rate threshold 50%, 5s wait-duration-in-open-state, 3 permitted calls in half-open. `RestaurantNotFoundException` is excluded from `restaurantService`'s failure count (a 404 isn't a service health signal) — the other three proxies don't need an equivalent exclusion, since their `findXForView`-style methods return `SectionResult.NotFound` directly on a `404` rather than throwing.
