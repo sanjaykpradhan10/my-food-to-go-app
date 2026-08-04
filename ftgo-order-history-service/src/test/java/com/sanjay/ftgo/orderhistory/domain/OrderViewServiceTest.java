@@ -1,6 +1,9 @@
 package com.sanjay.ftgo.orderhistory.domain;
 
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -11,6 +14,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,12 +24,16 @@ class OrderViewServiceTest {
 
     private final OrderViewRepository orderViewRepository = mock(OrderViewRepository.class);
     private final ProcessedEventRepository processedEventRepository = mock(ProcessedEventRepository.class);
+    private final MeterRegistry meterRegistry = mock(MeterRegistry.class);
 
     private OrderViewService orderViewService;
 
     @BeforeEach
     void setUp() {
-        orderViewService = new OrderViewService(orderViewRepository, processedEventRepository);
+        // Pre-existing tests don't exercise the counter, so stub it to a throwaway mock rather
+        // than a real registry - keeps them focused on the upsert behavior they were written for.
+        lenient().when(meterRegistry.counter(anyString())).thenReturn(mock(Counter.class));
+        orderViewService = new OrderViewService(orderViewRepository, processedEventRepository, meterRegistry);
         when(orderViewRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -206,6 +215,18 @@ class OrderViewServiceTest {
         orderViewService.handleOrderEvent("evt-1", "OrderCreated", 42L, 1L, 7L, List.of());
 
         verify(orderViewRepository, org.mockito.Mockito.never()).findById(any());
+    }
+
+    @Test
+    void handleOrderEventIncrementsOrderViewsUpdatedCounter() {
+        SimpleMeterRegistry realMeterRegistry = new SimpleMeterRegistry();
+        OrderViewService withMetrics = new OrderViewService(orderViewRepository, processedEventRepository, realMeterRegistry);
+        when(processedEventRepository.existsById("evt-1")).thenReturn(false);
+        when(orderViewRepository.findById(42L)).thenReturn(Optional.empty());
+
+        withMetrics.handleOrderEvent("evt-1", "OrderCreated", 42L, 1L, 7L, List.of());
+
+        assertThat(realMeterRegistry.counter("order_views_updated").count()).isEqualTo(1.0);
     }
 
     @Test

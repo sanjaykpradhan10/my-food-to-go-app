@@ -2,6 +2,7 @@ package com.sanjay.ftgo.orderhistory.domain;
 
 import com.sanjay.ftgo.common.outbox.ProcessedEvent;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,10 +13,13 @@ public class OrderViewService {
 
     private final OrderViewRepository orderViewRepository;
     private final ProcessedEventRepository processedEventRepository;
+    private final MeterRegistry meterRegistry;
 
-    public OrderViewService(OrderViewRepository orderViewRepository, ProcessedEventRepository processedEventRepository) {
+    public OrderViewService(OrderViewRepository orderViewRepository, ProcessedEventRepository processedEventRepository,
+                             MeterRegistry meterRegistry) {
         this.orderViewRepository = orderViewRepository;
         this.processedEventRepository = processedEventRepository;
+        this.meterRegistry = meterRegistry;
     }
 
     // Upsert, not create-only: a ticket/authorization/delivery event can legitimately arrive
@@ -61,6 +65,7 @@ public class OrderViewService {
         }
 
         orderViewRepository.save(view);
+        meterRegistry.counter("order_views_updated").increment();
     }
 
     // Same upsert pattern as handleOrderEvent, mirrored for the kitchen.events topic: kitchen
