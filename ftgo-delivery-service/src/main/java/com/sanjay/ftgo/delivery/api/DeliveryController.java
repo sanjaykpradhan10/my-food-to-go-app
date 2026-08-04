@@ -6,6 +6,7 @@ import com.sanjay.ftgo.delivery.domain.DeliveryDomainEventPublisher;
 import com.sanjay.ftgo.delivery.domain.DeliveryNotFoundException;
 import com.sanjay.ftgo.delivery.domain.DeliveryRepository;
 import com.sanjay.ftgo.delivery.domain.UnsupportedStateTransitionException;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,10 +27,13 @@ public class DeliveryController {
 
     private final DeliveryRepository deliveryRepository;
     private final DeliveryDomainEventPublisher domainEventPublisher;
+    private final MeterRegistry meterRegistry;
 
-    public DeliveryController(DeliveryRepository deliveryRepository, DeliveryDomainEventPublisher domainEventPublisher) {
+    public DeliveryController(DeliveryRepository deliveryRepository, DeliveryDomainEventPublisher domainEventPublisher,
+                               MeterRegistry meterRegistry) {
         this.deliveryRepository = deliveryRepository;
         this.domainEventPublisher = domainEventPublisher;
+        this.meterRegistry = meterRegistry;
     }
 
     @PreAuthorize("hasAnyRole('COURIER', 'ADMIN')")
@@ -37,6 +41,7 @@ public class DeliveryController {
     public ResponseEntity<Void> pickedUp(@PathVariable Long deliveryId) {
         Delivery delivery = findDelivery(deliveryId);
         apply(delivery, delivery.pickUp());
+        meterRegistry.counter("deliveries_picked_up").increment();
         return ResponseEntity.ok().build();
     }
 
@@ -45,6 +50,7 @@ public class DeliveryController {
     public ResponseEntity<Void> delivered(@PathVariable Long deliveryId) {
         Delivery delivery = findDelivery(deliveryId);
         apply(delivery, delivery.deliver());
+        meterRegistry.counter("deliveries_delivered").increment();
         return ResponseEntity.ok().build();
     }
 
