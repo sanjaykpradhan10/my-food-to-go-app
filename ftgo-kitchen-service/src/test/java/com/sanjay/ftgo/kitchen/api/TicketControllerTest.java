@@ -3,6 +3,9 @@ package com.sanjay.ftgo.kitchen.api;
 import com.sanjay.ftgo.kitchen.domain.Ticket;
 import com.sanjay.ftgo.kitchen.domain.TicketDomainEventPublisher;
 import com.sanjay.ftgo.kitchen.domain.TicketRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -13,6 +16,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.ZonedDateTime;
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -34,6 +40,16 @@ class TicketControllerTest {
 
     @MockitoBean
     private TicketDomainEventPublisher domainEventPublisher;
+
+    @MockitoBean
+    private MeterRegistry meterRegistry;
+
+    // This class asserts HTTP status codes, not counter values (see TicketControllerMetricsTest
+    // for those) - stub counter() so controller.increment() calls on the mocked registry don't NPE.
+    @BeforeEach
+    void stubMeterRegistry() {
+        lenient().when(meterRegistry.counter(anyString())).thenReturn(mock(Counter.class));
+    }
 
     @Test
     void acceptsAwaitingAcceptanceTicket() throws Exception {

@@ -6,6 +6,7 @@ import com.sanjay.ftgo.kitchen.domain.TicketDomainEventPublisher;
 import com.sanjay.ftgo.kitchen.domain.TicketNotFoundException;
 import com.sanjay.ftgo.kitchen.domain.TicketRepository;
 import com.sanjay.ftgo.kitchen.domain.UnsupportedStateTransitionException;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,10 +28,13 @@ public class TicketController {
 
     private final TicketRepository ticketRepository;
     private final TicketDomainEventPublisher domainEventPublisher;
+    private final MeterRegistry meterRegistry;
 
-    public TicketController(TicketRepository ticketRepository, TicketDomainEventPublisher domainEventPublisher) {
+    public TicketController(TicketRepository ticketRepository, TicketDomainEventPublisher domainEventPublisher,
+                             MeterRegistry meterRegistry) {
         this.ticketRepository = ticketRepository;
         this.domainEventPublisher = domainEventPublisher;
+        this.meterRegistry = meterRegistry;
     }
 
     @PreAuthorize("hasAnyRole('RESTAURANT', 'ADMIN')")
@@ -38,6 +42,7 @@ public class TicketController {
     public ResponseEntity<Void> accept(@PathVariable Long ticketId, @RequestBody AcceptTicketRequest request) {
         Ticket ticket = findTicket(ticketId);
         apply(ticket, ticket.accept(request.readyBy()));
+        meterRegistry.counter("tickets_accepted").increment();
         return ResponseEntity.ok().build();
     }
 
@@ -46,6 +51,7 @@ public class TicketController {
     public ResponseEntity<Void> preparing(@PathVariable Long ticketId) {
         Ticket ticket = findTicket(ticketId);
         apply(ticket, ticket.preparing());
+        meterRegistry.counter("tickets_preparing").increment();
         return ResponseEntity.ok().build();
     }
 
@@ -54,6 +60,7 @@ public class TicketController {
     public ResponseEntity<Void> readyForPickup(@PathVariable Long ticketId) {
         Ticket ticket = findTicket(ticketId);
         apply(ticket, ticket.readyForPickup());
+        meterRegistry.counter("tickets_ready_for_pickup").increment();
         return ResponseEntity.ok().build();
     }
 
@@ -62,6 +69,7 @@ public class TicketController {
     public ResponseEntity<Void> pickedUp(@PathVariable Long ticketId) {
         Ticket ticket = findTicket(ticketId);
         apply(ticket, ticket.pickedUp());
+        meterRegistry.counter("tickets_picked_up").increment();
         return ResponseEntity.ok().build();
     }
 
