@@ -6,6 +6,7 @@ import com.sanjay.ftgo.common.outbox.OutboxEvent;
 import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEvent;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,17 +21,20 @@ public class AuthorizationCancelService {
     private final AuthorizationDomainEventPublisher domainEventPublisher;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
 
     public AuthorizationCancelService(AuthorizationRepository authorizationRepository,
                                        ProcessedEventRepository processedEventRepository,
                                        AuthorizationDomainEventPublisher domainEventPublisher,
                                        OutboxEventRepository outboxEventRepository,
-                                       ObjectMapper objectMapper) {
+                                       ObjectMapper objectMapper,
+                                       MeterRegistry meterRegistry) {
         this.authorizationRepository = authorizationRepository;
         this.processedEventRepository = processedEventRepository;
         this.domainEventPublisher = domainEventPublisher;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
     }
 
     // Choreography: delivery-service's DeliveryCancelled domain event triggers this directly
@@ -51,6 +55,7 @@ public class AuthorizationCancelService {
         }
         List<AuthorizationDomainEvent> events = authorization.reverse();
         authorizationRepository.save(authorization);
+        meterRegistry.counter("authorizations_reversed").increment();
         domainEventPublisher.publish(events);
     }
 
@@ -71,6 +76,7 @@ public class AuthorizationCancelService {
         }
         authorization.reverse();
         authorizationRepository.save(authorization);
+        meterRegistry.counter("authorizations_reversed").increment();
         publishReply("AuthorizationReversed", orderId, null, sagaType);
     }
 

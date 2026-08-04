@@ -6,6 +6,7 @@ import com.sanjay.ftgo.common.outbox.OutboxEvent;
 import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEvent;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,19 +23,22 @@ public class SagaJoinService {
     private final OutboxEventRepository outboxEventRepository;
     private final AuthorizationDomainEventPublisher domainEventPublisher;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
 
     public SagaJoinService(SagaJoinStateRepository sagaJoinStateRepository,
                             AuthorizationRepository authorizationRepository,
                             ProcessedEventRepository processedEventRepository,
                             OutboxEventRepository outboxEventRepository,
                             AuthorizationDomainEventPublisher domainEventPublisher,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            MeterRegistry meterRegistry) {
         this.sagaJoinStateRepository = sagaJoinStateRepository;
         this.authorizationRepository = authorizationRepository;
         this.processedEventRepository = processedEventRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.domainEventPublisher = domainEventPublisher;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
     }
 
     @Transactional
@@ -123,6 +127,7 @@ public class SagaJoinService {
                 ? Authorization.authorize(orderId, totalQuantity)
                 : Authorization.decline(orderId, "order quantity exceeds authorization limit", totalQuantity);
         authorizationRepository.save(result.authorization());
+        meterRegistry.counter(authorized ? "authorizations_approved" : "authorizations_declined").increment();
 
         if (authorized) {
             publishReply("CardAuthorized", orderId, null, "CreateOrder");
@@ -146,6 +151,7 @@ public class SagaJoinService {
                 ? Authorization.authorize(state.getOrderId(), state.getTotalQuantity())
                 : Authorization.decline(state.getOrderId(), "order quantity exceeds authorization limit", state.getTotalQuantity());
         authorizationRepository.save(result.authorization());
+        meterRegistry.counter(authorized ? "authorizations_approved" : "authorizations_declined").increment();
         domainEventPublisher.publish(result.events());
     }
 

@@ -4,6 +4,7 @@ import com.sanjay.ftgo.common.outbox.OutboxEvent;
 import com.sanjay.ftgo.common.outbox.OutboxEventRepository;
 import com.sanjay.ftgo.common.outbox.ProcessedEventRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -24,9 +25,11 @@ class AuthorizationCancelServiceTest {
     private final AuthorizationDomainEventPublisher domainEventPublisher = mock(AuthorizationDomainEventPublisher.class);
     private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private final AuthorizationCancelService service = new AuthorizationCancelService(
-            authorizationRepository, processedEventRepository, domainEventPublisher, outboxEventRepository, objectMapper);
+            authorizationRepository, processedEventRepository, domainEventPublisher, outboxEventRepository, objectMapper,
+            meterRegistry);
 
     @Test
     void reverseForChoreographyReversesAndPublishesDomainEvent() {
