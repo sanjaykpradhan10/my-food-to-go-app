@@ -1,5 +1,8 @@
 package com.sanjay.ftgo.order.domain;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -12,7 +15,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,8 +32,16 @@ class JpaOrderTransitionsTest {
     @Mock
     private OrderDomainEventPublisher domainEventPublisher;
 
+    @Mock
+    private MeterRegistry meterRegistry;
+
     @InjectMocks
     private JpaOrderTransitions transitions;
+
+    @BeforeEach
+    void stubMeterRegistry() {
+        lenient().when(meterRegistry.counter(anyString())).thenReturn(mock(io.micrometer.core.instrument.Counter.class));
+    }
 
     private Order orderIn(OrderStatus status) {
         return new Order(42L, 1L, 1L, List.of(new OrderLineItem(10L, 2)), status);
@@ -197,5 +211,52 @@ class JpaOrderTransitionsTest {
         org.mockito.ArgumentCaptor<String> eventIdCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(domainEventPublisher).publishRevisionCompensationRequested(eq(order), eventIdCaptor.capture());
         assertThat(eventIdCaptor.getValue()).isNotEqualTo("evt-1");
+    }
+
+    @Test
+    void createIncrementsOrdersPlacedCounter() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        JpaOrderTransitions withMetrics = new JpaOrderTransitions(orderRepository, domainEventPublisher, meterRegistry);
+        when(orderRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        withMetrics.create(1L, 1L, List.of(new OrderLineItem(10L, 2)), "evt-1");
+
+        assertThat(meterRegistry.counter("orders_placed").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void approveIncrementsOrdersApprovedCounter() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        JpaOrderTransitions withMetrics = new JpaOrderTransitions(orderRepository, domainEventPublisher, meterRegistry);
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(orderIn(OrderStatus.APPROVAL_PENDING)));
+        when(orderRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        withMetrics.approve(42L, "evt-1");
+
+        assertThat(meterRegistry.counter("orders_approved").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void rejectIncrementsOrdersRejectedCounter() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        JpaOrderTransitions withMetrics = new JpaOrderTransitions(orderRepository, domainEventPublisher, meterRegistry);
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(orderIn(OrderStatus.APPROVAL_PENDING)));
+        when(orderRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        withMetrics.reject(42L, "evt-1");
+
+        assertThat(meterRegistry.counter("orders_rejected").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void cancelIncrementsOrdersCancelledCounter() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        JpaOrderTransitions withMetrics = new JpaOrderTransitions(orderRepository, domainEventPublisher, meterRegistry);
+        when(orderRepository.findById(42L)).thenReturn(Optional.of(orderIn(OrderStatus.APPROVED)));
+        when(orderRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        withMetrics.cancel(42L, "evt-1");
+
+        assertThat(meterRegistry.counter("orders_cancelled").count()).isEqualTo(1.0);
     }
 }
