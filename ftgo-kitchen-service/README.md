@@ -59,6 +59,15 @@ counters:
 Each appears in the exposition output with a `_total` suffix (e.g. `tickets_cancelled_total`).
 Scraped every 5s by the `prometheus` compose service.
 
+## Tracing (Ch.11, §11.3.3)
+
+Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 100% sampled
+(`management.tracing.sampling.probability: 1.0`). HTTP and JDBC spans come free from Spring Boot's
+autoconfiguration; Kafka producer/consumer spans require
+`spring.kafka.template.observation-enabled`/`spring.kafka.listener.observation-enabled: true`,
+both set here. Viewable in Grafana via the provisioned Tempo datasource, or queried directly
+against Tempo's search API.
+
 ## Events
 
 ### Publishes (`kitchen.events`, choreography)

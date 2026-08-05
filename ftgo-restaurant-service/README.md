@@ -69,6 +69,14 @@ counter:
 Appears in the exposition output with a `_total` suffix (`restaurants_created_total`). Scraped
 every 5s by the `prometheus` compose service.
 
+## Tracing (Ch.11, §11.3.3)
+
+Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 100% sampled
+(`management.tracing.sampling.probability: 1.0`). This service has no Kafka involvement at all
+(no producer, no consumer), so the automatic HTTP/JDBC span instrumentation from Spring Boot's
+autoconfiguration is all it needs. Viewable in Grafana via the provisioned Tempo datasource, or
+queried directly against Tempo's search API.
+
 ## Events
 
 None. This service doesn't produce or consume any Kafka events — it's reached only via synchronous REST (from order-service, via a circuit breaker).

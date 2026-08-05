@@ -16,3 +16,10 @@ Feature: Place, Revise, and Cancel Order (end-to-end)
     When the consumer places an order for 1 of the menu item at the restaurant
     Then the order is eventually approved
     And the order-service Prometheus counters "orders_placed_total" and "orders_approved_total" both eventually read at least 1
+
+  Scenario: Placing and approving an order produces a single trace spanning multiple services
+    Given a restaurant "Ajanta Tracing E2E" with a menu item "Lamb Biryani" priced at 14.00
+    And an active consumer "Tracing E2E Consumer"
+    When the consumer places an order for 1 of the menu item at the restaurant
+    Then the order is eventually approved
+    And Tempo eventually has a trace for "ftgo-public-gateway" spanning at least 2 distinct services

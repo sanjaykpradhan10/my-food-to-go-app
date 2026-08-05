@@ -27,6 +27,12 @@ public class KafkaProducerConfig {
 
     @Bean
     public KafkaTemplate<String, String> eventKafkaTemplate(ProducerFactory<String, String> eventProducerFactory) {
-        return new KafkaTemplate<>(eventProducerFactory);
+        KafkaTemplate<String, String> template = new KafkaTemplate<>(eventProducerFactory);
+        // This bean bypasses Boot's KafkaAutoConfiguration (which normally reads
+        // spring.kafka.template.observation-enabled), so tracing must be turned on
+        // explicitly here or every Kafka producer in the codebase silently loses
+        // traceparent propagation.
+        template.setObservationEnabled(true);
+        return template;
     }
 }

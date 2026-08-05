@@ -59,6 +59,19 @@ counter:
 Appears in the exposition output with a `_total` suffix (`order_views_updated_total`). Scraped
 every 5s by the `prometheus` compose service.
 
+## Tracing (Ch.11, §11.3.3)
+
+Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 100% sampled
+(`management.tracing.sampling.probability: 1.0`). HTTP and JDBC spans come free from Spring Boot's
+autoconfiguration. This service publishes nothing, so only `spring.kafka.listener.observation-enabled: true`
+is set — but that property alone isn't enough here: `KafkaConsumerConfig` hand-builds a
+`ConcurrentKafkaListenerContainerFactory` bean (to get retry behavior for optimistic-lock races
+across its four listeners — see below), and a hand-built factory bypasses Boot's property-driven
+autoconfiguration of the default listener factory. The fix is an explicit
+`factory.getContainerProperties().setObservationEnabled(true)` call in that same `@Bean` method.
+Viewable in Grafana via the provisioned Tempo datasource, or queried directly against Tempo's
+search API.
+
 ## Events consumed
 
 One `@KafkaListener` per topic, all sharing Kafka consumer group `order-history-service`, all deserializing with Jackson and routing into one shared `OrderViewService`:

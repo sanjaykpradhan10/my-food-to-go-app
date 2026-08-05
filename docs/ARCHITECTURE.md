@@ -1046,3 +1046,146 @@ Verified by `ftgo-end-to-end-test`'s Cucumber scenario exercising order-service'
 manual Docker Compose verification (scrape targets up, alert rules loaded, dashboard renders) done
 live during this sub-project's build. A full dedicated section with sequence diagrams is deferred
 to Ch.11's eventual chapter-completion documentation sweep, same as the health-check section above.
+
+## Distributed tracing (Ch.11, §11.3.3)
+
+All 9 services (7 business services + 2 gateways) export distributed traces via **Micrometer
+Tracing** bridged to **OpenTelemetry** (`micrometer-tracing-bridge-otel` +
+`opentelemetry-exporter-otlp`, added to the same `actuatorModules` block in the root `build.gradle`
+that already carries `spring-boot-starter-actuator` and `micrometer-registry-prometheus`), rather
+than Spring Cloud Sleuth + Zipkin — Sleuth is deprecated (in maintenance mode since Spring Boot
+2.6, with Micrometer Tracing as its official replacement) and would be the wrong pattern to teach
+for a project already on Spring Boot 3.5.
+
+**Export target — Grafana Tempo.** Each service's `application.yml` sets a `localhost`-based
+default, following this project's usual convention for environment-dependent values (same pattern
+as `spring.kafka.bootstrap-servers`/`spring.datasource.url`): `compose.yml` overrides it per
+service via `MANAGEMENT_OTLP_TRACING_ENDPOINT`:
+
+```yaml
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
+```
+
+Traces ship over OTLP/HTTP to a new `tempo` `compose.yml` service (`grafana/tempo:2.6.1`, local
+disk backend, 24h block retention — `tempo/tempo.yaml`), exposing its OTLP HTTP receiver on 4318
+(published to the host, so the `localhost` default also works when running a service outside
+Docker against a Compose-hosted Tempo) and its query API on 3200. A
+`grafana/provisioning/datasources/tempo.yml` datasource wires Tempo into the existing Grafana
+instance (the one already provisioned for Ch.11's application-metrics dashboard), so traces are
+browsable there alongside the Prometheus-backed panels.
+
+**100% sampling** (`probability: 1.0`) is a deliberate choice for a learning project driven by
+manual/scripted e2e requests rather than production traffic volume: a percentage-based sampler
+tuned for production (e.g. 10%) would make the very requests this project uses to demonstrate the
+pattern likely to go unsampled, defeating the point. It guarantees the `ftgo-end-to-end-test`
+scenario's trace is always exported and queryable.
+
+**Automatic instrumentation.** HTTP server/client spans (Spring MVC controllers, `RestClient`
+calls) and JDBC spans come for free from Spring Boot's autoconfiguration once
+`micrometer-tracing-bridge-otel` is on the classpath — no manual `@NewSpan`/`Tracer` code was
+needed anywhere in this sub-project's services.
+
+**Kafka span propagation** is not automatic in the same way: it requires two explicit properties
+per service, `spring.kafka.template.observation-enabled: true` (producer side) and
+`spring.kafka.listener.observation-enabled: true` (consumer side), set in
+order/kitchen/accounting/delivery/consumer/order-history-service's `application.yml` (the 6
+services that produce or consume Kafka events in this project; `ftgo-restaurant-service` has no
+Kafka involvement at all). `ftgo-consumer-service` only carries the `listener` property — it
+publishes its own events via the Ch.3 CDC/outbox pipeline rather than a `KafkaTemplate`, so there's
+no matching producer-side property to set.
+
+Two services in this project hand-build a Kafka bean instead of relying on Boot's
+property-driven autoconfiguration, and in both cases that bypasses the `spring.kafka.*`
+observation properties above — the property alone has no effect on a custom bean, and it needs an
+explicit `setObservationEnabled(true)` call instead:
+
+- `ftgo-order-history-service`'s `KafkaConsumerConfig` hand-builds a
+  `ConcurrentKafkaListenerContainerFactory` bean (to get retry behavior for optimistic-lock races
+  across its four listeners — see the CQRS section above):
+  ```java
+  factory.getContainerProperties().setObservationEnabled(true);
+  ```
+- `ftgo-common`'s `KafkaProducerConfig` hand-builds the one and only `KafkaTemplate` used across
+  the whole codebase (`eventKafkaTemplate`, shared by `OutboxPublisher` and order-service's
+  `SagaCommandRequestPublisher`). This was initially missed during implementation — the template
+  had no observation call, so `spring.kafka.template.observation-enabled: true` in every service's
+  `application.yml` was silently inert and no Kafka message anywhere carried a `traceparent`
+  header, breaking Kafka-side trace linkage project-wide. Fixed the same way:
+  ```java
+  template.setObservationEnabled(true);
+  ```
+
+**Gateway reactive context propagation.** Spring Boot 3.5's `ContextPropagationAutoConfiguration`
+is documented to enable Reactor's automatic context propagation once `context-propagation` and
+`reactor-core` are both on the classpath — which is necessary for a trace's span context to
+survive a WebFlux gateway's reactive filter chain rather than getting lost between the request
+thread and whatever thread completes the downstream `WebClient` call. Verification tests
+(`ContextPropagationTest` in each gateway module) showed
+`Hooks.isAutomaticContextPropagationEnabled()` was still `false` at runtime in this project's
+gateway configuration, so `ftgo-gateway-common`'s `GatewayCommonAutoConfiguration` adds an explicit
+fallback:
+
+```java
+@Bean
+public InitializingBean enableReactorContextPropagation() {
+    return () -> reactor.core.publisher.Hooks.enableAutomaticContextPropagation();
+}
+```
+
+This guarantees the trace context set up by `RequestLoggingFilter`/`JwtValidationFilter` survives
+across both gateways' reactive chains rather than only covering the initial Netty request thread.
+
+**End-to-end verification** mirrors the Prometheus-counter-polling pattern from the
+application-metrics section above, but against Tempo's HTTP API instead of Prometheus's:
+`PlaceReviseCancelOrder.feature`'s tracing scenario places an order through the full stack, then
+polls `GET /api/search` on Tempo for a trace tagged with `service.name=ftgo-public-gateway`,
+fetches it via `GET /api/traces/{traceId}`, and asserts its spans cover at least 2 distinct
+`service.name` values *and* specifically include `ftgo-kitchen-service`. The plain `>= 2` check
+alone isn't sufficient proof of Kafka-side propagation — a gateway → order-service HTTP hop
+satisfies it even if every Kafka producer/consumer span is broken, which is exactly the failure
+mode a final whole-branch review caught in this sub-project (see below). `ftgo-kitchen-service` is
+only reachable in this scenario via the choreography saga's Kafka events fired after order
+placement, never a direct HTTP call from the gateway, so requiring its presence actually proves a
+trace crossed a Kafka hop rather than only an HTTP one.
+
+**Why `setObservationEnabled(true)` alone isn't enough for outbox-published events.** Every
+domain event in this project is sent through `OutboxPublisher`, a `@Scheduled` poller that runs on
+its own thread with no active trace/span context — it isn't handling the HTTP request or Kafka
+message that originally caused the outbox row to be written. A live e2e run against the real stack
+(not visible from unit tests or code review) showed that even with the producer-side observation
+bean correctly instrumented, every event published from the poller started a *new*, disconnected
+root trace instead of continuing the request's trace: kitchen-service's Kafka-consumer spans were
+real but each rooted at itself, never linked back to the gateway/order-service trace that placed
+the order.
+
+The fix captures the W3C `traceparent` at the moment the event is *created* (while the original
+request's span is still current) and replays it when the poller actually sends it later:
+
+- `OutboxEvent` gained a nullable `traceparent` column, populated in its constructor via
+  `TraceContextCapture.captureCurrentTraceparent()` — a small `@Component` holding static
+  `Tracer`/`Propagator` references, since `OutboxEvent` is a plain JPA entity with no DI of its own
+  and is constructed from roughly ten call sites spread across every Kafka-producing service's
+  domain code.
+- `OutboxPublisher.sendWithOriginalTraceContext` extracts that stored `traceparent` via
+  `Propagator.extract`, starts a `PRODUCER`-kind `Span` from it, and calls `kafkaTemplate.send()`
+  inside `tracer.withSpan(span)` — so the Kafka observation instrumentation parents the producer
+  span (and the header it injects onto the record) under the *original* trace rather than one
+  rooted at the scheduled task. Both `Tracer`/`Propagator` are optional
+  (`@Autowired(required = false)`): a plain unit test or a non-tracing environment leaves them
+  null, and the poller falls back to a plain untraced `kafkaTemplate.send()`, identical to its
+  behavior before this fix existed.
+
+Confirmed via a direct Tempo API query (`GET /api/traces/{id}`) against a live order-placement
+trace: all 7 business/gateway services appear as spans within the single trace rooted at the
+gateway's HTTP request, including kitchen-service and order-history-service — both reachable only
+via the Kafka hop this fix repairs.
+
+This fix covers the default `OUTBOX_PUBLISH_MODE=polling` path only. In `cdc` mode, Debezium's
+`EventRouter` transform reads the outbox table directly and doesn't map the `traceparent` column
+onto the outgoing Kafka message, so events published via CDC carry no trace context.

@@ -55,6 +55,18 @@ counter:
 Appears in the exposition output with a `_total` suffix (`consumers_created_total`). Scraped every
 5s by the `prometheus` compose service.
 
+## Tracing (Ch.11, §11.3.3)
+
+Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 100% sampled
+(`management.tracing.sampling.probability: 1.0`). HTTP and JDBC spans come free from Spring
+Boot's autoconfiguration. This service's `@KafkaListener`s (`VerifyConsumerCommandListener`,
+`OrderEventListener`) run on Boot's autoconfigured, property-driven listener container factory —
+unlike `ftgo-order-history-service`'s hand-built one — so `spring.kafka.listener.observation-enabled: true`
+alone is enough to get their consumer spans; there is no matching
+`spring.kafka.template.observation-enabled` property here since this service publishes its own
+events via the Ch.3 CDC/outbox pipeline rather than a `KafkaTemplate`. Viewable in Grafana via the
+provisioned Tempo datasource, or queried directly against Tempo's search API.
+
 ## Events
 
 ### Publishes

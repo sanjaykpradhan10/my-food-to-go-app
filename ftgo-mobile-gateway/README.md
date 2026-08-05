@@ -56,6 +56,17 @@ have neither of their own. `management.endpoint.health.show-details: always` for
 given in the business services' READMEs. Verified against the real, running stack by
 `ftgo-end-to-end-test`'s `AllServicesReportHealthy.feature`.
 
+## Tracing (Ch.11, §11.3.3)
+
+Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 100% sampled
+(`management.tracing.sampling.probability: 1.0`), viewable in Grafana via the provisioned Tempo
+datasource. Reactive trace-context propagation across this gateway's WebFlux filter chain
+(`RequestLoggingFilter`, `JwtValidationFilter`, and the `OrderDetailsRouterConfig` fan-out) relies
+on `ftgo-gateway-common`'s `GatewayCommonAutoConfiguration` explicitly enabling
+`Hooks.enableAutomaticContextPropagation()`, since Spring Boot's own
+`ContextPropagationAutoConfiguration` was verified not to enable it by default in this project's
+configuration.
+
 ## Running standalone
 
 ```bash

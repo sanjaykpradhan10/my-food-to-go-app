@@ -43,6 +43,16 @@ public class OutboxEvent {
     @Column(name = "sent_at")
     private Instant sentAt;
 
+    // W3C traceparent captured at creation time (whichever request/message thread is handling the
+    // original operation), not at publish time — OutboxPublisher's @Scheduled poll runs on its own
+    // thread with no trace context of its own, so without this every published event would start a
+    // brand-new trace instead of continuing the one that actually caused it. Nullable: absent in a
+    // plain unit test or any context with no tracing infrastructure configured (see
+    // TraceContextCapture), in which case OutboxPublisher just sends untraced, same as before this
+    // column existed.
+    @Column(name = "traceparent")
+    private String traceparent;
+
     protected OutboxEvent() {
     }
 
@@ -52,6 +62,7 @@ public class OutboxEvent {
         this.aggregateId = aggregateId;
         this.topic = topic;
         this.payload = payload;
+        this.traceparent = TraceContextCapture.captureCurrentTraceparent();
     }
 
     public Long getId() {
@@ -80,6 +91,10 @@ public class OutboxEvent {
 
     public Instant getSentAt() {
         return sentAt;
+    }
+
+    public String getTraceparent() {
+        return traceparent;
     }
 
     public boolean isSent() {
