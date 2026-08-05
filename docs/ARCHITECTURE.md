@@ -1185,3 +1185,7 @@ Confirmed via a direct Tempo API query (`GET /api/traces/{id}`) against a live o
 trace: all 7 business/gateway services appear as spans within the single trace rooted at the
 gateway's HTTP request, including kitchen-service and order-history-service — both reachable only
 via the Kafka hop this fix repairs.
+
+This fix covers the default `OUTBOX_PUBLISH_MODE=polling` path only. In `cdc` mode, Debezium's
+`EventRouter` transform reads the outbox table directly and doesn't map the `traceparent` column
+onto the outgoing Kafka message, so events published via CDC carry no trace context.
