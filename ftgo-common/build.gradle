@@ -27,6 +27,15 @@ dependencies {
     // consuming service's own build.gradle (which used to separately declare spring-kafka).
     api 'org.springframework.boot:spring-boot-starter-data-jpa'
     api 'org.springframework.kafka:spring-kafka'
+    // Bridge-agnostic tracing API only (no bridge-otel here) — OutboxPublisher needs Tracer/
+    // Propagator to re-parent a Kafka send under the trace that was active when the outbox row
+    // was written, since its own @Scheduled poll runs with no request/message context of its
+    // own. Every service that actually uses OutboxPublisher is in the root build.gradle's
+    // actuatorModules list and brings micrometer-tracing-bridge-otel onto its own runtime
+    // classpath, so these beans resolve to a real implementation there; anywhere else (e.g. a
+    // plain unit test with no tracing infrastructure) they're simply absent and injected as null.
+    compileOnly 'io.micrometer:micrometer-tracing'
+    testImplementation 'io.micrometer:micrometer-tracing'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 

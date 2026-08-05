@@ -1153,3 +1153,35 @@ mode a final whole-branch review caught in this sub-project (see below). `ftgo-k
 only reachable in this scenario via the choreography saga's Kafka events fired after order
 placement, never a direct HTTP call from the gateway, so requiring its presence actually proves a
 trace crossed a Kafka hop rather than only an HTTP one.
+
+**Why `setObservationEnabled(true)` alone isn't enough for outbox-published events.** Every
+domain event in this project is sent through `OutboxPublisher`, a `@Scheduled` poller that runs on
+its own thread with no active trace/span context — it isn't handling the HTTP request or Kafka
+message that originally caused the outbox row to be written. A live e2e run against the real stack
+(not visible from unit tests or code review) showed that even with the producer-side observation
+bean correctly instrumented, every event published from the poller started a *new*, disconnected
+root trace instead of continuing the request's trace: kitchen-service's Kafka-consumer spans were
+real but each rooted at itself, never linked back to the gateway/order-service trace that placed
+the order.
+
+The fix captures the W3C `traceparent` at the moment the event is *created* (while the original
+request's span is still current) and replays it when the poller actually sends it later:
+
+- `OutboxEvent` gained a nullable `traceparent` column, populated in its constructor via
+  `TraceContextCapture.captureCurrentTraceparent()` — a small `@Component` holding static
+  `Tracer`/`Propagator` references, since `OutboxEvent` is a plain JPA entity with no DI of its own
+  and is constructed from roughly ten call sites spread across every Kafka-producing service's
+  domain code.
+- `OutboxPublisher.sendWithOriginalTraceContext` extracts that stored `traceparent` via
+  `Propagator.extract`, starts a `PRODUCER`-kind `Span` from it, and calls `kafkaTemplate.send()`
+  inside `tracer.withSpan(span)` — so the Kafka observation instrumentation parents the producer
+  span (and the header it injects onto the record) under the *original* trace rather than one
+  rooted at the scheduled task. Both `Tracer`/`Propagator` are optional
+  (`@Autowired(required = false)`): a plain unit test or a non-tracing environment leaves them
+  null, and the poller falls back to a plain untraced `kafkaTemplate.send()`, identical to its
+  behavior before this fix existed.
+
+Confirmed via a direct Tempo API query (`GET /api/traces/{id}`) against a live order-placement
+trace: all 7 business/gateway services appear as spans within the single trace rooted at the
+gateway's HTTP request, including kitchen-service and order-history-service — both reachable only
+via the Kafka hop this fix repairs.
