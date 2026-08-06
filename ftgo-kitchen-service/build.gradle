@@ -25,6 +25,7 @@ dependencies {
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
     implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.cloud:spring-cloud-starter-config'
 
     // kitchen-service is the provider for the shouldCreateTicket contract; contractsDslDir above
     // (not this dependency) is what makes the plugin find the Groovy DSL files at build time.

@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.lang.Nullable;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,7 +47,6 @@ public class OutboxPublisher {
         this.propagator = propagator;
     }
 
-    @Scheduled(fixedDelayString = "${outbox.poll-fixed-delay-ms:2000}")
     @Transactional
     public void publishPendingEvents() {
         List<OutboxEvent> pending = outboxEventRepository.findBySentAtIsNullOrderByIdAsc()

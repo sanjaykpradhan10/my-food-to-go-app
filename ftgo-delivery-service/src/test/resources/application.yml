@@ -1,4 +1,13 @@
 spring:
+  # spring-cloud-starter-config (added for live outbox-interval refresh) makes
+  # ConfigDataMissingEnvironmentPostProcessor require a spring.config.import property once it's
+  # on the classpath; "optional:" plus config.enabled=false here means the test context boots
+  # without ever attempting a real network call to a config server.
+  config:
+    import: "optional:configserver:"
+  cloud:
+    config:
+      enabled: false
   datasource:
     url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MySQL
     driver-class-name: org.h2.Driver
