@@ -2,12 +2,6 @@ spring:
   application:
     name: ftgo-config-server
   cloud:
-    # spring-cloud-dependencies 2024.0.0 (root build.gradle) officially targets Spring Boot
-    # 3.4.x; this repo is on Boot 3.5.16. spring-cloud-commons' compatibility verifier fails
-    # startup over that mismatch even though config-server itself works fine against 3.5.x
-    # in practice, so it's disabled here rather than downgrading Boot repo-wide.
-    compatibility-verifier:
-      enabled: false
     config:
       server:
         git:
