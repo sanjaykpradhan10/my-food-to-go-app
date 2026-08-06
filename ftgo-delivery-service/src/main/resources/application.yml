@@ -1,6 +1,11 @@
 spring:
   application:
     name: ftgo-delivery-service
+  config:
+    import: "optional:configserver:http://localhost:8888"
+  cloud:
+    config:
+      fail-fast: false
   datasource:
     url: jdbc:mysql://localhost:3306/ftgo_delivery
     username: ftgo

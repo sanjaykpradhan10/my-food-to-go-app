@@ -1,7 +1,11 @@
 spring:
   application:
     name: ftgo-mobile-gateway
+  config:
+    import: "optional:configserver:http://localhost:8888"
   cloud:
+    config:
+      fail-fast: false
     gateway:
       routes:
         - id: mobile-create-order
