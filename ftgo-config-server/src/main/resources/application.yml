@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: ftgo-config-server
+  cloud:
+    # spring-cloud-dependencies 2024.0.0 (root build.gradle) officially targets Spring Boot
+    # 3.4.x; this repo is on Boot 3.5.16. spring-cloud-commons' compatibility verifier fails
+    # startup over that mismatch even though config-server itself works fine against 3.5.x
+    # in practice, so it's disabled here rather than downgrading Boot repo-wide.
+    compatibility-verifier:
+      enabled: false
+    config:
+      server:
+        git:
+          # Gradle's bootRun working directory for a subproject is that subproject's own
+          # directory, so "${user.dir}/.." resolves to the repo root when run locally
+          # (./gradlew :ftgo-config-server:bootRun). The Docker image overrides this via
+          # CONFIG_SERVER_GIT_URI (see compose.yml) to point at /config-source-repo, the full
+          # workspace checkout copied into the runtime image (see Dockerfile).
+          uri: ${CONFIG_SERVER_GIT_URI:file://${user.dir}/..}
+          search-paths: config-repo
+          clone-on-start: true
+
+server:
+  port: 8888

@@ -1,0 +1,7 @@
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, refresh
+outbox:
+  poll-fixed-delay-ms: "2000"
