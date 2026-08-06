@@ -6,12 +6,15 @@ import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -28,6 +31,13 @@ public class PlaceReviseCancelOrderStepDefinitions {
     private static final String RESTAURANT_SERVICE_BASE_URL = "http://localhost:8085";
     private static final String CONSUMER_SERVICE_BASE_URL = "http://localhost:8081";
     private static final String GATEWAY_BASE_URL = "http://localhost:8091/api/v1";
+    // Direct (non-gateway) call, same pattern as RESTAURANT_SERVICE_BASE_URL/CONSUMER_SERVICE_BASE_URL:
+    // the gateway has no route for order-service's actuator endpoints.
+    private static final String ORDER_SERVICE_BASE_URL = "http://localhost:8082";
+    // Test JVM's working directory for this module is ftgo-end-to-end-test/ (gradle default for a
+    // subproject Test task), so ".." reaches the repo root where config-repo/ actually lives.
+    private static final Path ORDER_SERVICE_CONFIG_FILE =
+            Path.of(System.getProperty("user.dir"), "..", "config-repo", "ftgo-order-service.yml");
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -38,6 +48,7 @@ public class PlaceReviseCancelOrderStepDefinitions {
     private long menuItemId;
     private long consumerId;
     private long orderId;
+    private long publishDelayMillis;
 
     public PlaceReviseCancelOrderStepDefinitions(OrderIdHolder orderIdHolder) {
         this.orderIdHolder = orderIdHolder;
@@ -121,6 +132,60 @@ public class PlaceReviseCancelOrderStepDefinitions {
     @Then("the order is eventually cancelled")
     public void theOrderIsEventuallyCancelled() throws Exception {
         assertEquals("CANCELLED", pollForFinalStatus("CANCEL_PENDING"));
+    }
+
+    @Given("the outbox poll interval for ftgo-order-service is set to {int} milliseconds via the config repo")
+    public void setOutboxPollInterval(int millis) throws IOException {
+        // Mirrors config-repo/ftgo-order-service.yml's existing shape exactly (Task 1) — only the
+        // poll interval changes; batch-size and saga.mode are left at their checked-in values.
+        String content = String.format(
+                "outbox:%n  poll-fixed-delay-ms: %d%n  batch-size: 20%n%nsaga:%n  mode: choreography%n",
+                millis);
+        Files.writeString(ORDER_SERVICE_CONFIG_FILE, content);
+    }
+
+    @When("I set the outbox poll interval for ftgo-order-service to {int} milliseconds via the config repo")
+    public void updateOutboxPollInterval(int millis) throws IOException {
+        setOutboxPollInterval(millis);
+    }
+
+    @When("I refresh the configuration for ftgo-order-service")
+    public void refreshOrderServiceConfig() throws Exception {
+        // /actuator/refresh isn't in SecurityConfig's permitAll list (only health/prometheus are),
+        // so it needs an authenticated caller like every other non-public order-service endpoint.
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(ORDER_SERVICE_BASE_URL + "/actuator/refresh"))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + tokenClient.tokenFor("admin1", "password"))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), "Config refresh failed: " + response.body());
+    }
+
+    @When("I place an order and measure the outbox publish delay")
+    public void placeOrderAndMeasureDelay() throws Exception {
+        long start = System.currentTimeMillis();
+        theConsumerPlacesAnOrder(1);
+        // No direct Kafka-consumer step exists in this suite; an order only leaves
+        // APPROVAL_PENDING once kitchen-service has consumed the OrderCreated event that the
+        // outbox poller published, so this is the observable proxy for "outbox publish happened".
+        pollForFinalStatus("APPROVAL_PENDING");
+        publishDelayMillis = System.currentTimeMillis() - start;
+    }
+
+    @When("I place another order and measure the outbox publish delay")
+    public void placeAnotherOrderAndMeasureDelay() throws Exception {
+        placeOrderAndMeasureDelay();
+    }
+
+    @Then("the measured outbox publish delay is close to {int} milliseconds")
+    public void assertPublishDelayCloseTo(int expectedMillis) {
+        // Generous tolerance: this measures wall-clock time across an HTTP call, a DB write, a
+        // scheduled poll, Kafka delivery, and the kitchen-service's own processing, not just the
+        // poll interval in isolation.
+        assertTrue(publishDelayMillis >= expectedMillis && publishDelayMillis <= expectedMillis + 5000L,
+                "Expected publish delay near " + expectedMillis + "ms, was " + publishDelayMillis + "ms");
     }
 
     @Then("the order-service Prometheus counters {string} and {string} both eventually read at least 1")

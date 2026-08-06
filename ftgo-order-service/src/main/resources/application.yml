@@ -85,7 +85,11 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, prometheus
+        # refresh must be exposed locally, not only via config-repo/application.yml's broader
+        # list: a spring.config.import from config-server doesn't reliably take precedence over
+        # this file's own management.endpoints.web.exposure.include, and /actuator/refresh has to
+        # work even when config-server is unreachable (see the non-blocking-fallback scenario).
+        include: health, prometheus, refresh
   endpoint:
     health:
       show-details: always
