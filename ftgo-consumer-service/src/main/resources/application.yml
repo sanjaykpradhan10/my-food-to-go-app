@@ -1,6 +1,11 @@
 spring:
   application:
     name: ftgo-consumer-service
+  # spring.config.import intentionally not declared here; see root build.gradle's bootRun
+  # SPRING_CONFIG_IMPORT default / compose.yml for why (Config Data import precedence).
+  cloud:
+    config:
+      fail-fast: false
   datasource:
     url: jdbc:mysql://localhost:3306/ftgo_consumer
     username: ftgo

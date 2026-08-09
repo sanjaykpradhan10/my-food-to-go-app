@@ -49,7 +49,7 @@ def reactiveModules = ['ftgo-common', 'ftgo-gateway-common', 'ftgo-mobile-gatewa
 // pulling in JPA/MySQL it never uses. Unlike ftgo-authorization-server, ftgo-service-registry
 // stays on the default block below even though it also skips JPA — it already relies on that
 // block for its web starter (its own build.gradle only declares the Eureka server starter).
-def noDefaultWebJpaModules = reactiveModules + ['ftgo-authorization-server']
+def noDefaultWebJpaModules = reactiveModules + ['ftgo-authorization-server', 'ftgo-config-server']
 
 configure(subprojects.findAll { !noDefaultWebJpaModules.contains(it.name) }) {
     dependencies {
@@ -76,5 +76,25 @@ configure(subprojects.findAll { actuatorModules.contains(it.name) }) {
         implementation 'io.micrometer:micrometer-registry-prometheus'
         implementation 'io.micrometer:micrometer-tracing-bridge-otel'
         implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+    }
+}
+
+// Spring Boot's Config Data API inserts an import's properties immediately below the document
+// that declares "spring.config.import" — so a key declared in that *same* application.yml always
+// wins over the same key coming from the import, no matter what spring.cloud.config.allow-override
+// / override-none say (those only ever governed the legacy bootstrap-context client). That is the
+// opposite of this project's intended "compose env vars > config-server > local application.yml"
+// precedence, and was confirmed against ftgo-order-service: config-repo/application.yml's broader
+// management.endpoints.web.exposure.include list lost to the narrower one in this file.
+//
+// The fix used everywhere in this project (see compose.yml's SPRING_CONFIG_IMPORT env var) is to
+// never declare spring.config.import inside a service's own application.yml at all — declaring it
+// as an environment variable/system property instead makes it part of a *higher*-precedence,
+// separate property source, so the config-server import it triggers now correctly outranks the
+// service's local application.yml. This gives local `./gradlew bootRun` the same behavior compose
+// already had, without requiring every developer to export SPRING_CONFIG_IMPORT by hand.
+configure(subprojects.findAll { actuatorModules.contains(it.name) }) {
+    tasks.named('bootRun') {
+        environment 'SPRING_CONFIG_IMPORT', System.getenv('SPRING_CONFIG_IMPORT') ?: 'optional:configserver:http://localhost:8888'
     }
 }

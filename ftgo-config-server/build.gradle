@@ -1,0 +1,17 @@
+// Root build.gradle's spring-cloud-dependencies BOM predates the Boot version pinned at the
+// root (3.5.16) — see ftgo-gateway-common/build.gradle for the same override and rationale.
+dependencyManagement {
+    imports {
+        mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2025.0.3'
+    }
+}
+
+// spring-cloud-config-server pulls in spring-boot-starter-web transitively, but this module
+// declares it directly for the same reason ftgo-authorization-server does: it's excluded from
+// the root build.gradle's default web/JPA block (see noDefaultWebJpaModules), so nothing else
+// supplies it.
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.cloud:spring-cloud-config-server'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}

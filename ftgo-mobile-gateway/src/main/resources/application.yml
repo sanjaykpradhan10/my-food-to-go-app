@@ -1,7 +1,11 @@
 spring:
   application:
     name: ftgo-mobile-gateway
+  # spring.config.import intentionally not declared here; see root build.gradle's bootRun
+  # SPRING_CONFIG_IMPORT default / compose.yml for why (Config Data import precedence).
   cloud:
+    config:
+      fail-fast: false
     gateway:
       routes:
         - id: mobile-create-order

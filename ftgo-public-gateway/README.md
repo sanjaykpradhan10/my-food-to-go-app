@@ -52,6 +52,12 @@ datasource. Reactive trace-context propagation across this gateway's WebFlux fil
 since Spring Boot's own `ContextPropagationAutoConfiguration` was verified not to enable it by
 default in this project's configuration.
 
+## Configuration (Ch.11, §11.2)
+
+Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults, no per-service override) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract).
+
+This service has no per-service override file in the config-repo — it uses the shared defaults for all properties (Kafka bootstrap-servers, Eureka defaultZone, JWT jwk-set-uri, etc.). Changing any property requires a full service restart.
+
 ## Running standalone
 
 ```bash

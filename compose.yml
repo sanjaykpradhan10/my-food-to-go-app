@@ -60,6 +60,19 @@ services:
       timeout: 5s
       retries: 10
 
+  config-server:
+    build:
+      context: .
+      dockerfile: ftgo-config-server/Dockerfile
+    ports:
+      - "8888:8888"
+    environment:
+      # Dockerfile copies the whole build-stage workspace checkout (.git included) to
+      # /config-source-repo specifically so JGit has a real git working copy to open; without
+      # this override application.yml's default (file://${user.dir}/..) resolves to "/" inside
+      # the container, which has no .git.
+      CONFIG_SERVER_GIT_URI: file:///config-source-repo
+
   kafka-connect:
     # 3.0.0.Final: 2.7.x issues SHOW MASTER STATUS against MySQL, which 8.4 removed
     # (renamed to SHOW BINARY LOG STATUS) — connector reports RUNNING while silently
@@ -119,10 +132,13 @@ services:
         condition: service_healthy
       tempo:
         condition: service_started
+      config-server:
+        condition: service_started
     ports:
       - "8085:8085"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_restaurant
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
       MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
@@ -149,10 +165,13 @@ services:
         condition: service_healthy
       tempo:
         condition: service_started
+      config-server:
+        condition: service_started
     ports:
       - "8082:8082"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
@@ -181,10 +200,13 @@ services:
         condition: service_healthy
       tempo:
         condition: service_started
+      config-server:
+        condition: service_started
     ports:
       - "8083:8083"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_kitchen
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       SAGA_MODE: ${SAGA_MODE:-choreography}
@@ -209,10 +231,13 @@ services:
         condition: service_healthy
       tempo:
         condition: service_started
+      config-server:
+        condition: service_started
     ports:
       - "8081:8081"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_consumer
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       SAGA_MODE: ${SAGA_MODE:-choreography}
@@ -238,10 +263,13 @@ services:
         condition: service_healthy
       tempo:
         condition: service_started
+      config-server:
+        condition: service_started
     ports:
       - "8084:8084"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_accounting
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       SAGA_MODE: ${SAGA_MODE:-choreography}
@@ -268,10 +296,13 @@ services:
         condition: service_healthy
       tempo:
         condition: service_started
+      config-server:
+        condition: service_started
     ports:
       - "8086:8086"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_delivery
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       SAGA_MODE: ${SAGA_MODE:-choreography}
@@ -298,10 +329,13 @@ services:
         condition: service_healthy
       tempo:
         condition: service_started
+      config-server:
+        condition: service_started
     ports:
       - "8088:8088"
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order_history
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
@@ -331,12 +365,15 @@ services:
         condition: service_healthy
       tempo:
         condition: service_started
+      config-server:
+        condition: service_started
     ports:
       - "8090:8090"
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       GATEWAY_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
       MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health"]
       interval: 10s
@@ -366,12 +403,15 @@ services:
         condition: service_healthy
       tempo:
         condition: service_started
+      config-server:
+        condition: service_started
     ports:
       - "8091:8091"
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       GATEWAY_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
       MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8091/actuator/health"]
       interval: 10s

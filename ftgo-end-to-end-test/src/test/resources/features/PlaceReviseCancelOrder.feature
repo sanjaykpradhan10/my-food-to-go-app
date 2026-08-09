@@ -23,3 +23,15 @@ Feature: Place, Revise, and Cancel Order (end-to-end)
     When the consumer places an order for 1 of the menu item at the restaurant
     Then the order is eventually approved
     And Tempo eventually has a trace for "ftgo-public-gateway" spanning at least 2 distinct services
+
+  Scenario: Live config refresh changes the outbox polling interval without a restart
+    Given a restaurant "Ajanta Config E2E" with a menu item "Butter Chicken" priced at 13.00
+    And an active consumer "Config E2E Consumer"
+    And the outbox poll interval for ftgo-order-service is set to 2000 milliseconds via the config repo
+    When I place an order and measure the outbox publish delay
+    Then the measured outbox publish delay is close to 2000 milliseconds
+    When I set the outbox poll interval for ftgo-order-service to 300 milliseconds via the config repo
+    And I refresh the configuration for ftgo-order-service
+    Then the order-service outbox poll interval reported by actuator is 300 milliseconds
+    And I place another order and measure the outbox publish delay
+    Then the measured outbox publish delay is close to 300 milliseconds

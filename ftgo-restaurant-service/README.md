@@ -77,6 +77,12 @@ Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 
 autoconfiguration is all it needs. Viewable in Grafana via the provisioned Tempo datasource, or
 queried directly against Tempo's search API.
 
+## Configuration (Ch.11, §11.2)
+
+Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults, no per-service override) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract).
+
+This service has no per-service override file in the config-repo — it uses the shared defaults for all properties (Kafka bootstrap-servers, Eureka defaultZone, JWT jwk-set-uri, etc.). Changing any property requires a full service restart.
+
 ## Events
 
 None. This service doesn't produce or consume any Kafka events — it's reached only via synchronous REST (from order-service, via a circuit breaker).

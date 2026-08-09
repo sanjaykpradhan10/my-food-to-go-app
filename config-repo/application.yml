@@ -1,0 +1,38 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:9000/oauth2/jwks
+
+gateway:
+  jwt:
+    jwk-set-uri: http://localhost:9000/oauth2/jwks
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # env added for the e2e suite's live-refresh scenario: it verifies
+        # config-server -> /actuator/refresh -> @RefreshScope actually took effect by reading the
+        # resolved outbox.poll-fixed-delay-ms straight out of order-service's Environment via
+        # GET /actuator/env/{key}, instead of inferring it from wall-clock timing.
+        include: health, prometheus, refresh, env
+  endpoint:
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
