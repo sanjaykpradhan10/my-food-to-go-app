@@ -1,3 +1,14 @@
+spring:
+  # spring-cloud-starter-config (added so this service participates in the config-server
+  # hierarchy) makes ConfigDataMissingEnvironmentPostProcessor require a spring.config.import
+  # property once it's on the classpath; "optional:" plus config.enabled=false here means the
+  # test context boots without ever attempting a real network call to a config server.
+  config:
+    import: "optional:configserver:"
+  cloud:
+    config:
+      enabled: false
+
 eureka:
   client:
     enabled: false
