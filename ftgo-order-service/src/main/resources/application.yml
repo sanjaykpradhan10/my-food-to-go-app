@@ -41,6 +41,10 @@ outbox:
   batch-size: 20
   publish-mode: polling
 
+saga:
+  command-request:
+    poll-fixed-delay-ms: 2000
+
 eureka:
   client:
     service-url:

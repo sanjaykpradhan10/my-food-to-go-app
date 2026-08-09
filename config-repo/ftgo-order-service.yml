@@ -4,3 +4,5 @@ outbox:
 
 saga:
   mode: choreography
+  command-request:
+    poll-fixed-delay-ms: 2000

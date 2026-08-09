@@ -2,7 +2,6 @@ package com.sanjay.ftgo.order.eventsourcing;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -12,6 +11,11 @@ import java.util.List;
 // transaction as the Order's event append; this poller later reads those unpublished rows and
 // actually sends them to Kafka, mirroring ftgo-common's OutboxPublisher but scoped to
 // order_saga_command_requests and active only in event-sourcing persistence mode.
+//
+// publishPending() is invoked on a schedule by SagaCommandRequestSchedulingConfig's Trigger
+// (not a plain @Scheduled here) so the poll interval, backed by the @RefreshScope
+// SagaCommandRequestProperties bean, can be changed live via POST /actuator/refresh — a plain
+// @Scheduled placeholder would only resolve once, at bean-creation time.
 @Component
 @ConditionalOnProperty(name = "persistence.mode", havingValue = "event-sourcing")
 public class SagaCommandRequestPublisher {
@@ -25,7 +29,6 @@ public class SagaCommandRequestPublisher {
         this.kafkaTemplate = kafkaTemplate;
     }
 
-    @Scheduled(fixedDelayString = "${outbox.poll-fixed-delay-ms:2000}")
     public void publishPending() {
         List<OrderSagaCommandRequest> pending = repository.findByPublishedAtIsNullOrderByIdAsc();
         for (OrderSagaCommandRequest request : pending) {
