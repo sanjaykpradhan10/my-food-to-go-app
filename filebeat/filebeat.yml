@@ -1,0 +1,28 @@
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      # Plain hints.enabled (with no default_config) only generates a log input for containers
+      # carrying an explicit co.elastic.logs/enabled annotation, which none of the FTGO service
+      # containers set — so autodiscover would otherwise collect nothing. A template with an
+      # unconditional default_config would fix that, but this host also runs long-lived
+      # containers from unrelated docker-compose projects (e.g. a local Postgres, a log-proxy
+      # sidecar) with months of accumulated JSON-formatted log history that would get backfilled
+      # into this stack's indices. Scoping the template to containers whose
+      # com.docker.compose.project.config_files path includes this repo keeps ingestion to the
+      # FTGO stack regardless of which worktree/checkout directory it runs from.
+      templates:
+        - condition:
+            contains:
+              docker.container.labels.com.docker.compose.project.config_files: "my-food-to-go-app"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.container.id}/*.log
+
+processors:
+  - add_docker_metadata: ~
+
+output.logstash:
+  hosts: ["logstash:5044"]
+
+logging.level: info
