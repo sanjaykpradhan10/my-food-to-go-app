@@ -66,6 +66,12 @@ services:
       dockerfile: ftgo-config-server/Dockerfile
     ports:
       - "8888:8888"
+    environment:
+      # Dockerfile copies the whole build-stage workspace checkout (.git included) to
+      # /config-source-repo specifically so JGit has a real git working copy to open; without
+      # this override application.yml's default (file://${user.dir}/..) resolves to "/" inside
+      # the container, which has no .git.
+      CONFIG_SERVER_GIT_URI: file:///config-source-repo
 
   kafka-connect:
     # 3.0.0.Final: 2.7.x issues SHOW MASTER STATUS against MySQL, which 8.4 removed

@@ -1,8 +1,11 @@
 spring:
   application:
     name: ftgo-order-service
-  config:
-    import: "optional:configserver:http://localhost:8888"
+  # spring.config.import deliberately NOT set here: Boot's Config Data API treats an import
+  # declared in a document as lower-precedence than that document's own keys, so declaring it
+  # locally would make config-server always lose to this file. It's supplied externally instead
+  # (SPRING_CONFIG_IMPORT env var — see compose.yml, and the root build.gradle bootRun default
+  # for local runs), which keeps it in a separate, higher-precedence property source.
   cloud:
     config:
       fail-fast: false
@@ -85,11 +88,7 @@ management:
   endpoints:
     web:
       exposure:
-        # refresh must be exposed locally, not only via config-repo/application.yml's broader
-        # list: a spring.config.import from config-server doesn't reliably take precedence over
-        # this file's own management.endpoints.web.exposure.include, and /actuator/refresh has to
-        # work even when config-server is unreachable (see the non-blocking-fallback scenario).
-        include: health, prometheus, refresh
+        include: health, prometheus
   endpoint:
     health:
       show-details: always

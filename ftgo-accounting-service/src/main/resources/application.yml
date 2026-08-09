@@ -1,8 +1,8 @@
 spring:
   application:
     name: ftgo-accounting-service
-  config:
-    import: "optional:configserver:http://localhost:8888"
+  # spring.config.import intentionally not declared here; see root build.gradle's bootRun
+  # SPRING_CONFIG_IMPORT default / compose.yml for why (Config Data import precedence).
   cloud:
     config:
       fail-fast: false
