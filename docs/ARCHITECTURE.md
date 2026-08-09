@@ -1190,6 +1190,59 @@ This fix covers the default `OUTBOX_PUBLISH_MODE=polling` path only. In `cdc` mo
 `EventRouter` transform reads the outbox table directly and doesn't map the `traceparent` column
 onto the outgoing Kafka message, so events published via CDC carry no trace context.
 
+## Log aggregation (Ch.11, §11.3.2)
+
+All 9 `actuatorModules` services log structured JSON to stdout via a per-service `logback-spring.xml` paired with the `logstash-logback-encoder` library, which produces JSON payloads with application, request, and trace context fields. An ELK stack deployed in `compose.yml` aggregates these logs into a searchable central store, enabling correlation with the distributed traces from §11.3.3 via a shared `traceId` field.
+
+**Excluded from JSON logging.** `ftgo-config-server`, `ftgo-authorization-server`, and `ftgo-service-registry` are not in the `actuatorModules` list in `build.gradle`, so they get neither the `logstash-logback-encoder` dependency nor a `logback-spring.xml`. Their stdout stays plain text, which the Logstash `json` filter cannot parse — those lines get tagged `_jsonparsefailure` and dropped, so these three services' logs are not searchable in Kibana. This is an intentional, visible gap, not a bug: bringing them into structured logging is a scope decision beyond this sub-project.
+
+### Architecture
+
+```mermaid
+graph LR
+    A["service stdout<br/>(structured JSON)"]
+    B["Docker json-file<br/>log driver"]
+    C["Filebeat<br/>(autodiscovery)"]
+    D["Logstash<br/>(beats input, json filter)"]
+    E["Elasticsearch<br/>(ftgo-logs-* indices)"]
+    F["Kibana<br/>(search & discovery)"]
+    
+    A -->|newline-delimited<br/>JSON| B
+    B -->|container logs API| C
+    C -->|beats protocol| D
+    D -->|parsed events| E
+    E -->|indexed search| F
+```
+
+### Components
+
+- **Elasticsearch** (port 9200): distributed search and analytics engine, configured for a single node (`discovery.type: single-node`). Every log event is indexed under `ftgo-logs-YYYY.MM.DD` indices — rotation is not a Logstash `date` filter (there isn't one in `logstash.conf`); it comes entirely from the sprintf pattern in the Elasticsearch output's `index => "ftgo-logs-%{+YYYY.MM.dd}"`, which resolves against the event's own `@timestamp` field (the JSON log line's timestamp, not Filebeat's ingest time) — so a service with a skewed clock would land in the wrong daily index. Fields stored as searchable metadata: `@timestamp`, `@version`, `message`, `logger_name`, `thread_name`, `level`, `service`, `traceId`, `spanId`, and on exceptions a single `stack_trace` string field. Elasticsearch itself runs with `xpack.security.enabled: false` — no authentication on `0.0.0.0:9200` — an accepted local-dev-only tradeoff (parallel to Grafana's anonymous-access config, described above), not something to carry into a real deployment.
+
+- **Logstash** (port 5044): log processing pipeline. The `beats` input plugin listens for events from Filebeat, the `json` filter parses newline-delimited JSON payloads into structured fields (safe because this project's structured logging already produces valid JSON to stdout), and the Elasticsearch output plugin indexes documents with a daily index pattern. Configuration lives in `logstash/pipeline/` under the Docker volume mount.
+
+- **Kibana** (port 5601): visualization and search UI for Elasticsearch indices. The `kibana-index-pattern-registrar` service (a one-time `curl` job) auto-provisioning step runs once at startup via its `entrypoint` script, registering the `ftgo-logs-*` saved object (index pattern) so users can search logs without manual setup.
+
+- **Filebeat** (no host port, runs as `root`): lightweight log shipper using Docker's `containers` API to discover all running services and tail their `stdout` streams. It uses an `autodiscover` provider with a `docker` type, but with no `hints.enabled` annotations on the FTGO containers, plain hints-based autodiscovery would collect nothing. Instead, `filebeat/filebeat.yml` scopes collection via a `templates` condition matching `docker.container.labels.com.docker.compose.project.config_files` containing the literal string `"my-food-to-go-app"`, with a `default_config` fallback for containers that don't match. This keeps ingestion to this stack even when the host also runs unrelated docker-compose projects, but it's a fragile match: a repo rename or a checkout under a different directory name would silently stop all log collection — zero documents in Kibana, no error surfaced anywhere.
+
+### Structured logging
+
+All 9 `actuatorModules` services require a per-service `logback-spring.xml` (Gradle dependency: `logstash-logback-encoder`) — there is no Spring Boot auto-detection mechanism that wires this in from the classpath alone. Each service's `logback-spring.xml` configures a console `ConsoleAppender` using `LogstashEncoder`, with a `springProperty` pulling in `spring.application.name` and passing it through as a `service` custom field (`customFields => {"service":"${appName}"}`). Every log line includes the fields `LogstashEncoder` emits by default plus that one custom field:
+
+- **Core fields**: `@timestamp`, `@version`, `message`, `logger_name`, `thread_name`, `level`.
+- **Service identity**: `service` (from `customFields`, not `service.name`).
+- **Trace context** (when under an active trace span, from Micrometer Tracing): `traceId`, `spanId` copied from the MDC by the encoder itself.
+- **Error details** (on exceptions): a single `stack_trace` string field — not separate `exception.type`/`exception.message` fields.
+
+There is no `http.method`/`http.url`/`http.status_code` in these logs — nothing bridges Actuator's `HttpExchangeRepository` to the logging pipeline.
+
+**Why structured JSON over grok-parsed plain text.** Grok parsing (a regex-based approach used in many Logstash deployments) would require defining a fragile regex pattern for each log format — if a service changes its text format, the pattern breaks silently and some logs fail to parse. Structured JSON produced at the source has no brittle pattern-matching step: every log is already a valid JSON object, parsed losslessly by Logstash's `json` filter. Multi-line stack traces stay intact as a single `stack_trace` field, not split across multiple log lines. Field names are machine-readable and stable across service changes (unlike text format changes). Query-time aggregations (e.g. counts per `service`) work on actual typed fields, not regex captures.
+
+### Correlation with distributed tracing (§11.3.3)
+
+The distributed tracing sub-project (§11.3.3) configures Micrometer Tracing to populate the MDC with `traceId` and `spanId` from every trace span. The `logstash-logback-encoder` library reads these fields from the MDC and includes them in every JSON log payload. A user discovering a slow order-placement request in Tempo (§11.3.3) can copy that request's `traceId` and search Kibana's `ftgo-logs-*` indices for `traceId: <value>`, returning all log lines from any service handling that request — order-service, kitchen-service, delivery-service, etc. — in a single result set, ordered by timestamp.
+
+**No additional application code required.** The encoder copies MDC fields into JSON automatically; services need only emit logs via standard `log.info()` / `log.error()` calls. Explicit logging of the trace context is not needed — it's captured from the MDC by the encoder.
+
 ## Externalized configuration (Ch.11, §11.2)
 
 All 9 services (7 business services + 2 gateways) source their configuration from a **three-tier

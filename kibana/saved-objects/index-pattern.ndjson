@@ -1,0 +1,1 @@
+{"attributes":{"title":"ftgo-logs-*","timeFieldName":"@timestamp"},"id":"ftgo-logs-pattern","type":"index-pattern"}

@@ -76,6 +76,10 @@ configure(subprojects.findAll { actuatorModules.contains(it.name) }) {
         implementation 'io.micrometer:micrometer-registry-prometheus'
         implementation 'io.micrometer:micrometer-tracing-bridge-otel'
         implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+        // Emits JSON-structured console logs (Ch.11 §11.3.2 Log aggregation) so Logstash can
+        // parse them without a grok pattern; the JSON automatically carries the traceId/spanId
+        // already in MDC from micrometer-tracing-bridge-otel above, correlating logs to traces.
+        implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
     }
 }
 
