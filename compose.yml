@@ -452,6 +452,7 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
     environment:
       discovery.type: single-node
+      # local-dev only: no auth — do not use this compose file as a deployment template
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
     ports:
