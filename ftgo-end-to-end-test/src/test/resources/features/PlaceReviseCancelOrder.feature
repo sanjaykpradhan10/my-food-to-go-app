@@ -32,5 +32,6 @@ Feature: Place, Revise, and Cancel Order (end-to-end)
     Then the measured outbox publish delay is close to 2000 milliseconds
     When I set the outbox poll interval for ftgo-order-service to 300 milliseconds via the config repo
     And I refresh the configuration for ftgo-order-service
+    Then the order-service outbox poll interval reported by actuator is 300 milliseconds
     And I place another order and measure the outbox publish delay
     Then the measured outbox publish delay is close to 300 milliseconds

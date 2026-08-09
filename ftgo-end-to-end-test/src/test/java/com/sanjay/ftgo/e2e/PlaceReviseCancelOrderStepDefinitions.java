@@ -2,6 +2,7 @@ package com.sanjay.ftgo.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.cucumber.java.After;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
@@ -36,8 +37,9 @@ public class PlaceReviseCancelOrderStepDefinitions {
     private static final String ORDER_SERVICE_BASE_URL = "http://localhost:8082";
     // Test JVM's working directory for this module is ftgo-end-to-end-test/ (gradle default for a
     // subproject Test task), so ".." reaches the repo root where config-repo/ actually lives.
+    private static final Path REPO_ROOT = Path.of(System.getProperty("user.dir"), "..");
     private static final Path ORDER_SERVICE_CONFIG_FILE =
-            Path.of(System.getProperty("user.dir"), "..", "config-repo", "ftgo-order-service.yml");
+            REPO_ROOT.resolve("config-repo").resolve("ftgo-order-service.yml");
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -49,6 +51,10 @@ public class PlaceReviseCancelOrderStepDefinitions {
     private long consumerId;
     private long orderId;
     private long publishDelayMillis;
+    // Captured the first time this scenario edits config-repo/ftgo-order-service.yml, so the
+    // @After hook below can restore the exact checked-in bytes (rather than a hand-reconstructed
+    // approximation) and know whether there's anything to restore at all.
+    private String originalOrderServiceConfigContent;
 
     public PlaceReviseCancelOrderStepDefinitions(OrderIdHolder orderIdHolder) {
         this.orderIdHolder = orderIdHolder;
@@ -135,18 +141,66 @@ public class PlaceReviseCancelOrderStepDefinitions {
     }
 
     @Given("the outbox poll interval for ftgo-order-service is set to {int} milliseconds via the config repo")
-    public void setOutboxPollInterval(int millis) throws IOException {
+    public void setOutboxPollInterval(int millis) throws IOException, InterruptedException {
+        if (originalOrderServiceConfigContent == null) {
+            // Only captured once per scenario: the second call (2000ms -> 300ms) must not
+            // overwrite this with the already-mutated 2000ms content.
+            originalOrderServiceConfigContent = Files.readString(ORDER_SERVICE_CONFIG_FILE);
+        }
         // Mirrors config-repo/ftgo-order-service.yml's existing shape exactly (Task 1) — only the
-        // poll interval changes; batch-size and saga.mode are left at their checked-in values.
+        // poll interval changes; batch-size and saga.mode/command-request are left at their
+        // checked-in values.
         String content = String.format(
-                "outbox:%n  poll-fixed-delay-ms: %d%n  batch-size: 20%n%nsaga:%n  mode: choreography%n",
+                "outbox:%n  poll-fixed-delay-ms: %d%n  batch-size: 20%n%nsaga:%n  mode: choreography%n"
+                        + "  command-request:%n    poll-fixed-delay-ms: 2000%n",
                 millis);
         Files.writeString(ORDER_SERVICE_CONFIG_FILE, content);
+        // Config Server's git backend serves committed HEAD from its own clone of this repo
+        // (file://.. locally, a baked-in-at-build-time copy under compose) — an uncommitted
+        // working-tree edit is invisible to it either way, so the change has to actually land as
+        // a commit for /actuator/refresh to have anything new to pick up.
+        commitConfigRepoChange("test: set ftgo-order-service outbox poll interval to " + millis + "ms (e2e scenario)");
     }
 
     @When("I set the outbox poll interval for ftgo-order-service to {int} milliseconds via the config repo")
-    public void updateOutboxPollInterval(int millis) throws IOException {
+    public void updateOutboxPollInterval(int millis) throws IOException, InterruptedException {
         setOutboxPollInterval(millis);
+    }
+
+    private void commitConfigRepoChange(String message) throws IOException, InterruptedException {
+        runGit("add", "config-repo/ftgo-order-service.yml");
+        runGit("commit", "-m", message);
+    }
+
+    private void runGit(String... args) throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>(List.of("git"));
+        command.addAll(List.of(args));
+        Process process = new ProcessBuilder(command)
+                .directory(REPO_ROOT.toFile())
+                .redirectErrorStream(true)
+                .start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            fail("git " + String.join(" ", args) + " failed (exit " + exitCode + "): " + output);
+        }
+    }
+
+    // Undoes setOutboxPollInterval's commit(s) so a scenario run never leaves the repository with
+    // extra history or a dirty working tree: restore the exact original bytes and, if a commit
+    // was made, commit that restoration too (reset --hard would also work but would rewrite
+    // history other concurrent test runs / the developer's shell might be relying on).
+    @After
+    public void restoreOrderServiceConfigFile() throws IOException, InterruptedException {
+        if (originalOrderServiceConfigContent == null) {
+            return;
+        }
+        String currentContent = Files.readString(ORDER_SERVICE_CONFIG_FILE);
+        if (!currentContent.equals(originalOrderServiceConfigContent)) {
+            Files.writeString(ORDER_SERVICE_CONFIG_FILE, originalOrderServiceConfigContent);
+            commitConfigRepoChange("test: restore ftgo-order-service.yml after e2e config-refresh scenario");
+        }
+        originalOrderServiceConfigContent = null;
     }
 
     @When("I refresh the configuration for ftgo-order-service")
@@ -183,9 +237,31 @@ public class PlaceReviseCancelOrderStepDefinitions {
     public void assertPublishDelayCloseTo(int expectedMillis) {
         // Generous tolerance: this measures wall-clock time across an HTTP call, a DB write, a
         // scheduled poll, Kafka delivery, and the kitchen-service's own processing, not just the
-        // poll interval in isolation.
+        // poll interval in isolation. This is a loose sanity check only (it can't distinguish a
+        // real refresh from a no-op, since the tolerance window is wide enough to contain both the
+        // old and new interval) — the actual proof that live-refresh worked is the
+        // actuator/env assertion below.
         assertTrue(publishDelayMillis >= expectedMillis && publishDelayMillis <= expectedMillis + 5000L,
                 "Expected publish delay near " + expectedMillis + "ms, was " + publishDelayMillis + "ms");
+    }
+
+    @Then("the order-service outbox poll interval reported by actuator is {int} milliseconds")
+    public void assertActuatorReportsOutboxPollInterval(int expectedMillis) throws Exception {
+        // Proves the live-refresh mechanism itself (config-server -> /actuator/refresh ->
+        // @RefreshScope OutboxProperties) actually took effect, by reading the resolved property
+        // straight out of the running order-service's Environment — no wall-clock race, and no
+        // dependence on kitchen-service happening to process fast enough within some window.
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(ORDER_SERVICE_BASE_URL + "/actuator/env/outbox.poll-fixed-delay-ms"))
+                .header("Authorization", "Bearer " + tokenClient.tokenFor("admin1", "password"))
+                .GET()
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), "actuator/env lookup failed: " + response.body());
+        JsonNode body = objectMapper.readTree(response.body());
+        String actual = body.get("property").get("value").asText();
+        assertEquals(String.valueOf(expectedMillis), actual,
+                "Expected outbox.poll-fixed-delay-ms to be " + expectedMillis + " after refresh, was " + actual);
     }
 
     @Then("the order-service Prometheus counters {string} and {string} both eventually read at least 1")
