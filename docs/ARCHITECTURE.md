@@ -1189,3 +1189,48 @@ via the Kafka hop this fix repairs.
 This fix covers the default `OUTBOX_PUBLISH_MODE=polling` path only. In `cdc` mode, Debezium's
 `EventRouter` transform reads the outbox table directly and doesn't map the `traceparent` column
 onto the outgoing Kafka message, so events published via CDC carry no trace context.
+
+## Externalized configuration (Ch.11, §11.2)
+
+All 9 services (7 business services + 2 gateways) source their configuration from a **three-tier
+hierarchy**: environment variables (push) > Spring Cloud Config Server (pull) > local
+`application.yml` (fallback). This hierarchy enables centralized management of some properties
+without forcing an overhaul of every service's bootstrap process.
+
+**Spring Cloud Config Server** (`ftgo-config-server`, port 8888) is a leaf service backed by this
+repository's own `config-repo/` git directory, containing:
+
+- `config-repo/application.yml` — **shared defaults** for all 9 services (Kafka bootstrap-servers,
+  Eureka defaultZone, JWT jwk-set-uri, outbox polling interval, saga mode, etc.).
+- `config-repo/ftgo-<service>.yml` — **per-service overrides** for the 5 outbox-publishing
+  services (order, kitchen, accounting, delivery, consumer); the other 4 services (restaurant,
+  order-history, mobile-gateway, public-gateway) have no per-service file.
+
+Every service's `build.gradle` injects `spring.config.import: optional:configserver:http://localhost:8888`
+as a bootstrapping property via the `bootRun` block's `SPRING_CONFIG_IMPORT` environment variable
+(local dev default `optional:configserver:http://localhost:8888`). `compose.yml` overrides this
+to `http://config-server:8888` (the compose DNS name) for containerized runs. The `optional:` prefix
+and each service's `spring.cloud.config.fail-fast: false` setting implement a **non-blocking
+contract**: if the config server is unreachable at startup, the service continues with local
+`application.yml` values rather than failing the boot sequence — this is the "optional" fallback.
+In `compose.yml`, config-server itself has no `depends_on` of its own (it's a leaf), and other
+services use `condition: service_started` rather than `service_healthy` on the config-server
+dependency, ensuring no service waits on its availability.
+
+**Live refresh** is possible for a subset of properties consumed by the 5 outbox services:
+`ftgo-common`'s `OutboxProperties` (`@RefreshScope` `@ConfigurationProperties(prefix = "outbox")`)
+exposes `outbox.poll-fixed-delay-ms` with a default of 2000ms, and `OutboxSchedulingConfig` (a
+`SchedulingConfigurer` implementing a custom `Trigger`) re-reads this property on every outbox poll
+cycle instead of baking it in via `@Scheduled`'s one-time placeholder resolution. A `POST
+/actuator/refresh` call on any of the 5 outbox services re-fetches from config-server, updates
+`OutboxProperties`, and changes the poll frequency live without restarting. The config server query
+response (via `curl http://localhost:8888/ftgo-order-service/default`) includes a `version` field
+carrying the git commit SHA, usable for audit trails.
+
+**Intentional scope limitation — what is NOT refreshable:** Kafka bootstrap-servers, Eureka
+defaultZone, and JWT jwk-set-uri settings are read at startup and cached by singleton beans
+(`KafkaTemplate`, `DiscoveryClient`, `JwtDecoder`) that are not `@RefreshScope`-aware. Changing
+them via config-server requires a full service restart, which is out of scope for this project
+(a production deployment's operator would handle such changes deliberately, not as a dynamic tweak).
+`outbox.batch-size` and `saga.mode` are read once per each poll/saga invocation, not `@RefreshScope`d,
+so only the `outbox.poll-fixed-delay-ms` property is truly live-refreshable in the current design.

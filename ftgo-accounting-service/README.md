@@ -55,6 +55,12 @@ autoconfiguration; Kafka producer/consumer spans require
 both set here. Viewable in Grafana via the provisioned Tempo datasource, or queried directly
 against Tempo's search API.
 
+## Configuration (Ch.11, §11.2)
+
+Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults + `config-repo/ftgo-accounting-service.yml` per-service overrides) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract).
+
+**Live refresh:** `OutboxProperties`/`OutboxSchedulingConfig` make `outbox.poll-fixed-delay-ms` refreshable — a `POST /actuator/refresh` on this service re-fetches from config-server and changes the outbox poll frequency without a restart. Other properties (Kafka bootstrap-servers, Eureka defaultZone, JWT jwk-set-uri) are read once at startup and cached by singleton beans, so they require a full restart to change.
+
 ## Events
 
 ### Publishes (`accounting.events`, choreography)

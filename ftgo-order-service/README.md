@@ -131,6 +131,12 @@ autoconfiguration; Kafka producer/consumer spans require
 both set here. Viewable in Grafana via the provisioned Tempo datasource, or queried directly
 against Tempo's search API.
 
+## Configuration (Ch.11, §11.2)
+
+Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults + `config-repo/ftgo-order-service.yml` per-service overrides) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract). 
+
+**Live refresh:** `OutboxProperties`/`OutboxSchedulingConfig` make `outbox.poll-fixed-delay-ms` refreshable — a `POST /actuator/refresh` on this service re-fetches from config-server and changes the outbox poll frequency without a restart. Other properties (Kafka bootstrap-servers, Eureka defaultZone, JWT jwk-set-uri) are read once at startup and cached by singleton beans, so they require a full restart to change.
+
 ## Restaurant/kitchen/accounting/delivery service integration
 
 `RestaurantServiceProxy`, `KitchenServiceProxy`, `AccountingServiceProxy`, and `DeliveryServiceProxy` each call their respective service via a `@LoadBalanced RestClient` (base URLs `http://ftgo-restaurant-service`/`http://ftgo-kitchen-service`/`http://ftgo-accounting-service`/`http://ftgo-delivery-service`, all resolved dynamically through Eureka), each wrapped in its own Resilience4j circuit breaker instance (`restaurantService`/`kitchenService`/`accountingService`/`deliveryService`) — all four instances share the exact same settings: sliding window 5, failure-rate threshold 50%, 5s wait-duration-in-open-state, 3 permitted calls in half-open. `RestaurantNotFoundException` is excluded from `restaurantService`'s failure count (a 404 isn't a service health signal) — the other three proxies don't need an equivalent exclusion, since their `findXForView`-style methods return `SectionResult.NotFound` directly on a `404` rather than throwing.
