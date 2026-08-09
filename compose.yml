@@ -501,5 +501,21 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     command: ["--strict.perms=false"]
 
+  kibana-index-pattern-registrar:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      kibana:
+        condition: service_healthy
+    volumes:
+      - ./kibana/saved-objects/index-pattern.ndjson:/index-pattern.ndjson:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        curl -s -X POST http://kibana:5601/api/saved_objects/_import?overwrite=true \
+          -H "kbn-xsrf: true" \
+          --form file=@/index-pattern.ndjson
+    restart: "no"
+
 volumes:
   mysql-data:
