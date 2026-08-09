@@ -54,7 +54,7 @@ Services communicate via messaging (Apache Kafka), introduced in Chapter 3 and e
 | Configuration | Spring Cloud Config Server, git-backed (`config-repo/`), centralized with per-service overrides; non-blocking "optional" startup contract; live refresh of select properties via `POST /actuator/refresh` (Ch.11 §11.2) |
 | Testing | JUnit 5, H2 (in-memory, MySQL mode); Spring Cloud Contract Verifier (Ch.10 consumer-driven contract tests); Cucumber (JUnit Platform engine) + `com.avast.gradle.docker-compose` Gradle plugin (Ch.10 component tests and end-to-end tests) |
 | Security | Spring Authorization Server (JWT issuance, `ftgo-authorization-server`, Ch.11 §11.1); Spring Security OAuth2 Resource Server (JWT validation at both gateways and all 7 business services); method-level `@PreAuthorize` role checks plus order-service's instance-based ACL for per-consumer order access |
-| Observability | Micrometer + Prometheus (`/actuator/prometheus` on all 9 services, custom business counters on 7; Ch.11 §11.3.4); Grafana ("FTGO Overview" dashboard, 8 panels); Micrometer Tracing + OpenTelemetry + Grafana Tempo (distributed tracing, all 9 services, 100% sampled; Ch.11 §11.3.3) |
+| Observability | Micrometer + Prometheus (`/actuator/prometheus` on all 9 services, custom business counters on 7; Ch.11 §11.3.4); Grafana ("FTGO Overview" dashboard, 8 panels); Micrometer Tracing + OpenTelemetry + Grafana Tempo (distributed tracing, all 9 services, 100% sampled; Ch.11 §11.3.3); ELK stack (Elasticsearch, Logstash, Kibana) + Filebeat (log aggregation — all 9 services log structured JSON via `logstash-logback-encoder` to stdout, Filebeat ships to Logstash, indexed into Elasticsearch as `ftgo-logs-*`, searchable and correlatable by `traceId` in Kibana; Ch.11 §11.3.2) |
 
 ## Running locally
 
@@ -65,7 +65,7 @@ Services communicate via messaging (Apache Kafka), introduced in Chapter 3 and e
 docker compose up -d
 ```
 
-This starts MySQL (port 3306), Zookeeper (2181), and Kafka (9092). On first boot, MySQL creates all six service schemas and grants the `ftgo` user access to each.
+This starts MySQL (port 3306), Zookeeper (2181), Kafka (9092), and the observability stack: Prometheus (9090), Grafana (3000), Tempo (3200/4318), Elasticsearch (9200), Logstash (5044), and Kibana (5601). On first boot, MySQL creates all service schemas and grants the `ftgo` user access to each.
 
 **Run all tests (no Docker needed — uses H2 in-memory):**
 ```bash
