@@ -31,12 +31,22 @@ public class AuditLogController {
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to) {
 
+        // entityType/entityId and from/to are each required in pairs (see repository method
+        // signatures below); a lone half silently falling through to a broader query would hide a
+        // caller's typo behind a result set they didn't ask for, so reject it instead of guessing.
+        if ((entityType != null) != (entityId != null)) {
+            return ResponseEntity.badRequest().build();
+        }
+        if ((from != null) != (to != null)) {
+            return ResponseEntity.badRequest().build();
+        }
+
         List<AuditLogEntry> entries;
         if (userId != null) {
             entries = repository.findByUserIdOrderByTimestampDesc(userId);
-        } else if (entityType != null && entityId != null) {
+        } else if (entityType != null) {
             entries = repository.findByEntityTypeAndEntityIdOrderByTimestampDesc(entityType, entityId);
-        } else if (from != null && to != null) {
+        } else if (from != null) {
             entries = repository.findByTimestampBetweenOrderByTimestampDesc(from, to);
         } else {
             entries = repository.findAllByOrderByTimestampDesc();

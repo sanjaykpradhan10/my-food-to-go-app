@@ -1604,7 +1604,7 @@ action, and outcome, which is the part that matters for "who created something".
 the intercepted method's arguments for a `org.springframework.security.oauth2.jwt.Jwt`, so it only
 sees an actor on endpoints that declare an `@AuthenticationPrincipal Jwt` parameter.
 `OrderController.createOrder` already declared one for its own consumerId-derivation purposes; the
-other 10 audited endpoints (`cancel`/`revise`, the 4 `TicketController` transitions, the 2
+other 9 audited endpoints (`cancel`/`revise`, the 4 `TicketController` transitions, the 2
 `DeliveryController` transitions, `ConsumerController.createConsumer`) had no other reason to take
 one, so each now declares `@AuthenticationPrincipal Jwt jwt` solely for the aspect to pick up —
 otherwise unused by the method body. This was chosen over having the aspect pull the actor from

@@ -62,6 +62,13 @@ public class AuditLoggingStepDefinitions {
                         boolean actionMatches = entry.path("action").asText("").contains(actionFragment);
                         Instant timestamp = Instant.parse(entry.path("timestamp").asText());
                         if (isOrderEntity && actionMatches && timestamp.isAfter(recentSince)) {
+                            // Regression guard for the userId-capture fix: createOrder is the one
+                            // audited endpoint whose @AuthenticationPrincipal Jwt was present before
+                            // that fix too, so a null userId here would mean AuditLoggingAspect's
+                            // JWT-argument scan broke, not just the cancel/revise/kitchen/etc. gap.
+                            String userId = entry.path("userId").asText(null);
+                            assertTrue(userId != null && !userId.isBlank(),
+                                    "Matched audit log entry has a null/blank userId - entry: " + entry);
                             found = true;
                             break;
                         }

@@ -47,4 +47,32 @@ class AuditLogControllerTest {
         mockMvc.perform(get("/audit-log"))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void rejectsEntityTypeWithoutEntityId() throws Exception {
+        mockMvc.perform(get("/audit-log").param("entityType", "Order"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void rejectsEntityIdWithoutEntityType() throws Exception {
+        mockMvc.perform(get("/audit-log").param("entityId", "7"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void rejectsFromWithoutTo() throws Exception {
+        mockMvc.perform(get("/audit-log").param("from", "2026-08-11T00:00:00Z"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void rejectsToWithoutFrom() throws Exception {
+        mockMvc.perform(get("/audit-log").param("to", "2026-08-11T00:00:00Z"))
+                .andExpect(status().isBadRequest());
+    }
 }

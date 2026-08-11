@@ -42,6 +42,10 @@ So `?userId=alice&entityType=Order` filters by `userId` only. A combinatorial fi
 `Specification`/Criteria query rather than derived repository methods — deliberately out of scope
 for this learning project.
 
+`entityType`/`entityId` and `from`/`to` are each required as a pair — supplying only one half of
+either pair returns `400` rather than silently falling through to a broader, unfiltered query a
+caller didn't ask for (e.g. a typo'd `entityId` should not quietly return *every* entry).
+
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8089/audit-log?entityType=Order&entityId=42"
