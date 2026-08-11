@@ -64,7 +64,19 @@ print('APITOKEN=' + token.token)
 " > /tmp/glitchtip-shell-output.txt
 
 DSN_LINE=$(grep '^DSN=' /tmp/glitchtip-shell-output.txt)
-DSN_LINE=$(echo "$DSN_LINE" | sed 's/@localhost:8000/@glitchtip:8000/')
+REWRITTEN_DSN_LINE=$(echo "$DSN_LINE" | sed 's/@localhost:8000/@glitchtip:8000/')
+# The sed above is an exact-substring rewrite, not a general URL-host rewrite: if
+# GLITCHTIP_DOMAIN (compose.yml) is ever anything other than exactly "http://localhost:8000",
+# the pattern silently fails to match and sed exits 0 with the DSN unchanged — producing a DSN
+# that bakes in a host none of the other 9 containers can resolve, with no error anywhere in
+# this script's output. Fail loudly instead of shipping an unreachable DSN.
+if [ "$REWRITTEN_DSN_LINE" = "$DSN_LINE" ]; then
+  echo "provision.sh: expected DSN host rewrite (@localhost:8000 -> @glitchtip:8000) to change" >&2
+  echo "the DSN, but it didn't — GLITCHTIP_DOMAIN in compose.yml no longer matches this script's" >&2
+  echo "hardcoded assumption. Update the sed pattern above to match the new domain." >&2
+  exit 1
+fi
+DSN_LINE="$REWRITTEN_DSN_LINE"
 TOKEN_LINE=$(grep '^APITOKEN=' /tmp/glitchtip-shell-output.txt)
 
 {
