@@ -247,4 +247,4 @@ Ask whichever tool you're in:
 - **Testing**: JUnit 5, Mockito, Spring Boot Test, Pact (contract tests in Ch. 10)
 
 ---
-*Last updated: 2026-07-31 — Ch.10 sub-project 2 (component tests) done: out-of-process Cucumber + Docker Compose component test for order-service's Place Order flow (orchestration mode, JPA persistence). Next up: Ch.10 sub-project 3 (end-to-end tests); sub-project 4 (Revise/Cancel saga component tests, choreography-mode coverage, other services' component tests, event-sourced persistence) deferred.*
+*Last updated: 2026-08-11 — Ch.11 (Developing production-ready services) done: all seven sub-projects (health checks, security, externalized configuration, application metrics, distributed tracing, log aggregation, exception tracking, audit logging) complete and Docker-verified, plus the chapter-completion documentation sweep. Next up: Ch.12 (Deploying microservices) — not started.*
