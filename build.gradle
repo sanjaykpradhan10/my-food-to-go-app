@@ -82,11 +82,18 @@ configure(subprojects.findAll { actuatorModules.contains(it.name) }) {
         implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
         // Ch.11 §11.3.5 Exception tracking: auto-captures any exception that reaches Spring's
         // default error handling (i.e. NOT already caught by a local @ExceptionHandler) and
-        // reports it to GlitchTip, tagged with the active trace/span ID from the tracing bridge
-        // dependency above for cross-referencing with Tempo/Kibana.
+        // reports it to GlitchTip. NOTE: trace/span correlation with Tempo/Kibana is NOT
+        // implemented — the Sentry Java SDK keeps its own independent trace id unless a
+        // sentry-opentelemetry-* integration is added, which this project does not do; a
+        // GlitchTip issue's trace id will NOT match the request's Tempo traceId or its Kibana
+        // log lines' traceId field. Do not rely on this for cross-referencing.
+        // -jakarta variant required: this project is Spring Boot 3 (jakarta namespace), which
+        // discovers auto-configuration via AutoConfiguration.imports, not the legacy
+        // spring.factories mechanism the plain (non-jakarta) starter still uses; without
+        // -jakarta, SentryAutoConfiguration silently never runs and nothing is ever captured.
         // 7.14.0 (as originally specified) isn't a published version on Maven Central; pinned to
         // 7.22.5, the latest stable 7.x release, to stay off the unreleased-at-plan-time 8.x line.
-        implementation 'io.sentry:sentry-spring-boot-starter:7.22.5'
+        implementation 'io.sentry:sentry-spring-boot-starter-jakarta:7.22.5'
     }
 }
 
