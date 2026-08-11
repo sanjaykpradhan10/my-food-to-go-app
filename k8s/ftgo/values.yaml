@@ -1,0 +1,4 @@
+global:
+  namespace: ftgo
+  imageRegistry: "localhost:5000/ftgo"
+  imageTag: local
