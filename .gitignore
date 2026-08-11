@@ -23,3 +23,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# GlitchTip provisioning output — regenerated per-environment by glitchtip-provisioner,
+# contains a randomly-minted DSN key that shouldn't be committed
+glitchtip/dsn.env

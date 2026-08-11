@@ -518,5 +518,65 @@ services:
           --form file=@/index-pattern.ndjson
     restart: "no"
 
+  glitchtip-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  glitchtip-redis:
+    image: redis:7
+
+  glitchtip:
+    image: glitchtip/glitchtip:v4.2.9
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+    # image's default entrypoint (./bin/start.sh) only runs migrations when a Heroku-style
+    # DYNO env var is set, which we don't set; run migrate explicitly before uwsgi instead
+    command: ["sh", "-c", "./bin/run-migrate.sh && ./bin/run-uwsgi.sh"]
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-db:5432/glitchtip
+      SECRET_KEY: local-dev-only-not-a-real-secret
+      # both must point at glitchtip-redis: REDIS_URL backs the Django cache (defaults to
+      # host "redis", which doesn't exist on this network) and CELERY_BROKER_URL backs Celery
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      CELERY_BROKER_URL: redis://glitchtip-redis:6379/0
+      GLITCHTIP_DOMAIN: http://localhost:8000
+      DEFAULT_FROM_EMAIL: glitchtip@localhost
+      ENABLE_OPEN_USER_REGISTRATION: "false"
+      # the glitchtip image's uwsgi entrypoint defaults to PORT=8080; pin it to 8000 so it
+      # matches the published port and the healthcheck below without an extra port remap
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # the glitchtip image has no curl/wget; python3 is present, so use it directly
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request as u; u.urlopen('http://localhost:8000/_health/')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  glitchtip-provisioner:
+    image: docker:27-cli
+    depends_on:
+      glitchtip:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./glitchtip:/glitchtip
+      - sentry-dsn:/shared
+    entrypoint: ["sh", "-c", "cd /glitchtip && sh provision.sh && cp dsn.env /shared/dsn.env"]
+    restart: "no"
+
 volumes:
   mysql-data:
+  sentry-dsn:
