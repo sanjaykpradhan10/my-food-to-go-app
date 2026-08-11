@@ -81,16 +81,30 @@ toolchain and the Gradle wrapper/cache.
 
 **Startup ordering via health checks.** `compose.yml`'s `depends_on:
 condition: service_healthy` entries consume the `/actuator/health`
-endpoints every service exposes (Ch.11 §11.3.1) — e.g. the restaurant-service's dependency on MySQL:
+endpoints every service exposes (Ch.11 §11.3.1) — e.g. restaurant-service's
+full dependency specification:
 
 ```yaml
 depends_on:
   mysql:
     condition: service_healthy
+  service-registry:
+    condition: service_started
+  authorization-server:
+    condition: service_healthy
+  tempo:
+    condition: service_started
+  config-server:
+    condition: service_started
+  glitchtip-provisioner:
+    condition: service_completed_successfully
 ```
 
 Compose won't start a dependent service until its dependency's Actuator health
-check reports `UP`.
+check reports `UP`. Multiple conditions are used: `service_healthy` for
+application services with health endpoints, `service_started` for
+infrastructure containers without health checks, and
+`service_completed_successfully` for one-shot setup containers.
 
 **Gaps relative to the book's container pattern.** Compose covers
 single-host container orchestration but stops there:
