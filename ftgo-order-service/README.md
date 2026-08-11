@@ -144,13 +144,13 @@ Audited here:
 | Endpoint | `action` | `entityType` | `entityId` | `userId` |
 |---|---|---|---|---|
 | `POST /orders` | `POST OrderController.createOrder` | `Order` | null (id doesn't exist yet) | JWT `sub` |
-| `POST /orders/{id}/cancel` | `POST OrderController.cancel` | `Order` | `{id}` | null — see below |
-| `POST /orders/{id}/revise` | `POST OrderController.revise` | `Order` | `{id}` | null — see below |
+| `POST /orders/{id}/cancel` | `POST OrderController.cancel` | `Order` | `{id}` | JWT `sub` |
+| `POST /orders/{id}/revise` | `POST OrderController.revise` | `Order` | `{id}` | JWT `sub` |
 
-The aspect finds the actor by scanning the intercepted method's arguments for a `Jwt`, so only
-`createOrder` (which already declares `@AuthenticationPrincipal Jwt jwt` for its own
-consumer-id-from-token logic) records a `userId`; `cancel`/`revise` take no `Jwt` parameter and so
-record the action and outcome with a null actor.
+The aspect finds the actor by scanning the intercepted method's arguments for a `Jwt`. `createOrder`
+already declared `@AuthenticationPrincipal Jwt jwt` for its own consumer-id-from-token logic;
+`cancel`/`revise` declare the same parameter solely so the aspect can find it (unused by either
+method body), so all three audited order endpoints record a `userId`.
 
 Both outcomes are recorded: a call that throws (e.g. `OrderNotFoundException`,
 `UnsupportedStateTransitionException`) produces an entry with `outcome=FAILURE` and
