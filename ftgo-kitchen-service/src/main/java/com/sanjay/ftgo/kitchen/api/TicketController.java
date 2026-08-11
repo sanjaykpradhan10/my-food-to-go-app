@@ -10,6 +10,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,7 +41,7 @@ public class TicketController {
 
     @PreAuthorize("hasAnyRole('RESTAURANT', 'ADMIN')")
     @PostMapping("/{ticketId}/accept")
-    public ResponseEntity<Void> accept(@PathVariable Long ticketId, @RequestBody AcceptTicketRequest request) {
+    public ResponseEntity<Void> accept(@PathVariable Long ticketId, @RequestBody AcceptTicketRequest request, @AuthenticationPrincipal Jwt jwt) {
         Ticket ticket = findTicket(ticketId);
         apply(ticket, ticket.accept(request.readyBy()));
         meterRegistry.counter("tickets_accepted").increment();
@@ -48,7 +50,7 @@ public class TicketController {
 
     @PreAuthorize("hasAnyRole('RESTAURANT', 'ADMIN')")
     @PostMapping("/{ticketId}/preparing")
-    public ResponseEntity<Void> preparing(@PathVariable Long ticketId) {
+    public ResponseEntity<Void> preparing(@PathVariable Long ticketId, @AuthenticationPrincipal Jwt jwt) {
         Ticket ticket = findTicket(ticketId);
         apply(ticket, ticket.preparing());
         meterRegistry.counter("tickets_preparing").increment();
@@ -57,7 +59,7 @@ public class TicketController {
 
     @PreAuthorize("hasAnyRole('RESTAURANT', 'ADMIN')")
     @PostMapping("/{ticketId}/ready-for-pickup")
-    public ResponseEntity<Void> readyForPickup(@PathVariable Long ticketId) {
+    public ResponseEntity<Void> readyForPickup(@PathVariable Long ticketId, @AuthenticationPrincipal Jwt jwt) {
         Ticket ticket = findTicket(ticketId);
         apply(ticket, ticket.readyForPickup());
         meterRegistry.counter("tickets_ready_for_pickup").increment();
@@ -66,7 +68,7 @@ public class TicketController {
 
     @PreAuthorize("hasAnyRole('RESTAURANT', 'ADMIN')")
     @PostMapping("/{ticketId}/picked-up")
-    public ResponseEntity<Void> pickedUp(@PathVariable Long ticketId) {
+    public ResponseEntity<Void> pickedUp(@PathVariable Long ticketId, @AuthenticationPrincipal Jwt jwt) {
         Ticket ticket = findTicket(ticketId);
         apply(ticket, ticket.pickedUp());
         meterRegistry.counter("tickets_picked_up").increment();

@@ -93,7 +93,7 @@ public class OrderController {
     @PreAuthorize("hasAnyRole('CONSUMER', 'ADMIN')")
     @PostMapping("/{id}/cancel")
     @Transactional
-    public ResponseEntity<OrderResponse> cancel(@PathVariable Long id) {
+    public ResponseEntity<OrderResponse> cancel(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
         TransitionResult result = orderTransitions.cancel(id, UUID.randomUUID().toString());
         cancellationSagaTrigger.onOrderCancelled(result.order(), result.events());
         return ResponseEntity.ok(OrderResponse.from(result.order()));
@@ -102,7 +102,7 @@ public class OrderController {
     @PreAuthorize("hasAnyRole('CONSUMER', 'ADMIN')")
     @PostMapping("/{id}/revise")
     @Transactional
-    public ResponseEntity<OrderResponse> revise(@PathVariable Long id, @RequestBody ReviseOrderRequest request) {
+    public ResponseEntity<OrderResponse> revise(@PathVariable Long id, @RequestBody ReviseOrderRequest request, @AuthenticationPrincipal Jwt jwt) {
         List<OrderLineItem> revisedLineItems = request.lineItems().stream()
                 .map(item -> new OrderLineItem(item.menuItemId(), item.quantity()))
                 .toList();
