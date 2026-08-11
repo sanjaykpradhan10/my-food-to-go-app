@@ -16,6 +16,11 @@ spec:
             - {name: discovery.type, value: single-node}
             - {name: xpack.security.enabled, value: "false"}
             - {name: ES_JAVA_OPTS, value: "-Xms512m -Xmx512m"}
+          # Limit set comfortably above the 512Mi JVM heap since Elasticsearch also uses
+          # significant off-heap memory (Lucene file buffers, etc.).
+          resources:
+            requests: {memory: "512Mi", cpu: "100m"}
+            limits: {memory: "1Gi"}
           volumeMounts: [{name: es-data, mountPath: /usr/share/elasticsearch/data}]
           readinessProbe:
             httpGet: {path: /_cluster/health, port: 9200}

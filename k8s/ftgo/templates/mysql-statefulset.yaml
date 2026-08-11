@@ -24,6 +24,9 @@ spec:
               value: ftgo
             - name: MYSQL_PASSWORD
               valueFrom: {secretKeyRef: {name: ftgo-credentials, key: mysql-password}}
+          resources:
+            requests: {memory: "256Mi", cpu: "100m"}
+            limits: {memory: "512Mi"}
           volumeMounts:
             - {name: mysql-data, mountPath: /var/lib/mysql}
             - {name: init-sql, mountPath: /docker-entrypoint-initdb.d}

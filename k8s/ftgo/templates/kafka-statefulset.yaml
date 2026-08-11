@@ -17,6 +17,9 @@ spec:
           env:
             - {name: ZOOKEEPER_CLIENT_PORT, value: "2181"}
             - {name: ZOOKEEPER_TICK_TIME, value: "2000"}
+          resources:
+            requests: {memory: "128Mi", cpu: "50m"}
+            limits: {memory: "256Mi"}
 ---
 apiVersion: v1
 kind: Service
@@ -53,6 +56,13 @@ spec:
             - {name: KAFKA_ADVERTISED_LISTENERS, value: "INTERNAL://kafka:29092,EXTERNAL://kafka:9092"}
             - {name: KAFKA_INTER_BROKER_LISTENER_NAME, value: "INTERNAL"}
             - {name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1"}
+            # Bound the JVM heap explicitly rather than relying on cgroup-derived ergonomics,
+            # which under kind's shared-node memory pressure led the kernel OOM-killer to kill
+            # the broker (containerd reports this as a generic exit 1, not classic OOMKilled/137).
+            - {name: KAFKA_HEAP_OPTS, value: "-Xmx512m -Xms512m"}
+          resources:
+            requests: {memory: "512Mi", cpu: "100m"}
+            limits: {memory: "768Mi"}
 ---
 apiVersion: v1
 kind: Service

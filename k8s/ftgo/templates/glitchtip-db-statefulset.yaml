@@ -16,6 +16,9 @@ spec:
             - {name: POSTGRES_DB, value: glitchtip}
             - {name: POSTGRES_USER, value: glitchtip}
             - {name: POSTGRES_PASSWORD, value: glitchtip}
+          resources:
+            requests: {memory: "128Mi", cpu: "50m"}
+            limits: {memory: "256Mi"}
           volumeMounts: [{name: glitchtip-db-data, mountPath: /var/lib/postgresql/data}]
           readinessProbe:
             exec: {command: ["pg_isready", "-U", "glitchtip"]}
