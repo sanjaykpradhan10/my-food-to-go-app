@@ -36,3 +36,14 @@ management:
   otlp:
     tracing:
       endpoint: http://localhost:4318/v1/traces
+
+sentry:
+  environment: local
+  # traces-sample-rate left unset (defaults to 0): this sub-project only needs error capture,
+  # not Sentry's separate performance-tracing feature, which would duplicate what Tempo already
+  # does via micrometer-tracing-bridge-otel.
+  # sentry.dsn is deliberately NOT set here: it comes from the SENTRY_DSN environment variable
+  # injected per-container (sourced from Task 1's provisioned DSN), matching how
+  # SPRING_KAFKA_BOOTSTRAP_SERVERS and other environment-specific values are handled as compose
+  # env vars rather than config-repo values.
+  send-default-pii: false

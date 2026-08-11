@@ -1243,6 +1243,67 @@ The distributed tracing sub-project (§11.3.3) configures Micrometer Tracing to 
 
 **No additional application code required.** The encoder copies MDC fields into JSON automatically; services need only emit logs via standard `log.info()` / `log.error()` calls. Explicit logging of the trace context is not needed — it's captured from the MDC by the encoder.
 
+## Exception tracking (Ch.11, §11.3.5)
+
+All 9 `actuatorModules` services include `sentry-spring-boot-starter-jakarta:7.22.5` (the plan's originally-specified `7.14.0` is not a published Maven Central version — pinned to the latest stable 7.x release to stay off the unreleased-at-plan-time 8.x line). The `-jakarta` variant is required, not optional: this project is Spring Boot 3, which discovers auto-configuration via `AutoConfiguration.imports`, not the legacy `spring.factories` mechanism the plain (non-jakarta) `sentry-spring-boot-starter` still uses. An earlier revision of this dependency pinned the non-jakarta artifact by mistake; its `SentryAutoConfiguration` silently never ran under Spring Boot 3, so no exception was ever actually captured despite the dependency being present — caught in final review, not by the original verification, which never inspected the artifact's registered auto-configuration. With the `-jakarta` artifact, the starter auto-registers a Spring `HandlerExceptionResolver` that captures any exception reaching Spring's default error handling and reports it to GlitchTip, a self-hosted, Sentry-protocol-compatible error tracker deployed alongside the rest of the observability stack in `compose.yml`.
+
+**Auto-capture is scoped to uncaught exceptions only.** Every service in this codebase already has one or more `@ExceptionHandler` methods translating expected business errors (`OrderNotFoundException`, `RestaurantServiceUnavailableException`, optimistic-lock conflicts, etc.) into the correct HTTP response. Those methods are left completely untouched by this sub-project — an exception handled by a local `@ExceptionHandler` never reaches Spring's default handling path, so the Sentry starter never sees it and never reports it. Only exceptions with *no* matching handler — genuine bugs or unanticipated failures — get reported. This is a deliberate design decision: reporting every 404/409 from expected business-rule violations would flood GlitchTip with noise indistinguishable from real defects, defeating the point of an exception tracker.
+
+### Architecture
+
+```mermaid
+graph LR
+    A["glitchtip-provisioner<br/>(one-shot, docker:27-cli)"]
+    B["glitchtip<br/>(GlitchTip v4.2.9)"]
+    C["glitchtip-db<br/>(Postgres 16)"]
+    D["glitchtip-redis<br/>(Redis 7)"]
+    E["sentry-dsn<br/>(shared Docker volume)"]
+    F["9 service containers<br/>(entrypoint wrapper)"]
+
+    A -->|"Django management shell:<br/>create org/project/DSN/API token"| B
+    B --> C
+    B --> D
+    A -->|"writes dsn.env"| E
+    E -->|"sourced at container startup"| F
+    F -->|"HTTPS: uncaught exceptions"| B
+```
+
+### DSN provisioning flow
+
+GlitchTip has no first-run API for minting an org/project/DSN without a chicken-and-egg authentication step, so `glitchtip-provisioner` (image `docker:27-cli`, chosen because it needs the docker client but not a full compose CLI — `docker:27-cli` ships only the former) drives GlitchTip's own Django management shell instead of the REST API, via `docker exec` against the `glitchtip` container (targeted by its compose-assigned label, since `docker:27-cli` has no `docker compose` command of its own). `glitchtip/provision.sh` is idempotent (`get_or_create` throughout) so re-running it on a compose restart doesn't mint duplicate orgs, projects, or API tokens:
+
+1. Creates (or reuses) a superuser (`admin@localhost`) — GlitchTip's user model has no `username` field; email is the identifier and the display-name field is `name`, both details only confirmed by reading the actual model source under `apps.<app>.models`, not GlitchTip's docs.
+2. Creates (or reuses) organization `ftgo` and project `ftgo`, and reads the DSN off the project's `ProjectKey`.
+3. `ProjectKey.get_dsn()` bakes in `GLITCHTIP_DOMAIN` (`http://localhost:8000`) — correct for a human hitting the GlitchTip UI from the host machine, but wrong for the other 9 containers, where `localhost` resolves to themselves, not to `glitchtip`. The script rewrites the DSN's host to the compose service name `glitchtip`, which every container on the compose network can resolve, without touching `GLITCHTIP_DOMAIN` itself.
+4. Mints (or reuses) a GlitchTip API token scoped to `org:read`/`project:read`/`event:read`/`member:read` — the minimum the e2e test's issues-API polling needs (see below). GlitchTip's `scopes` field is a django-bitfield: passing `scopes=[...]` to the model constructor silently no-ops (it coerces to an int, not the bit list), so each flag is set individually via `setattr(token.scopes, '<flag>', True)` after creation.
+5. Writes both values to `glitchtip/dsn.env` (`SENTRY_DSN=...`, `GLITCHTIP_API_TOKEN=...`), a host-bind-mounted, gitignored file, then copies it into the `sentry-dsn` Docker volume shared with all 9 service containers.
+
+Each of the 9 services' Dockerfiles ends with a shell-wrapped `ENTRYPOINT` (`[ -f /shared/dsn.env ] && export $(grep '^SENTRY_DSN=' /shared/dsn.env) ; exec java -jar app.jar`) that sources only the `SENTRY_DSN` line as an environment variable immediately before the JVM starts, matching how other environment-specific values (e.g. `SPRING_KAFKA_BOOTSTRAP_SERVERS`) are injected via `compose.yml` env vars rather than baked into `config-repo`. `dsn.env` also carries a second line, `GLITCHTIP_API_TOKEN` (an org-wide GlitchTip read credential minted for the e2e test's issues-API polling, see below) — the entrypoint deliberately greps for the `SENTRY_DSN=` line only rather than exporting the whole file, so that token is never handed to any of the 9 application containers, which have no use for it. `compose.yml` gives all 9 services a `depends_on: glitchtip-provisioner: condition: service_completed_successfully`, so no service can start (and race ahead of the DSN file existing) before provisioning finishes.
+
+**`sentry.dsn` is deliberately absent from `config-repo/application.yml`.** `config-repo/application.yml` sets only `sentry.environment: local` and `sentry.send-default-pii: false`; `sentry.traces-sample-rate` is left unset (defaults to 0), since this sub-project only needs error capture, not Sentry's separate performance-tracing feature, which would duplicate what Tempo (§11.3.3) already does via the Micrometer Tracing bridge.
+
+### Exception capture and correlation with tracing/logging (§11.3.2, §11.3.3)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant OrderService as order-service
+    participant Sentry as sentry-spring-boot-starter
+    participant GlitchTip
+    participant Tempo
+    participant Kibana
+
+    Client->>OrderService: GET /orders/_diagnostics/trigger-exception
+    OrderService->>OrderService: throws IllegalStateException<br/>(no matching @ExceptionHandler)
+    OrderService->>Sentry: reaches Spring's default error handling
+    Sentry->>GlitchTip: report exception (own independent event ID,<br/>NOT correlated with Tempo/Kibana traceId)
+    OrderService-->>Client: 500 Internal Server Error
+```
+
+**Trace correlation is NOT implemented.** An earlier draft of this document (and this sub-project's design spec) claimed captured exceptions are automatically tagged with the active `traceId`/`spanId` from the Micrometer Tracing bridge used by §11.3.2/§11.3.3, allowing a GlitchTip issue to be cross-referenced against its Tempo trace and Kibana log lines. That claim was never actually implemented and was corrected during final review. `sentry-spring-boot-starter-jakarta` does not adopt Micrometer/OpenTelemetry trace context on its own — the Sentry Java SDK maintains its own independent event/trace id unless a `sentry-opentelemetry-*` integration module is added and wired in, which this sub-project does not do. A GlitchTip issue captured for a given request currently has **no** relationship to that request's `traceId` in Tempo or Kibana; correlating an exception with its trace/logs today requires matching by approximate timestamp and request path, not by a shared ID. Adding real correlation (a `sentry-opentelemetry-agentless*` dependency plus wiring) is a candidate for a future sub-project, not something to assume is already working.
+
+**Verification.** An ADMIN-gated `GET /orders/_diagnostics/trigger-exception` endpoint on `OrderController` (order-service) exists solely to exercise this pipeline end-to-end — it throws an uncaught `IllegalStateException` with no matching handler. A Cucumber scenario in `ftgo-end-to-end-test` calls it (as an ADMIN-authenticated user) and then polls GlitchTip's issues API to confirm the exception was captured, authenticating with the API token provisioned above (resolved from the `GLITCHTIP_API_TOKEN` environment variable or, falling back, read directly out of `glitchtip/dsn.env` — no hardcoded token value anywhere in source).
+
 ## Externalized configuration (Ch.11, §11.2)
 
 All 9 services (7 business services + 2 gateways) source their configuration from a **three-tier

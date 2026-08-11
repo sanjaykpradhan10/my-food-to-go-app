@@ -44,6 +44,7 @@ outbox:
 saga:
   command-request:
     poll-fixed-delay-ms: 2000
+  mode: choreography
 
 eureka:
   client:
@@ -54,9 +55,6 @@ eureka:
 
 persistence:
   mode: jpa
-
-saga:
-  mode: choreography
 
 resilience4j:
   circuitbreaker:

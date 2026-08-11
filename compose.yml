@@ -134,8 +134,12 @@ services:
         condition: service_started
       config-server:
         condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
     ports:
       - "8085:8085"
+    volumes:
+      - sentry-dsn:/shared:ro
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_restaurant
       SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
@@ -167,8 +171,12 @@ services:
         condition: service_started
       config-server:
         condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
     ports:
       - "8082:8082"
+    volumes:
+      - sentry-dsn:/shared:ro
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order
       SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
@@ -202,8 +210,12 @@ services:
         condition: service_started
       config-server:
         condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
     ports:
       - "8083:8083"
+    volumes:
+      - sentry-dsn:/shared:ro
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_kitchen
       SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
@@ -233,8 +245,12 @@ services:
         condition: service_started
       config-server:
         condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
     ports:
       - "8081:8081"
+    volumes:
+      - sentry-dsn:/shared:ro
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_consumer
       SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
@@ -265,8 +281,12 @@ services:
         condition: service_started
       config-server:
         condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
     ports:
       - "8084:8084"
+    volumes:
+      - sentry-dsn:/shared:ro
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_accounting
       SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
@@ -298,8 +318,12 @@ services:
         condition: service_started
       config-server:
         condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
     ports:
       - "8086:8086"
+    volumes:
+      - sentry-dsn:/shared:ro
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_delivery
       SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
@@ -331,8 +355,12 @@ services:
         condition: service_started
       config-server:
         condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
     ports:
       - "8088:8088"
+    volumes:
+      - sentry-dsn:/shared:ro
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_order_history
       SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
@@ -367,8 +395,12 @@ services:
         condition: service_started
       config-server:
         condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
     ports:
       - "8090:8090"
+    volumes:
+      - sentry-dsn:/shared:ro
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       GATEWAY_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
@@ -405,8 +437,12 @@ services:
         condition: service_started
       config-server:
         condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
     ports:
       - "8091:8091"
+    volumes:
+      - sentry-dsn:/shared:ro
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
       GATEWAY_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
@@ -518,5 +554,87 @@ services:
           --form file=@/index-pattern.ndjson
     restart: "no"
 
+  glitchtip-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  glitchtip-redis:
+    image: redis:7
+
+  glitchtip:
+    image: glitchtip/glitchtip:v4.2.9
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+    # image's default entrypoint (./bin/start.sh) only runs migrations when a Heroku-style
+    # DYNO env var is set, which we don't set; run migrate explicitly before uwsgi instead
+    command: ["sh", "-c", "./bin/run-migrate.sh && ./bin/run-uwsgi.sh"]
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-db:5432/glitchtip
+      SECRET_KEY: local-dev-only-not-a-real-secret
+      # both must point at glitchtip-redis: REDIS_URL backs the Django cache (defaults to
+      # host "redis", which doesn't exist on this network) and CELERY_BROKER_URL backs Celery
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      CELERY_BROKER_URL: redis://glitchtip-redis:6379/0
+      GLITCHTIP_DOMAIN: http://localhost:8000
+      DEFAULT_FROM_EMAIL: glitchtip@localhost
+      ENABLE_OPEN_USER_REGISTRATION: "false"
+      # the glitchtip image's uwsgi entrypoint defaults to PORT=8080; pin it to 8000 so it
+      # matches the published port and the healthcheck below without an extra port remap
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # the glitchtip image has no curl/wget; python3 is present, so use it directly
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request as u; u.urlopen('http://localhost:8000/_health/')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # GlitchTip's uwsgi process only accepts the event envelope and enqueues it on Redis;
+  # a separate Celery worker actually processes the queue into a stored Issue. Without this
+  # service, POST /api/1/envelope/ returns 200 but no Issue is ever created — discovered during
+  # final-review verification of Ch.11 §11.3.5, where the diagnostic-exception pipeline appeared
+  # to work (event accepted) but the e2e test's issues-API poll would have hung/failed forever.
+  glitchtip-worker:
+    image: glitchtip/glitchtip:v4.2.9
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+    command: ["celery", "-A", "glitchtip", "worker", "-B", "-l", "info"]
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-db:5432/glitchtip
+      SECRET_KEY: local-dev-only-not-a-real-secret
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      CELERY_BROKER_URL: redis://glitchtip-redis:6379/0
+      GLITCHTIP_DOMAIN: http://localhost:8000
+      DEFAULT_FROM_EMAIL: glitchtip@localhost
+      ENABLE_OPEN_USER_REGISTRATION: "false"
+
+  glitchtip-provisioner:
+    image: docker:27-cli
+    depends_on:
+      glitchtip:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./glitchtip:/glitchtip
+      - sentry-dsn:/shared
+    entrypoint: ["sh", "-c", "cd /glitchtip && sh provision.sh && cp dsn.env /shared/dsn.env"]
+    restart: "no"
+
 volumes:
   mysql-data:
+  sentry-dsn:

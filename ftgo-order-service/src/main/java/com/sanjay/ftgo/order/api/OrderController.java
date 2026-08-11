@@ -112,6 +112,15 @@ public class OrderController {
         return ResponseEntity.ok(OrderResponse.from(result.order()));
     }
 
+    // Deliberately uncaught (no matching @ExceptionHandler below) — exists solely to verify the
+    // Ch.11 §11.3.5 exception-tracking pipeline end-to-end (GlitchTip capture). ADMIN-gated since
+    // it has no other purpose and shouldn't be reachable by regular consumer traffic.
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/_diagnostics/trigger-exception")
+    public ResponseEntity<Void> triggerDiagnosticException() {
+        throw new IllegalStateException("Deliberate exception for exception-tracking verification (Ch.11 §11.3.5)");
+    }
+
     @ExceptionHandler({RestaurantNotFoundException.class, MenuItemNotFoundException.class, OrderNotFoundException.class})
     public ResponseEntity<String> handleNotFound(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
