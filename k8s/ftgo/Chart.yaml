@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ftgo
+description: FTGO microservices stack (Ch.12 §12.4)
+version: 0.1.0
+appVersion: "1.0"
