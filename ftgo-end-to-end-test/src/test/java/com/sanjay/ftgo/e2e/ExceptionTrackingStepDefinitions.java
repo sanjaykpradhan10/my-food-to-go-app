@@ -89,18 +89,19 @@ public class ExceptionTrackingStepDefinitions {
     @Then("GlitchTip eventually reports an IllegalStateException issue for ftgo-order-service")
     public void glitchtipEventuallyReportsAnIssue() throws Exception {
         Instant deadline = Instant.now().plus(Duration.ofSeconds(30));
-        // title/culprit match reasoning (no live-captured payload was observed to confirm this —
-        // see task-3-report.md): GlitchTip's culprit is computed by sentry/culprit.py's
-        // generate_culprit(), which for a non-native platform formats the last in-app stack frame
-        // as "%s in %s" % (frame.module, frame.function). The Sentry Java SDK sets `module` to
-        // the fully-qualified declaring class, so the top frame here is expected to render as
-        // "com.sanjay.ftgo.order.api.OrderController in triggerDiagnosticException" — hence
-        // matching on the substring "OrderController" rather than requiring an exact string.
+        // title/culprit match reasoning, CORRECTED against a live-captured payload during final
+        // review (see .superpowers/sdd/2026-08-10-exception-tracking/final-fix-report.md): the
+        // original assumption here was that GlitchTip's `culprit` field would render as
+        // "com.sanjay.ftgo.order.api.OrderController in triggerDiagnosticException" (per
+        // sentry/culprit.py's generate_culprit()). A live-captured issue showed `culprit` is
+        // actually an empty string for this event shape; the reliable field is
+        // `metadata.filename` ("OrderController.java", set by GlitchTip's Java-platform event
+        // processor from the top in-app stack frame), so matching moved there instead.
         // titleMatchSeen distinguishes "no matching title ever showed up" (capture pipeline
-        // likely broken) from "title matched but culprit didn't" (this substring assumption is
+        // likely broken) from "title matched but filename didn't" (the match field assumption is
         // wrong) in the failure message below.
         boolean titleMatchSeen = false;
-        String lastNonMatchingCulprit = null;
+        String lastNonMatchingFilename = null;
         while (Instant.now().isBefore(deadline)) {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(GLITCHTIP_ISSUES_URL + "?query=IllegalStateException"))
@@ -113,13 +114,13 @@ public class ExceptionTrackingStepDefinitions {
                 if (issues.isArray() && !issues.isEmpty()) {
                     for (JsonNode issue : issues) {
                         String title = issue.path("title").asText("");
-                        String culprit = issue.path("culprit").asText("");
+                        String filename = issue.path("metadata").path("filename").asText("");
                         if (title.contains("IllegalStateException")) {
                             titleMatchSeen = true;
-                            if (culprit.contains("OrderController")) {
+                            if (filename.contains("OrderController")) {
                                 return;
                             }
-                            lastNonMatchingCulprit = culprit;
+                            lastNonMatchingFilename = filename;
                         }
                     }
                 }
@@ -134,9 +135,9 @@ public class ExceptionTrackingStepDefinitions {
         if (titleMatchSeen) {
             throw new AssertionError(
                     "GlitchTip captured an IllegalStateException issue (title matched) within 30s, "
-                            + "but its culprit never contained \"OrderController\" — last observed "
-                            + "culprit was: \"" + lastNonMatchingCulprit + "\". The exception WAS "
-                            + "captured; only the culprit-format assumption in this step appears wrong "
+                            + "but its metadata.filename never contained \"OrderController\" — last "
+                            + "observed filename was: \"" + lastNonMatchingFilename + "\". The exception "
+                            + "WAS captured; only the match-field assumption in this step appears wrong "
                             + "and should be updated to match.");
         }
         throw new AssertionError(

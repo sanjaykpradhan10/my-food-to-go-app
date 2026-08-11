@@ -601,6 +601,28 @@ services:
       timeout: 5s
       retries: 30
 
+  # GlitchTip's uwsgi process only accepts the event envelope and enqueues it on Redis;
+  # a separate Celery worker actually processes the queue into a stored Issue. Without this
+  # service, POST /api/1/envelope/ returns 200 but no Issue is ever created — discovered during
+  # final-review verification of Ch.11 §11.3.5, where the diagnostic-exception pipeline appeared
+  # to work (event accepted) but the e2e test's issues-API poll would have hung/failed forever.
+  glitchtip-worker:
+    image: glitchtip/glitchtip:v4.2.9
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+    command: ["celery", "-A", "glitchtip", "worker", "-B", "-l", "info"]
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-db:5432/glitchtip
+      SECRET_KEY: local-dev-only-not-a-real-secret
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      CELERY_BROKER_URL: redis://glitchtip-redis:6379/0
+      GLITCHTIP_DOMAIN: http://localhost:8000
+      DEFAULT_FROM_EMAIL: glitchtip@localhost
+      ENABLE_OPEN_USER_REGISTRATION: "false"
+
   glitchtip-provisioner:
     image: docker:27-cli
     depends_on:
