@@ -27,6 +27,10 @@ dependencies {
     // consuming service's own build.gradle (which used to separately declare spring-kafka).
     api 'org.springframework.boot:spring-boot-starter-data-jpa'
     api 'org.springframework.kafka:spring-kafka'
+    // AuditLoggingAspect (com.sanjay.ftgo.common.audit) needs Spring AOP proxying enabled on
+    // every consuming service's classpath — api, not implementation, so it propagates the same
+    // way spring-kafka does above (see that dependency's comment).
+    api 'org.springframework.boot:spring-boot-starter-aop'
     api 'org.springframework.cloud:spring-cloud-context'
     // Bridge-agnostic tracing API only (no bridge-otel here) — OutboxPublisher needs Tracer/
     // Propagator to re-parent a Kafka send under the trace that was active when the outbox row
@@ -37,6 +41,18 @@ dependencies {
     // plain unit test with no tracing infrastructure) they're simply absent and injected as null.
     compileOnly 'io.micrometer:micrometer-tracing'
     testImplementation 'io.micrometer:micrometer-tracing'
+
+    // compileOnly, not api: AuditLoggingAspect references PathVariable/RestController-family
+    // annotations (matched by @Around pointcut expression, string-based so no hard runtime
+    // dependency) and the Jwt argument type it inspects at the call site. Every service that
+    // actually has @PostMapping/@PreAuthorize-gated controllers already brings
+    // spring-boot-starter-web and spring-boot-starter-oauth2-resource-server onto its own
+    // classpath (see ftgo-order-service/build.gradle), so these only need to be visible here at
+    // compile time, not re-exported to consumers that may not use MVC/JWT at all.
+    compileOnly 'org.springframework.boot:spring-boot-starter-web'
+    compileOnly 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    testImplementation 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 

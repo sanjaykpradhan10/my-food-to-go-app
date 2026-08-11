@@ -46,7 +46,6 @@ contracts {
 
 dependencies {
     implementation project(':ftgo-common')
-    implementation 'org.springframework.boot:spring-boot-starter-aop'
     implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
     // spring-kafka comes transitively via ftgo-common's `api` dependency
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
