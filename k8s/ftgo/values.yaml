@@ -26,3 +26,16 @@ elasticsearch:
 glitchtipDb:
   image: postgres:16
   storageSize: 1Gi
+
+platformServices:
+  - name: service-registry
+    port: 8761
+    dependsOn: []
+  - name: authorization-server
+    port: 9000
+    dependsOn: []
+  - name: config-server
+    port: 8888
+    dependsOn: []
+    extraEnv:
+      CONFIG_SERVER_GIT_URI: "file:///config-source-repo"
