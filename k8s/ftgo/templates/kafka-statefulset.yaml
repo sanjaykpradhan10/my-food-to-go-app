@@ -40,6 +40,12 @@ spec:
   template:
     metadata: {labels: {app: kafka}}
     spec:
+      # Kubernetes auto-injects legacy Docker-links-style KAFKA_PORT/KAFKA_SERVICE_HOST env vars
+      # from the "kafka" Service (name collision with the pod's own service). The cp-kafka
+      # entrypoint's configure script treats a non-empty KAFKA_PORT as deprecated single-port
+      # config and exits 1 before the broker ever starts, so service-link env injection must
+      # be disabled for this pod.
+      enableServiceLinks: false
       initContainers:
         - name: wait-for-zookeeper
           image: busybox:1.36
