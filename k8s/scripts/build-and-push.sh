@@ -12,4 +12,12 @@ build_and_push() {
 build_and_push ftgo-service-registry
 build_and_push ftgo-authorization-server
 build_and_push ftgo-config-server
-# Task 10 appends the remaining 10 services to this same function-call list.
+build_and_push ftgo-restaurant-service
+build_and_push ftgo-order-service
+build_and_push ftgo-kitchen-service
+build_and_push ftgo-consumer-service
+build_and_push ftgo-accounting-service
+build_and_push ftgo-delivery-service
+build_and_push ftgo-order-history-service
+build_and_push ftgo-audit-log-service
+# Task 10 appends the remaining 2 services to this same function-call list.

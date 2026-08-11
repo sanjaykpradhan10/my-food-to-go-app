@@ -39,3 +39,57 @@ platformServices:
     dependsOn: []
     extraEnv:
       CONFIG_SERVER_GIT_URI: "file:///config-source-repo"
+
+businessServices:
+  - name: restaurant-service
+    port: 8085
+    db: ftgo_restaurant
+    kafka: false
+    dependsOn: [{name: mysql, port: 3306}]
+  - name: order-service
+    port: 8082
+    db: ftgo_order
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}, {name: restaurant-service, port: 8085}]
+    extraEnv:
+      OUTBOX_PUBLISH_MODE: polling
+      SAGA_MODE: choreography
+      PERSISTENCE_MODE: jpa
+  - name: kitchen-service
+    port: 8083
+    db: ftgo_kitchen
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+    extraEnv:
+      SAGA_MODE: choreography
+  - name: consumer-service
+    port: 8081
+    db: ftgo_consumer
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+    extraEnv:
+      SAGA_MODE: choreography
+  - name: accounting-service
+    port: 8084
+    db: ftgo_accounting
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+    extraEnv:
+      SAGA_MODE: choreography
+  - name: delivery-service
+    port: 8086
+    db: ftgo_delivery
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+    extraEnv:
+      SAGA_MODE: choreography
+  - name: order-history-service
+    port: 8088
+    db: ftgo_order_history
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+  - name: audit-log-service
+    port: 8089
+    db: ftgo_audit_log
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
