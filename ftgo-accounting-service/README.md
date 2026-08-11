@@ -55,6 +55,18 @@ autoconfiguration; Kafka producer/consumer spans require
 both set here. Viewable in Grafana via the provisioned Tempo datasource, or queried directly
 against Tempo's search API.
 
+## Audit logging (Ch.11, §11.3.6)
+
+`ftgo-common`'s `AuditLoggingAspect` is registered here (it auto-configures wherever `ftgo-common`
+is on the classpath) but **never fires**: it matches only controller methods carrying both
+`@PostMapping` and `@PreAuthorize`, and this service's sole endpoint is the read-only
+`GET /authorizations/order/{orderId}`. Every authorization/reversal/revision here is driven by a
+saga, not by a person calling an API, so there is no actor to attribute and nothing to audit — the
+originating human action (`POST /orders`, `POST /orders/{id}/cancel`, `POST /orders/{id}/revise`)
+is audited on order-service instead.
+
+See `docs/ARCHITECTURE.md`'s "Audit logging (Ch.11, §11.3.6)" section.
+
 ## Configuration (Ch.11, §11.2)
 
 Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults + `config-repo/ftgo-accounting-service.yml` per-service overrides) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract).

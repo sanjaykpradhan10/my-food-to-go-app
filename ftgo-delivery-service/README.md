@@ -62,6 +62,32 @@ autoconfiguration; Kafka producer/consumer spans require
 both set here. Viewable in Grafana via the provisioned Tempo datasource, or queried directly
 against Tempo's search API.
 
+## Audit logging (Ch.11, §11.3.6)
+
+No code in this service publishes audit events. `ftgo-common`'s `AuditLoggingAspect` — registered
+automatically by `AuditLoggingAutoConfiguration` on the shared classpath — intercepts every
+controller method carrying **both** `@PostMapping` and `@PreAuthorize` and publishes an
+`AuditLogEntryEvent` to the Kafka topic `audit-log`, consumed by `ftgo-audit-log-service`
+(port 8089, `GET /audit-log`, `ADMIN`-only).
+
+Both courier-driven endpoints are audited, each with `entityType=Delivery` and `entityId` taken
+from the `{deliveryId}` path variable:
+
+| Endpoint | `action` |
+|---|---|
+| `POST /deliveries/{deliveryId}/picked-up` | `POST DeliveryController.pickedUp` |
+| `POST /deliveries/{deliveryId}/delivered` | `POST DeliveryController.delivered` |
+
+Saga-driven changes — a `Delivery` being scheduled by the Create Order saga, or cancelled by the
+Cancel Order saga — are **not** audited: no human initiated them directly, and the originating
+action on order-service is what carries the actor.
+
+`userId` is currently null on these entries: the aspect reads the actor from a `Jwt` method
+argument and `DeliveryController`'s methods don't declare one. Rejected transitions are still
+recorded with `outcome=FAILURE` and the exception's simple name as `failureReason`, and the
+exception is rethrown untouched. Publishing is best-effort, never transactional with the delivery
+write.
+
 ## Configuration (Ch.11, §11.2)
 
 Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults + `config-repo/ftgo-delivery-service.yml` per-service overrides) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract).

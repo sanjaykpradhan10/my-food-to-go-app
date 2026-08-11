@@ -57,6 +57,7 @@ This combination means a service crash at any point (before/during/after publish
 | `accounting.commands` | order-service | accounting-service | orchestration |
 | `delivery.commands` | order-service | delivery-service | orchestration |
 | `saga.replies` | consumer-service, kitchen-service, accounting-service, delivery-service | order-service | orchestration |
+| `audit-log` | order-service, kitchen-service, delivery-service, consumer-service (any `ftgo-common`-dependent service with a `@PostMapping`+`@PreAuthorize` endpoint, via `AuditLoggingAspect`) | audit-log-service | neither — cross-cutting observability (Ch.11, §11.3.6) |
 
 Choreography topics carry domain events (things that already happened: `OrderCreated`, `TicketCreated`, ...). Orchestration topics carry either commands (imperatives: `VerifyConsumerCommand`, `KitchenCommand{commandType=CreateTicket}`, ...) or replies (a single shared `SagaReply{participant, eventType, sagaType, ...}` shape, discriminated by `participant` then `sagaType` — see "Multi-saga routing" below).
 
@@ -995,13 +996,37 @@ gateways → the business services they route to), so the stack won't route traf
 before it's actually ready. Verified end-to-end by `ftgo-end-to-end-test`'s
 `AllServicesReportHealthy.feature`.
 
-A full dedicated section with sequence diagrams, matching this file's other patterns, is deferred
-to Ch.11's eventual chapter-completion documentation sweep — this is sub-project 1 of an
-unscheduled number of Ch.11 sub-projects.
+**Startup ordering the health checks actually buy** — `depends_on: condition: service_healthy`
+turns a liveness signal into a dependency gate, so nothing routes to a half-started service:
+
+```mermaid
+sequenceDiagram
+    participant D as docker compose
+    participant M as mysql
+    participant R as restaurant-service
+    participant O as order-service
+    participant G as public-gateway
+
+    D->>M: start
+    M-->>D: healthcheck OK (mysqladmin ping)
+    D->>R: start (mysql healthy)
+    loop every 10s, up to 10 retries
+        D->>R: curl -f /actuator/health
+    end
+    R-->>D: 200 {"status":"UP","components":{"db":…,"discoveryComposite":…}}
+    D->>O: start (restaurant-service healthy)
+    O-->>D: 200 UP
+    D->>G: start (all routed-to services healthy)
+```
+
+A service that never reports `UP` (e.g. MySQL unreachable, so the `db` indicator is `DOWN`)
+holds its dependents in `created` state rather than letting them start and fail their first real
+request — the whole point of the pattern, and the reason `ftgo-end-to-end-test`'s
+`AllServicesReportHealthy.feature` can assume the stack is ready the moment compose returns.
 
 ## Application metrics (Ch.11, §11.3.4)
 
-All 9 services (7 business services + 2 gateways) expose Micrometer metrics via
+All 10 services (8 business services + 2 gateways) expose Micrometer metrics via
 `GET /actuator/prometheus` in Prometheus exposition format (`PrometheusMeterRegistry`), alongside
 the existing `/actuator/health`. Access to `/actuator/prometheus` is unauthenticated on the 7
 business services (a security-config fix made mid-sub-project, since Spring Security's default
@@ -1027,7 +1052,7 @@ actuator rules would otherwise block Prometheus's scrape requests, which carry n
 Each counter appears in the `/actuator/prometheus` output with a `_total` suffix (e.g.
 `orders_placed_total`), per Micrometer's Prometheus naming convention for counters.
 
-**Prometheus** (`compose.yml` service, port 9090) scrapes all 9 services' `/actuator/prometheus`
+**Prometheus** (`compose.yml` service, port 9090) scrapes all 10 services' `/actuator/prometheus`
 endpoints every 5s and loads 3 alert rules:
 
 - `ServiceDown` — `up == 0` for 30s.
@@ -1044,12 +1069,39 @@ and the business counters listed above.
 
 Verified by `ftgo-end-to-end-test`'s Cucumber scenario exercising order-service's counters, plus
 manual Docker Compose verification (scrape targets up, alert rules loaded, dashboard renders) done
-live during this sub-project's build. A full dedicated section with sequence diagrams is deferred
-to Ch.11's eventual chapter-completion documentation sweep, same as the health-check section above.
+live during this sub-project's build.
+
+**The pull-based collection cycle** — nothing in a service ever pushes a metric; Prometheus
+scrapes, which is why the `/actuator/prometheus` endpoint had to be opened to unauthenticated
+access:
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant O as order-service
+    participant P as prometheus
+    participant G as grafana
+
+    C->>O: POST /orders
+    O->>O: meterRegistry.counter("orders_placed").increment()
+    Note over O: in-memory PrometheusMeterRegistry — no I/O yet
+    loop every 5s
+        P->>O: GET /actuator/prometheus (no credentials)
+        O-->>P: orders_placed_total 1 …
+    end
+    P->>P: evaluate alert rules (ServiceDown, HighOrderRejectionRate, …)
+    G->>P: PromQL query (FTGO Overview dashboard)
+    P-->>G: time series
+```
+
+The counter increment is a memory write on the request thread — a scrape failure, a Prometheus
+outage, or a dropped alert can never fail or slow the business request that produced the metric.
+The tradeoff is resolution: a counter incremented and then lost to a container restart inside one
+5s scrape window is simply never observed.
 
 ## Distributed tracing (Ch.11, §11.3.3)
 
-All 9 services (7 business services + 2 gateways) export distributed traces via **Micrometer
+All 10 services (8 business services + 2 gateways) export distributed traces via **Micrometer
 Tracing** bridged to **OpenTelemetry** (`micrometer-tracing-bridge-otel` +
 `opentelemetry-exporter-otlp`, added to the same `actuatorModules` block in the root `build.gradle`
 that already carries `spring-boot-starter-actuator` and `micrometer-registry-prometheus`), rather
@@ -1276,9 +1328,9 @@ GlitchTip has no first-run API for minting an org/project/DSN without a chicken-
 2. Creates (or reuses) organization `ftgo` and project `ftgo`, and reads the DSN off the project's `ProjectKey`.
 3. `ProjectKey.get_dsn()` bakes in `GLITCHTIP_DOMAIN` (`http://localhost:8000`) — correct for a human hitting the GlitchTip UI from the host machine, but wrong for the other 9 containers, where `localhost` resolves to themselves, not to `glitchtip`. The script rewrites the DSN's host to the compose service name `glitchtip`, which every container on the compose network can resolve, without touching `GLITCHTIP_DOMAIN` itself.
 4. Mints (or reuses) a GlitchTip API token scoped to `org:read`/`project:read`/`event:read`/`member:read` — the minimum the e2e test's issues-API polling needs (see below). GlitchTip's `scopes` field is a django-bitfield: passing `scopes=[...]` to the model constructor silently no-ops (it coerces to an int, not the bit list), so each flag is set individually via `setattr(token.scopes, '<flag>', True)` after creation.
-5. Writes both values to `glitchtip/dsn.env` (`SENTRY_DSN=...`, `GLITCHTIP_API_TOKEN=...`), a host-bind-mounted, gitignored file, then copies it into the `sentry-dsn` Docker volume shared with all 9 service containers.
+5. Writes both values to `glitchtip/dsn.env` (`SENTRY_DSN=...`, `GLITCHTIP_API_TOKEN=...`), a host-bind-mounted, gitignored file, then copies it into the `sentry-dsn` Docker volume shared with all 10 service containers.
 
-Each of the 9 services' Dockerfiles ends with a shell-wrapped `ENTRYPOINT` (`[ -f /shared/dsn.env ] && export $(grep '^SENTRY_DSN=' /shared/dsn.env) ; exec java -jar app.jar`) that sources only the `SENTRY_DSN` line as an environment variable immediately before the JVM starts, matching how other environment-specific values (e.g. `SPRING_KAFKA_BOOTSTRAP_SERVERS`) are injected via `compose.yml` env vars rather than baked into `config-repo`. `dsn.env` also carries a second line, `GLITCHTIP_API_TOKEN` (an org-wide GlitchTip read credential minted for the e2e test's issues-API polling, see below) — the entrypoint deliberately greps for the `SENTRY_DSN=` line only rather than exporting the whole file, so that token is never handed to any of the 9 application containers, which have no use for it. `compose.yml` gives all 9 services a `depends_on: glitchtip-provisioner: condition: service_completed_successfully`, so no service can start (and race ahead of the DSN file existing) before provisioning finishes.
+Each of the 10 services' Dockerfiles ends with a shell-wrapped `ENTRYPOINT` (`[ -f /shared/dsn.env ] && export $(grep '^SENTRY_DSN=' /shared/dsn.env) ; exec java -jar app.jar`) that sources only the `SENTRY_DSN` line as an environment variable immediately before the JVM starts, matching how other environment-specific values (e.g. `SPRING_KAFKA_BOOTSTRAP_SERVERS`) are injected via `compose.yml` env vars rather than baked into `config-repo`. `dsn.env` also carries a second line, `GLITCHTIP_API_TOKEN` (an org-wide GlitchTip read credential minted for the e2e test's issues-API polling, see below) — the entrypoint deliberately greps for the `SENTRY_DSN=` line only rather than exporting the whole file, so that token is never handed to any of the 10 application containers, which have no use for it. `compose.yml` gives all 10 services a `depends_on: glitchtip-provisioner: condition: service_completed_successfully`, so no service can start (and race ahead of the DSN file existing) before provisioning finishes.
 
 **`sentry.dsn` is deliberately absent from `config-repo/application.yml`.** `config-repo/application.yml` sets only `sentry.environment: local` and `sentry.send-default-pii: false`; `sentry.traces-sample-rate` is left unset (defaults to 0), since this sub-project only needs error capture, not Sentry's separate performance-tracing feature, which would duplicate what Tempo (§11.3.3) already does via the Micrometer Tracing bridge.
 
@@ -1306,7 +1358,7 @@ sequenceDiagram
 
 ## Externalized configuration (Ch.11, §11.2)
 
-All 9 services (7 business services + 2 gateways) source their configuration from a **three-tier
+All 10 services (8 business services + 2 gateways) source their configuration from a **three-tier
 hierarchy**: environment variables (push) > Spring Cloud Config Server (pull) > local
 `application.yml` (fallback). This hierarchy enables centralized management of some properties
 without forcing an overhaul of every service's bootstrap process.
@@ -1314,11 +1366,11 @@ without forcing an overhaul of every service's bootstrap process.
 **Spring Cloud Config Server** (`ftgo-config-server`, port 8888) is a leaf service backed by this
 repository's own `config-repo/` git directory, containing:
 
-- `config-repo/application.yml` — **shared defaults** for all 9 services (Kafka bootstrap-servers,
+- `config-repo/application.yml` — **shared defaults** for all 10 services (Kafka bootstrap-servers,
   Eureka defaultZone, JWT jwk-set-uri, outbox polling interval, saga mode, etc.).
 - `config-repo/ftgo-<service>.yml` — **per-service overrides** for the 5 outbox-publishing
-  services (order, kitchen, accounting, delivery, consumer); the other 4 services (restaurant,
-  order-history, mobile-gateway, public-gateway) have no per-service file.
+  services (order, kitchen, accounting, delivery, consumer); the other 5 services (restaurant,
+  order-history, audit-log, mobile-gateway, public-gateway) have no per-service file.
 
 Every service's `build.gradle` injects `spring.config.import: optional:configserver:http://localhost:8888`
 as a bootstrapping property via the `bootRun` block's `SPRING_CONFIG_IMPORT` environment variable
@@ -1348,3 +1400,296 @@ them via config-server requires a full service restart, which is out of scope fo
 (a production deployment's operator would handle such changes deliberately, not as a dynamic tweak).
 `outbox.batch-size` and `saga.mode` are read once per each poll/saga invocation, not `@RefreshScope`d,
 so only the `outbox.poll-fixed-delay-ms` property is truly live-refreshable in the current design.
+
+## Authentication & authorization (Ch.11, §11.1)
+
+Every request that reaches a business service carries a signed JWT issued by
+`ftgo-authorization-server` (port 9000, a Spring Authorization Server). There is no session, no
+API key, and no trust in anything the caller puts in a request body: identity is the token's
+`sub` claim and authority is its `roles` claim, both re-validated independently by every service.
+
+**Two grant types, two kinds of caller:**
+
+| Grant | Caller | Principal | Roles | Used by |
+|---|---|---|---|---|
+| Custom resource-owner-password | End user (mobile/public client) | one of `FtgoUserDetailsService`'s 5 hardcoded seed users | `CONSUMER` / `RESTAURANT` / `COURIER` / `ADMIN` | every human-facing endpoint |
+| `client_credentials` | `ftgo-order-service` itself | none (no end user) | `SERVICE` | order-service's internal proxy calls to restaurant/kitchen/accounting/delivery-service |
+
+Seed users and a password grant are a deliberate learning-project simplification — the point of
+the sub-project is the *token flow* and the resource-server/`@PreAuthorize` mechanics, not user
+management. The resource-owner-password grant is also deprecated in OAuth 2.1; it is used here
+precisely because it is the shortest path from "a curl command" to "a real signed JWT".
+
+### End-user request, happy path
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as authorization-server
+    participant G as public-gateway
+    participant O as order-service
+
+    C->>A: POST /oauth2/token (grant_type=password, username, password)
+    A-->>C: 200 {access_token: <JWT sub=alice, roles=[CONSUMER]>}
+    C->>G: POST /api/v1/orders<br/>Authorization: Bearer <JWT>
+    G->>A: GET /oauth2/jwks (cached)
+    A-->>G: JWK Set
+    G->>G: JwtValidationFilter — verify signature/expiry
+    G->>G: PerKeyRateLimiter — key = JWT sub
+    G->>O: POST /orders (same bearer token forwarded unchanged)
+    O->>A: GET /oauth2/jwks (cached, independently)
+    O->>O: @PreAuthorize("hasAnyRole('CONSUMER','ADMIN')")
+    O->>O: consumerId := jwt.getSubject() — request body's consumerId NOT trusted
+    O-->>C: 201 Created
+```
+
+The gateway validating the token does **not** excuse the service from validating it again. Each
+business service is its own OAuth2 resource server with its own `JwtDecoder` pointed at the same
+JWK Set URI, so a request that somehow reaches a service directly (bypassing the gateway, which
+is trivially possible on the compose network) is rejected exactly the same way.
+
+### Failure cases
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as public-gateway
+    participant O as order-service
+
+    Note over C,G: Case A — no/invalid token
+    C->>G: POST /api/v1/orders (no Authorization header)
+    G-->>C: 401 Unauthorized (JwtValidationFilter, never routed)
+
+    Note over C,O: Case B — valid token, wrong role
+    C->>G: POST /api/v1/orders<br/>Bearer <JWT roles=[COURIER]>
+    G->>O: POST /orders (gateway only checks signature, not roles)
+    O-->>C: 403 Forbidden (@PreAuthorize denies)
+
+    Note over C,O: Case C — valid token, right role, someone else's order
+    C->>G: GET /api/v1/orders/42<br/>Bearer <JWT sub=bob, roles=[CONSUMER]>
+    G->>O: GET /orders/42
+    O->>O: load Order 42 (consumerId=alice)
+    O->>O: OrderAccessControl.enforce(order, jwt)
+    O-->>C: 403 Forbidden
+```
+
+Case C is the book's **instance-based access control** — role-based checks alone would happily let
+any `CONSUMER` read any order, because "is a consumer" is a property of the caller, not of the
+relationship between the caller and *this specific* `Order`. `OrderAccessControl.enforce` closes
+that by comparing the loaded aggregate's `consumerId` against the JWT's `sub`, admitting `ADMIN`
+unconditionally. It guards `GET /orders/{id}` and `GET /orders/{id}/view`.
+
+### Service-to-service calls
+
+order-service's API-composition endpoint (`GET /orders/{id}/view`, Ch.7) fans out to four other
+services, all of which now require a token. Forwarding the end user's token would be wrong (the
+user has no `RESTAURANT`/`ADMIN` authority on those services), so order-service obtains its own:
+
+```mermaid
+sequenceDiagram
+    participant O as order-service
+    participant A as authorization-server
+    participant K as kitchen-service
+
+    O->>O: ServiceTokenClient.getToken() — cached, refreshed near expiry
+    alt cache miss or expiring
+        O->>A: POST /oauth2/token (grant_type=client_credentials)
+        A-->>O: {access_token: <JWT roles=[SERVICE]>}
+    end
+    O->>K: GET /tickets/order/42<br/>Bearer <SERVICE JWT>
+    K->>K: @PreAuthorize allows SERVICE
+    K-->>O: 200 TicketResponse
+```
+
+Adding the `SERVICE` role forced exactly one widening on the participant side:
+accounting-service's `GET /authorizations/order/{orderId}` went from `ADMIN`-only to
+`hasAnyRole('ADMIN','SERVICE')`. Everything else already admitted the roles it needed.
+
+Per-endpoint role requirements are documented in each service's own README rather than duplicated
+here, since they vary per service and change with the endpoint set.
+
+---
+
+## Audit logging (Ch.11, §11.3.6)
+
+The book's audit-logging pattern records "who did what to which business object" in a durable,
+queryable store separate from the services that produced the activity. This project implements it
+as an **AOP interceptor in `ftgo-common` publishing to a Kafka topic, consumed by a new,
+dedicated `ftgo-audit-log-service`** (port 8089) — the third of the book's three audit-logging
+implementation options (the other two: hand-written logging in the business logic, and mining an
+event-sourcing event store, which would only cover order-service and only in `PERSISTENCE_MODE=eventsourcing`).
+
+### Architecture
+
+```mermaid
+flowchart LR
+    subgraph services["Business services (ftgo-common on the classpath)"]
+        OC["OrderController<br/>createOrder / cancel / revise"]
+        TC["TicketController<br/>accept / preparing / ready / picked-up"]
+        DC["DeliveryController<br/>picked-up / delivered"]
+        CC["ConsumerController<br/>createConsumer"]
+    end
+    ASP["AuditLoggingAspect<br/>(@Around, ftgo-common)"]
+    K(["Kafka topic<br/>audit-log"])
+    AL["ftgo-audit-log-service<br/>AuditLogEventListener"]
+    DB[("MySQL ftgo_audit_log<br/>audit_log_entries")]
+    API["GET /audit-log<br/>ADMIN only"]
+
+    OC --> ASP
+    TC --> ASP
+    DC --> ASP
+    CC --> ASP
+    ASP -->|AuditLogEntryEvent JSON| K
+    K --> AL
+    AL --> DB
+    DB --> API
+```
+
+This is the same shape as Ch.7's CQRS read model (`ftgo-order-history-service`): a pure Kafka
+consumer owning its own schema, plus one read-only query endpoint, with no synchronous coupling
+back to the services it observes. The contrast is what it projects — `order_views` is a
+denormalized *business* state projection keyed by `orderId`; `audit_log_entries` is an
+append-only *activity* ledger keyed by nothing (a surrogate `id`), where no row is ever updated.
+
+### What gets audited, and what deliberately doesn't
+
+The pointcut is deliberately narrow:
+
+```java
+@Around("@annotation(org.springframework.web.bind.annotation.PostMapping) "
+      + "&& @annotation(org.springframework.security.access.prepost.PreAuthorize)")
+```
+
+Both annotations must be present. `@PostMapping` restricts it to mutating calls — "who did what
+to which business object" is answered by mutations alone, and auditing every `@GetMapping` would
+multiply volume with no demonstrated need. `@PreAuthorize` restricts it to endpoints that have an
+authenticated caller at all, which is what makes the "who" meaningful. The 10 endpoints currently
+matched:
+
+| Service | Endpoint | Roles | `entityType` | `entityId` source |
+|---|---|---|---|---|
+| order-service | `POST /orders` | `CONSUMER`,`ADMIN` | `Order` | none — id doesn't exist yet |
+| order-service | `POST /orders/{id}/cancel` | `CONSUMER`,`ADMIN` | `Order` | `{id}` |
+| order-service | `POST /orders/{id}/revise` | `CONSUMER`,`ADMIN` | `Order` | `{id}` |
+| kitchen-service | `POST /tickets/{ticketId}/accept` | `RESTAURANT`,`ADMIN` | `Ticket` | `{ticketId}` |
+| kitchen-service | `POST /tickets/{ticketId}/preparing` | `RESTAURANT`,`ADMIN` | `Ticket` | `{ticketId}` |
+| kitchen-service | `POST /tickets/{ticketId}/ready-for-pickup` | `RESTAURANT`,`ADMIN` | `Ticket` | `{ticketId}` |
+| kitchen-service | `POST /tickets/{ticketId}/picked-up` | `RESTAURANT`,`ADMIN` | `Ticket` | `{ticketId}` |
+| delivery-service | `POST /deliveries/{deliveryId}/picked-up` | `COURIER`,`ADMIN` | `Delivery` | `{deliveryId}` |
+| delivery-service | `POST /deliveries/{deliveryId}/delivered` | `COURIER`,`ADMIN` | `Delivery` | `{deliveryId}` |
+| consumer-service | `POST /consumers` | `ADMIN` | `Consumer` | none — id doesn't exist yet |
+
+**Not audited, but should be:** `POST /restaurants` (restaurant-service) carries both annotations
+and would match the pointcut, but restaurant-service is the one business service that does not
+depend on `ftgo-common` — it has no Kafka involvement of any kind, so it never needed the shared
+outbox module — and the aspect ships in `ftgo-common`. It is therefore never registered there and
+that endpoint is silently unaudited. Closing the gap means either adding the `ftgo-common`
+dependency (dragging in Kafka and outbox entities it has no other use for) or extracting the
+aspect into a smaller shared module; neither was done in this sub-project. This is the cost of
+delivering a cross-cutting concern through a module that not every service happens to depend on.
+
+Not audited, deliberately: every `@GetMapping` (including the audit query endpoint itself);
+saga-driven state changes that no human initiated (a `Ticket` moving to `CANCELLED` because a
+compensating transaction said so has no actor to attribute it to — the originating human action,
+`POST /orders/{id}/cancel`, *is* audited); and anything in the two gateways, which depend on
+`ftgo-gateway-common`, not `ftgo-common`, and are pure pass-through anyway.
+
+`entityType` is derived by stripping the `Controller` suffix off the declaring class
+(`OrderController` → `Order`), and `entityId` from the first `@PathVariable` parameter in declared
+order — every mutating endpoint here that identifies an existing object does so with exactly one
+path variable. Creation endpoints legitimately have no id at call time; they still record actor,
+action, and outcome, which is the part that matters for "who created something".
+
+**Known gap — the "who" is only recorded where the controller already asked for it.** The aspect
+finds the caller by scanning the intercepted method's arguments for a
+`org.springframework.security.oauth2.jwt.Jwt`, so it only sees an actor on endpoints that already
+declare an `@AuthenticationPrincipal Jwt` parameter for their own reasons. Today only
+`OrderController.createOrder` does; the other 10 endpoints therefore produce entries with a null
+`userId` and empty `roles`, recording *what happened* but not *who did it*. Reading the actor from
+`SecurityContextHolder` instead would fix this for every endpoint at once without touching any
+controller signature — the obvious next iteration, deliberately not done in this sub-project.
+
+### Registration: an auto-configuration, not a per-service annotation
+
+`AuditLoggingAutoConfiguration` (`@AutoConfiguration @EnableAspectJAutoProxy @ComponentScan`)
+registers the aspect for any module that puts `ftgo-common` on its classpath, via
+`META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. This is the
+same mechanism `OutboxAutoConfiguration` already uses, and for the same historical reason: the
+outbox infrastructure was originally wired by a hand-copied `@ComponentScan` in each service's
+`PersistenceConfig`, and a service that forgot the line silently never published anything (see
+the Ch.5 session log). A cross-cutting concern that only works if every service remembers to
+opt in is a bug waiting for the next service.
+
+### Runtime flow, both outcomes
+
+```mermaid
+sequenceDiagram
+    participant C as Client (CONSUMER)
+    participant A as AuditLoggingAspect
+    participant O as OrderController
+    participant K as Kafka audit-log
+    participant L as AuditLogEventListener
+    participant DB as ftgo_audit_log
+
+    Note over C,DB: Success
+    C->>A: POST /orders/42/cancel
+    A->>A: action/entityType/entityId from signature; jwt := first Jwt argument (none here → null userId)
+    A->>O: joinPoint.proceed()
+    O-->>A: 200 OrderResponse
+    A->>K: AuditLogEntryEvent{outcome=SUCCESS, failureReason=null}
+    A-->>C: 200 OrderResponse
+    K->>L: consume (group audit-log-service)
+    L->>DB: INSERT audit_log_entries
+
+    Note over C,DB: Failure — the caller still gets the error
+    C->>A: POST /orders/999/cancel
+    A->>O: joinPoint.proceed()
+    O--xA: OrderNotFoundException
+    A->>K: AuditLogEntryEvent{outcome=FAILURE, failureReason="OrderNotFoundException"}
+    A-->>C: rethrown → 404 (unchanged by the aspect)
+```
+
+Failed attempts are audited on purpose: "alice tried to cancel order 999 and was refused" is
+exactly the kind of record an audit log exists for. The aspect rethrows the original throwable
+untouched, so every existing `@ExceptionHandler` still produces the same HTTP response it did
+before — auditing is observational, never behavioural.
+
+**Best-effort publishing.** The `publish` call is wrapped in its own try/catch that logs a warning
+and swallows: a Kafka outage must never fail or block the business request being audited. That is
+a deliberate availability-over-completeness tradeoff, and the honest limitation of this
+implementation — unlike the domain events in this codebase, audit events do **not** go through the
+transactional outbox, so an audit record can be lost while its business transaction commits. The
+outbox would be the correct upgrade for a real compliance requirement; it was left out because the
+aspect is generic across services (it has no `EntityManager`/transaction of the audited service to
+enlist in) and this sub-project is about the pattern's shape, not its durability guarantees.
+
+### Storage and query API
+
+`AuditLogEntry` (`@Entity`, table `audit_log_entries`) is not a DDD aggregate — it has no
+invariants and no state transitions, only an insert. Fields: `id`, `userId`, `roles` (the JWT's
+role list comma-joined into a single column — write-once and only ever read back whole, so a
+normalized child table would be pure overhead), `action`, `entityType`, `entityId`, `outcome`
+(`SUCCESS`/`FAILURE`), `failureReason`, `serviceName`, `timestamp` (column `occurred_at`).
+
+`GET /audit-log` is `ADMIN`-only (`@PreAuthorize("hasRole('ADMIN')")`) — an audit log records who
+did what, so read access to it is itself sensitive. Filters are mutually exclusive and evaluated
+in a fixed precedence order — `userId`, else `entityType`+`entityId`, else `from`+`to`, else
+everything — all returning newest-first. That is a deliberately small query surface for a learning
+project; a combinatorial filter would need a `Specification`/Criteria query rather than derived
+repository methods.
+
+### Correlation with the other §11.3 patterns
+
+`ftgo-audit-log-service` is in the same `actuatorModules` group as every other service, so it gets
+`/actuator/health`, `/actuator/prometheus`, OTLP traces to Tempo, JSON logs to ELK, and GlitchTip
+exception capture for free. The audit *record* itself carries no `traceId` — it's keyed by actor
+and business object, which is the axis an auditor searches on, whereas Tempo/Kibana are keyed by
+request. Adding `traceId` to `AuditLogEntryEvent` would be a small and genuinely useful
+enhancement; it is not implemented.
+
+Verified live end-to-end by `ftgo-end-to-end-test`'s "Placing an order records an audit log
+entry" scenario (`PlaceReviseCancelOrder.feature`), which places an order through the full
+containerized stack and polls `GET /audit-log` until an `entityType=Order` entry whose `action`
+contains `createOrder` appears. The step definitions filter client-side rather than by query
+parameter, because `createOrder`'s entry has a null `entityId` (no path variable) and the query
+API supports only single-field lookups.

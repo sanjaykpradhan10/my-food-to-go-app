@@ -5,7 +5,7 @@
 
 ## Role
 
-A Spring Authorization Server (`spring-security-oauth2-authorization-server`) issuing JWTs consumed by both gateways (`ftgo-mobile-gateway`, `ftgo-public-gateway`) and by the 7 business services acting as OAuth2 resource servers (order, kitchen, restaurant, accounting, delivery, consumer, order-history). Two grant types are supported, for two different kinds of caller:
+A Spring Authorization Server (`spring-security-oauth2-authorization-server`) issuing JWTs consumed by both gateways (`ftgo-mobile-gateway`, `ftgo-public-gateway`) and by the 8 business services acting as OAuth2 resource servers (order, kitchen, restaurant, accounting, delivery, consumer, order-history, audit-log). Two grant types are supported, for two different kinds of caller:
 
 - **Resource-owner password grant** (custom — this grant type is deprecated/removed from the OAuth2 spec's out-of-the-box support in Spring Authorization Server, so it's hand-implemented via `OAuth2ResourceOwnerPasswordAuthenticationConverter`/`Provider`/`Token`) — for end users (consumer/restaurant/courier/admin) authenticating with a username/password, matching how the book's mobile/web clients log in.
 - **Client credentials grant** — for service-to-service calls where no end user is present. Currently registered for `ftgo-order-service` only, which uses it to attach a bearer token to its own outbound calls to restaurant/kitchen/accounting/delivery-service (`ServiceTokenClient`, Ch.11 §11.1 sub-project 2).

@@ -72,6 +72,20 @@ autoconfiguration of the default listener factory. The fix is an explicit
 Viewable in Grafana via the provisioned Tempo datasource, or queried directly against Tempo's
 search API.
 
+## Audit logging (Ch.11, §11.3.6)
+
+`ftgo-common`'s `AuditLoggingAspect` is registered here (it auto-configures wherever `ftgo-common`
+is on the classpath) but **never fires**: it matches only controller methods carrying both
+`@PostMapping` and `@PreAuthorize`, and this service's sole endpoint is the read-only
+`GET /order-views/{orderId}`. Nothing here is initiated by a person — every write is a reaction to
+a domain event.
+
+Worth comparing the two services directly: `ftgo-audit-log-service` (Ch.11 §11.3.6) has the same
+shape as this one — pure Kafka consumer, own schema, one read-only query endpoint, no synchronous
+coupling — but projects a different thing. `order_views` is a denormalized *business state*
+projection keyed by `orderId` and continuously updated in place; `audit_log_entries` is an
+append-only *activity* ledger where no row is ever updated. See `docs/ARCHITECTURE.md`.
+
 ## Configuration (Ch.11, §11.2)
 
 Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults, no per-service override) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract).
