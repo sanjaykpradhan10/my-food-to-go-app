@@ -131,6 +131,38 @@ autoconfiguration; Kafka producer/consumer spans require
 both set here. Viewable in Grafana via the provisioned Tempo datasource, or queried directly
 against Tempo's search API.
 
+## Audit logging (Ch.11, §11.3.6)
+
+No code in this service publishes audit events. `ftgo-common`'s `AuditLoggingAspect` — registered
+automatically by `AuditLoggingAutoConfiguration` on the shared classpath — intercepts every
+controller method carrying **both** `@PostMapping` and `@PreAuthorize` and publishes an
+`AuditLogEntryEvent` to the Kafka topic `audit-log`, consumed by `ftgo-audit-log-service`
+(port 8089, `GET /audit-log`, `ADMIN`-only).
+
+Audited here:
+
+| Endpoint | `action` | `entityType` | `entityId` | `userId` |
+|---|---|---|---|---|
+| `POST /orders` | `POST OrderController.createOrder` | `Order` | null (id doesn't exist yet) | JWT `sub` |
+| `POST /orders/{id}/cancel` | `POST OrderController.cancel` | `Order` | `{id}` | JWT `sub` |
+| `POST /orders/{id}/revise` | `POST OrderController.revise` | `Order` | `{id}` | JWT `sub` |
+
+The aspect finds the actor by scanning the intercepted method's arguments for a `Jwt`. `createOrder`
+already declared `@AuthenticationPrincipal Jwt jwt` for its own consumer-id-from-token logic;
+`cancel`/`revise` declare the same parameter solely so the aspect can find it (unused by either
+method body), so all three audited order endpoints record a `userId`.
+
+Both outcomes are recorded: a call that throws (e.g. `OrderNotFoundException`,
+`UnsupportedStateTransitionException`) produces an entry with `outcome=FAILURE` and
+`failureReason` set to the exception's simple name, and the exception is rethrown untouched — every
+existing `@ExceptionHandler` still returns exactly the response it did before. Publishing is
+best-effort (logged and swallowed on Kafka failure), never transactional with the order write.
+
+Saga-driven state changes are **not** audited — an `Order` reaching `CANCELLED` because a
+compensating transaction said so has no human actor to attribute it to; the originating
+`POST /orders/{id}/cancel` is the audited event. `GET` endpoints, including
+`GET /orders/{id}/view` and the `_diagnostics` endpoint, are not audited either.
+
 ## Configuration (Ch.11, §11.2)
 
 Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults + `config-repo/ftgo-order-service.yml` per-service overrides) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract). 

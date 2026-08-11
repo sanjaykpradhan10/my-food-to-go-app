@@ -10,6 +10,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,7 +40,7 @@ public class DeliveryController {
 
     @PreAuthorize("hasAnyRole('COURIER', 'ADMIN')")
     @PostMapping("/{deliveryId}/picked-up")
-    public ResponseEntity<Void> pickedUp(@PathVariable Long deliveryId) {
+    public ResponseEntity<Void> pickedUp(@PathVariable Long deliveryId, @AuthenticationPrincipal Jwt jwt) {
         Delivery delivery = findDelivery(deliveryId);
         apply(delivery, delivery.pickUp());
         meterRegistry.counter("deliveries_picked_up").increment();
@@ -47,7 +49,7 @@ public class DeliveryController {
 
     @PreAuthorize("hasAnyRole('COURIER', 'ADMIN')")
     @PostMapping("/{deliveryId}/delivered")
-    public ResponseEntity<Void> delivered(@PathVariable Long deliveryId) {
+    public ResponseEntity<Void> delivered(@PathVariable Long deliveryId, @AuthenticationPrincipal Jwt jwt) {
         Delivery delivery = findDelivery(deliveryId);
         apply(delivery, delivery.deliver());
         meterRegistry.counter("deliveries_delivered").increment();

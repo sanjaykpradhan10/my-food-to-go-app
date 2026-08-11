@@ -5,14 +5,14 @@
 
 ## Role
 
-A **Spring Cloud Config Server** backed by this repository's own `config-repo/` directory, serving externalized configuration to all 9 services (7 business services + 2 gateways) at startup and on-demand via REST. Centralized configuration management enables live refresh of a subset of properties (outbox polling interval) without restarting any service.
+A **Spring Cloud Config Server** backed by this repository's own `config-repo/` directory, serving externalized configuration to all 10 services (8 business services + 2 gateways) at startup and on-demand via REST. Centralized configuration management enables live refresh of a subset of properties (outbox polling interval) without restarting any service.
 
 ## Configuration sources
 
 The config server uses `search-paths: config-repo` and reads from two property files:
 
-- `config-repo/application.yml` — **shared defaults** consumed by all 9 services.
-- `config-repo/ftgo-<service>.yml` — **per-service overrides** for the 5 outbox-publishing services (order, kitchen, accounting, delivery, consumer). The other 4 services (restaurant, order-history, mobile-gateway, public-gateway) have no per-service file and use shared defaults only.
+- `config-repo/application.yml` — **shared defaults** consumed by all 10 services.
+- `config-repo/ftgo-<service>.yml` — **per-service overrides** for the 5 outbox-publishing services (order, kitchen, accounting, delivery, consumer). The other 5 services (restaurant, order-history, audit-log, mobile-gateway, public-gateway) have no per-service file and use shared defaults only.
 
 ## Querying the config server
 
@@ -43,4 +43,4 @@ The config server is a **leaf service** — it has no `depends_on` of its own in
 ./gradlew :ftgo-config-server:test
 ```
 
-To run live, start the full stack (`docker compose up -d`) — every service that uses Spring Cloud Config's `optional:configserver` import (all 9) will try to reach this service at startup and use its values to override local `application.yml` defaults.
+To run live, start the full stack (`docker compose up -d`) — every service that uses Spring Cloud Config's `optional:configserver` import (all 10) will try to reach this service at startup and use its values to override local `application.yml` defaults.

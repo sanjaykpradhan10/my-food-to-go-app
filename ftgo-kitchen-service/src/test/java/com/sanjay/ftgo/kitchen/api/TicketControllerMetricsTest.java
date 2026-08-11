@@ -42,7 +42,7 @@ class TicketControllerMetricsTest {
         ticket.confirm();
         when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
-        controller.accept(1L, new AcceptTicketRequest(ZonedDateTime.now().plusMinutes(20)));
+        controller.accept(1L, new AcceptTicketRequest(ZonedDateTime.now().plusMinutes(20)), null);
 
         assertThat(meterRegistry.counter("tickets_accepted").count()).isEqualTo(1.0);
     }
@@ -54,7 +54,7 @@ class TicketControllerMetricsTest {
         ticket.accept(ZonedDateTime.now().plusMinutes(20));
         when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
-        controller.preparing(1L);
+        controller.preparing(1L, null);
 
         assertThat(meterRegistry.counter("tickets_preparing").count()).isEqualTo(1.0);
     }
@@ -67,7 +67,7 @@ class TicketControllerMetricsTest {
         ticket.preparing();
         when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
-        controller.readyForPickup(1L);
+        controller.readyForPickup(1L, null);
 
         assertThat(meterRegistry.counter("tickets_ready_for_pickup").count()).isEqualTo(1.0);
     }
@@ -81,7 +81,7 @@ class TicketControllerMetricsTest {
         ticket.readyForPickup();
         when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
-        controller.pickedUp(1L);
+        controller.pickedUp(1L, null);
 
         assertThat(meterRegistry.counter("tickets_picked_up").count()).isEqualTo(1.0);
     }

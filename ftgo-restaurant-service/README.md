@@ -77,6 +77,26 @@ Traces exported via OTLP/HTTP to Grafana Tempo (`http://tempo:4318/v1/traces`), 
 autoconfiguration is all it needs. Viewable in Grafana via the provisioned Tempo datasource, or
 queried directly against Tempo's search API.
 
+## Audit logging (Ch.11, §11.3.6)
+
+**This service produces no audit events** — a known gap, not a design decision.
+
+Ch.11 §11.3.6's audit logging works by an `@Around` aspect (`AuditLoggingAspect`) shipped in
+`ftgo-common` and registered automatically wherever that module is on the classpath. This service
+is the only business service that **does not depend on `ftgo-common`** (it has no Kafka
+involvement at all — it publishes no domain events and consumes none, so it never needed the
+shared outbox/dedup infrastructure the module was extracted for). The aspect is therefore never
+registered here, and `POST /restaurants` — which does carry both `@PostMapping` and
+`@PreAuthorize("hasAnyRole('RESTAURANT','ADMIN')")`, and would otherwise match the pointcut — is
+silently not audited.
+
+Closing the gap means adding `implementation project(':ftgo-common')` (pulling in Kafka and the
+outbox entities this service has no other use for) or extracting the aspect into a smaller shared
+module. Neither was done in this sub-project.
+
+See `docs/ARCHITECTURE.md`'s "Audit logging (Ch.11, §11.3.6)" section for the full mechanism and
+the list of endpoints that *are* audited.
+
 ## Configuration (Ch.11, §11.2)
 
 Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults, no per-service override) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract).

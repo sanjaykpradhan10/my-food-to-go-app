@@ -81,7 +81,7 @@ class ConsumerControllerTest {
         ConsumerController withMetrics = new ConsumerController(consumerRepository, meterRegistry);
         when(consumerRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        withMetrics.createConsumer(new CreateConsumerRequest("Test", true));
+        withMetrics.createConsumer(new CreateConsumerRequest("Test", true), null);
 
         assertThat(meterRegistry.counter("consumers_created").count()).isEqualTo(1.0);
     }

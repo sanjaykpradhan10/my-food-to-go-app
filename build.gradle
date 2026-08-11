@@ -68,7 +68,8 @@ configure(subprojects.findAll { !noDefaultWebJpaModules.contains(it.name) }) {
 // never runs standalone) are deliberately excluded.
 def actuatorModules = ['ftgo-order-service', 'ftgo-kitchen-service', 'ftgo-consumer-service',
                         'ftgo-restaurant-service', 'ftgo-accounting-service', 'ftgo-delivery-service',
-                        'ftgo-order-history-service', 'ftgo-mobile-gateway', 'ftgo-public-gateway']
+                        'ftgo-order-history-service', 'ftgo-mobile-gateway', 'ftgo-public-gateway',
+                        'ftgo-audit-log-service']
 
 configure(subprojects.findAll { actuatorModules.contains(it.name) }) {
     dependencies {

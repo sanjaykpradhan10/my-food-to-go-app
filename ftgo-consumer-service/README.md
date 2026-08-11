@@ -67,6 +67,29 @@ alone is enough to get their consumer spans; there is no matching
 events via the Ch.3 CDC/outbox pipeline rather than a `KafkaTemplate`. Viewable in Grafana via the
 provisioned Tempo datasource, or queried directly against Tempo's search API.
 
+## Audit logging (Ch.11, §11.3.6)
+
+No code in this service publishes audit events. `ftgo-common`'s `AuditLoggingAspect` — registered
+automatically by `AuditLoggingAutoConfiguration` on the shared classpath — intercepts every
+controller method carrying **both** `@PostMapping` and `@PreAuthorize` and publishes an
+`AuditLogEntryEvent` to the Kafka topic `audit-log`, consumed by `ftgo-audit-log-service`
+(port 8089, `GET /audit-log`, `ADMIN`-only).
+
+This service's single mutating endpoint is audited:
+
+| Endpoint | `action` | `entityType` | `entityId` |
+|---|---|---|---|
+| `POST /consumers` (`ADMIN`) | `POST ConsumerController.createConsumer` | `Consumer` | null — the id doesn't exist until the call completes |
+
+An `ADMIN` creating consumer accounts is precisely the kind of privileged action an audit log
+exists to record, even without an entity id to attach it to. `userId` is populated from an
+`@AuthenticationPrincipal Jwt jwt` parameter declared on `createConsumer` (added solely so the
+aspect can find it — the method doesn't otherwise use it). Failed calls are recorded with
+`outcome=FAILURE`; publishing is best-effort and never transactional with the consumer write.
+
+Consumer *verification* during the Create Order saga is not audited — it's a service reacting to
+an event, not a person doing something.
+
 ## Configuration (Ch.11, §11.2)
 
 Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults + `config-repo/ftgo-consumer-service.yml` per-service overrides) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract).

@@ -68,6 +68,36 @@ autoconfiguration; Kafka producer/consumer spans require
 both set here. Viewable in Grafana via the provisioned Tempo datasource, or queried directly
 against Tempo's search API.
 
+## Audit logging (Ch.11, §11.3.6)
+
+No code in this service publishes audit events. `ftgo-common`'s `AuditLoggingAspect` — registered
+automatically by `AuditLoggingAutoConfiguration` on the shared classpath — intercepts every
+controller method carrying **both** `@PostMapping` and `@PreAuthorize` and publishes an
+`AuditLogEntryEvent` to the Kafka topic `audit-log`, consumed by `ftgo-audit-log-service`
+(port 8089, `GET /audit-log`, `ADMIN`-only).
+
+All four restaurant-worker lifecycle endpoints are audited, each with `entityType=Ticket` and
+`entityId` taken from the `{ticketId}` path variable:
+
+| Endpoint | `action` |
+|---|---|
+| `POST /tickets/{ticketId}/accept` | `POST TicketController.accept` |
+| `POST /tickets/{ticketId}/preparing` | `POST TicketController.preparing` |
+| `POST /tickets/{ticketId}/ready-for-pickup` | `POST TicketController.readyForPickup` |
+| `POST /tickets/{ticketId}/picked-up` | `POST TicketController.pickedUp` |
+
+These are exactly the state transitions a human restaurant worker drives, which is why they are
+the interesting ones to audit. Ticket transitions driven by a saga (`CREATE_PENDING → AWAITING_ACCEPTANCE`,
+cancellation, revision) are **not** audited — no human initiated them; the originating action on
+order-service is what carries the actor.
+
+`userId` is populated from an `@AuthenticationPrincipal Jwt jwt` parameter declared on each of
+`TicketController`'s audited methods (added solely so the aspect can find it — the methods don't
+otherwise use it). A rejected transition (e.g. `TicketCannotBeCancelledException`,
+`UnsupportedStateTransitionException`) is still recorded, with `outcome=FAILURE` and the
+exception's simple name as `failureReason`, and the exception is rethrown untouched. Publishing is
+best-effort and never transactional with the ticket write.
+
 ## Configuration (Ch.11, §11.2)
 
 Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-repo/application.yml` shared defaults + `config-repo/ftgo-kitchen-service.yml` per-service overrides) > local `application.yml` fallback. If the config server is unreachable at startup, this service continues with local defaults (`spring.cloud.config.fail-fast: false`, non-blocking "optional" contract).

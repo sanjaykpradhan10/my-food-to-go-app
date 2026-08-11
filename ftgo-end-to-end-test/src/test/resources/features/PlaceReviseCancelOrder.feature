@@ -40,3 +40,10 @@ Feature: Place, Revise, and Cancel Order (end-to-end)
     When an admin triggers the order-service diagnostic exception endpoint
     Then the diagnostic endpoint responds with a server error
     And GlitchTip eventually reports an IllegalStateException issue for ftgo-order-service
+
+  Scenario: Placing an order records an audit log entry
+    Given a restaurant "Ajanta Audit E2E" with a menu item "Tandoori Chicken" priced at 15.00
+    And an active consumer "Audit E2E Consumer"
+    When the consumer places an order for 1 of the menu item at the restaurant
+    Then the order is eventually approved
+    And the audit log eventually has an entry for the placed order with action containing "createOrder"

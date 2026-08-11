@@ -5,6 +5,8 @@ import com.sanjay.ftgo.consumer.domain.ConsumerRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,7 +28,7 @@ public class ConsumerController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ConsumerResponse createConsumer(@RequestBody CreateConsumerRequest request) {
+    public ConsumerResponse createConsumer(@RequestBody CreateConsumerRequest request, @AuthenticationPrincipal Jwt jwt) {
         Consumer consumer = consumerRepository.save(new Consumer(request.name(), request.active()));
         meterRegistry.counter("consumers_created").increment();
         return ConsumerResponse.from(consumer);

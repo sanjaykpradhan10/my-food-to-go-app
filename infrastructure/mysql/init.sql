@@ -5,6 +5,7 @@ CREATE DATABASE IF NOT EXISTS ftgo_accounting;
 CREATE DATABASE IF NOT EXISTS ftgo_restaurant;
 CREATE DATABASE IF NOT EXISTS ftgo_delivery;
 CREATE DATABASE IF NOT EXISTS ftgo_order_history;
+CREATE DATABASE IF NOT EXISTS ftgo_audit_log;
 
 GRANT ALL PRIVILEGES ON ftgo_consumer.*   TO 'ftgo'@'%';
 GRANT ALL PRIVILEGES ON ftgo_order.*      TO 'ftgo'@'%';
@@ -13,6 +14,7 @@ GRANT ALL PRIVILEGES ON ftgo_accounting.* TO 'ftgo'@'%';
 GRANT ALL PRIVILEGES ON ftgo_restaurant.* TO 'ftgo'@'%';
 GRANT ALL PRIVILEGES ON ftgo_delivery.*   TO 'ftgo'@'%';
 GRANT ALL PRIVILEGES ON ftgo_order_history.* TO 'ftgo'@'%';
+GRANT ALL PRIVILEGES ON ftgo_audit_log.*  TO 'ftgo'@'%';
 FLUSH PRIVILEGES;
 
 CREATE USER 'debezium'@'%' IDENTIFIED BY 'debezium';

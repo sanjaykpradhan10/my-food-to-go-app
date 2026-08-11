@@ -37,7 +37,7 @@ class DeliveryControllerMetricsTest {
         Delivery delivery = Delivery.schedule(42L, 7L, 1L).delivery();
         when(deliveryRepository.findById(1L)).thenReturn(Optional.of(delivery));
 
-        controller.pickedUp(1L);
+        controller.pickedUp(1L, null);
 
         assertThat(meterRegistry.counter("deliveries_picked_up").count()).isEqualTo(1.0);
     }
@@ -48,7 +48,7 @@ class DeliveryControllerMetricsTest {
         delivery.pickUp();
         when(deliveryRepository.findById(1L)).thenReturn(Optional.of(delivery));
 
-        controller.delivered(1L);
+        controller.delivered(1L, null);
 
         assertThat(meterRegistry.counter("deliveries_delivered").count()).isEqualTo(1.0);
     }

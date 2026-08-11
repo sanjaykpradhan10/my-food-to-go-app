@@ -374,6 +374,42 @@ services:
       timeout: 5s
       retries: 10
 
+  audit-log-service:
+    build:
+      context: .
+      dockerfile: ftgo-audit-log-service/Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      service-registry:
+        condition: service_started
+      authorization-server:
+        condition: service_healthy
+      tempo:
+        condition: service_started
+      config-server:
+        condition: service_started
+      glitchtip-provisioner:
+        condition: service_completed_successfully
+    ports:
+      - "8089:8089"
+    volumes:
+      - sentry-dsn:/shared:ro
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ftgo_audit_log
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:8888"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-registry:8761/eureka/
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://authorization-server:9000/oauth2/jwks
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8089/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   mobile-gateway:
     build:
       context: .

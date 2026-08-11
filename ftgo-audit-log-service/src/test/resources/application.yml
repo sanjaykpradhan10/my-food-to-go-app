@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: ftgo-audit-log-service
+  # spring-cloud-starter-config (added so this service participates in the config-server
+  # hierarchy) makes ConfigDataMissingEnvironmentPostProcessor require a spring.config.import
+  # property once it's on the classpath; "optional:" plus config.enabled=false here means the
+  # test context boots without ever attempting a real network call to a config server.
+  config:
+    import: "optional:configserver:"
+  cloud:
+    config:
+      enabled: false
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: audit-log-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:9000/oauth2/jwks

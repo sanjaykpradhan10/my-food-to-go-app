@@ -1,1 +1,2 @@
 com.sanjay.ftgo.common.outbox.OutboxAutoConfiguration
+com.sanjay.ftgo.common.audit.AuditLoggingAutoConfiguration
