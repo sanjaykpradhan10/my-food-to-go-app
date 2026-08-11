@@ -19,6 +19,14 @@ set -eu
 # containers (Task 2) — from inside those containers "localhost" resolves to themselves, not to
 # glitchtip. Rewrite the DSN's host to the compose service name "glitchtip", which every
 # container on this compose network can resolve, without touching GLITCHTIP_DOMAIN itself.
+#
+# Also mints a GlitchTip internal API token (Task 3, Ch.11 §11.3.5 verification) scoped to
+# org:read/project:read/event:read/member:read — the minimum the e2e test's issues-API polling
+# needs. GlitchTip's `scopes` field is a django-bitfield: passing scopes=[...] to the model
+# constructor silently no-ops (it coerces to an int, not the bit list), so each flag must be set
+# individually via setattr(token.scopes, '<flag>', True) after creation, then saved. The token is
+# get_or_create'd by label so re-running provisioning (e.g. a compose restart) doesn't mint a new
+# one, keep old ones live, or need a revocation step of its own.
 
 GLITCHTIP_CID=$(docker ps -q -f label=com.docker.compose.service=glitchtip)
 
@@ -26,6 +34,7 @@ docker exec "$GLITCHTIP_CID" python manage.py shell -c "
 from django.contrib.auth import get_user_model
 from apps.organizations_ext.models import Organization
 from apps.projects.models import Project, ProjectKey
+from apps.api_tokens.models import APIToken
 
 User = get_user_model()
 user, _ = User.objects.get_or_create(email='admin@localhost', defaults={'name': 'admin', 'is_superuser': True, 'is_staff': True})
@@ -43,9 +52,23 @@ if key is None:
     key = ProjectKey.objects.create(project=project)
 
 print('DSN=' + key.get_dsn())
+
+token = APIToken.objects.filter(user=user, label='e2e-test').first()
+if token is None:
+    token = APIToken.objects.create(user=user, label='e2e-test')
+    for flag in ('org:read', 'project:read', 'event:read', 'member:read'):
+        setattr(token.scopes, flag, True)
+    token.save()
+
+print('APITOKEN=' + token.token)
 " > /tmp/glitchtip-shell-output.txt
 
 DSN_LINE=$(grep '^DSN=' /tmp/glitchtip-shell-output.txt)
 DSN_LINE=$(echo "$DSN_LINE" | sed 's/@localhost:8000/@glitchtip:8000/')
-echo "SENTRY_${DSN_LINE}" > dsn.env
+TOKEN_LINE=$(grep '^APITOKEN=' /tmp/glitchtip-shell-output.txt)
+
+{
+  echo "SENTRY_${DSN_LINE}"
+  echo "GLITCHTIP_API_TOKEN=${TOKEN_LINE#APITOKEN=}"
+} > dsn.env
 cat dsn.env
