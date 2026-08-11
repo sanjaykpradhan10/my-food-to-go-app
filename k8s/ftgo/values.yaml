@@ -2,3 +2,14 @@ global:
   namespace: ftgo
   imageRegistry: "localhost:5000/ftgo"
   imageTag: local
+
+secrets:
+  mysqlRootPassword: root
+  mysqlPassword: ftgo
+  glitchtipSecretKey: local-dev-only-not-a-real-secret
+
+commonEnv:
+  eurekaUrl: "http://service-registry:8761/eureka/"
+  configServerUrl: "http://config-server:8888"
+  jwksUri: "http://authorization-server:9000/oauth2/jwks"
+  tempoOtlpEndpoint: "http://tempo:4318/v1/traces"
