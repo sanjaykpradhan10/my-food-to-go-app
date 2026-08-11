@@ -91,11 +91,12 @@ the interesting ones to audit. Ticket transitions driven by a saga (`CREATE_PEND
 cancellation, revision) are **not** audited — no human initiated them; the originating action on
 order-service is what carries the actor.
 
-`userId` is currently null on these entries: the aspect reads the actor from a `Jwt` method
-argument, and `TicketController`'s methods don't declare one. A rejected transition (e.g.
-`TicketCannotBeCancelledException`, `UnsupportedStateTransitionException`) is still recorded, with
-`outcome=FAILURE` and the exception's simple name as `failureReason`, and the exception is
-rethrown untouched. Publishing is best-effort and never transactional with the ticket write.
+`userId` is populated from an `@AuthenticationPrincipal Jwt jwt` parameter declared on each of
+`TicketController`'s audited methods (added solely so the aspect can find it — the methods don't
+otherwise use it). A rejected transition (e.g. `TicketCannotBeCancelledException`,
+`UnsupportedStateTransitionException`) is still recorded, with `outcome=FAILURE` and the
+exception's simple name as `failureReason`, and the exception is rethrown untouched. Publishing is
+best-effort and never transactional with the ticket write.
 
 ## Configuration (Ch.11, §11.2)
 

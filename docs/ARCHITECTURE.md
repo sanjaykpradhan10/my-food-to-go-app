@@ -1600,14 +1600,17 @@ order — every mutating endpoint here that identifies an existing object does s
 path variable. Creation endpoints legitimately have no id at call time; they still record actor,
 action, and outcome, which is the part that matters for "who created something".
 
-**Known gap — the "who" is only recorded where the controller already asked for it.** The aspect
-finds the caller by scanning the intercepted method's arguments for a
-`org.springframework.security.oauth2.jwt.Jwt`, so it only sees an actor on endpoints that already
-declare an `@AuthenticationPrincipal Jwt` parameter for their own reasons. Today only
-`OrderController.createOrder` does; the other 10 endpoints therefore produce entries with a null
-`userId` and empty `roles`, recording *what happened* but not *who did it*. Reading the actor from
-`SecurityContextHolder` instead would fix this for every endpoint at once without touching any
-controller signature — the obvious next iteration, deliberately not done in this sub-project.
+**The "who" requires the controller to expose a `Jwt`.** The aspect finds the caller by scanning
+the intercepted method's arguments for a `org.springframework.security.oauth2.jwt.Jwt`, so it only
+sees an actor on endpoints that declare an `@AuthenticationPrincipal Jwt` parameter.
+`OrderController.createOrder` already declared one for its own consumerId-derivation purposes; the
+other 10 audited endpoints (`cancel`/`revise`, the 4 `TicketController` transitions, the 2
+`DeliveryController` transitions, `ConsumerController.createConsumer`) had no other reason to take
+one, so each now declares `@AuthenticationPrincipal Jwt jwt` solely for the aspect to pick up —
+otherwise unused by the method body. This was chosen over having the aspect pull the actor from
+`SecurityContextHolder` directly, which would work without touching any controller signature but
+makes the audit trail's coverage invisible at each call site; declaring the parameter, even
+unused, keeps "this endpoint is audited for who" visible in the method signature itself.
 
 ### Registration: an auto-configuration, not a per-service annotation
 
@@ -1633,7 +1636,7 @@ sequenceDiagram
 
     Note over C,DB: Success
     C->>A: POST /orders/42/cancel
-    A->>A: action/entityType/entityId from signature; jwt := first Jwt argument (none here → null userId)
+    A->>A: action/entityType/entityId from signature; jwt := first Jwt argument (cancel() declares one → userId populated)
     A->>O: joinPoint.proceed()
     O-->>A: 200 OrderResponse
     A->>K: AuditLogEntryEvent{outcome=SUCCESS, failureReason=null}

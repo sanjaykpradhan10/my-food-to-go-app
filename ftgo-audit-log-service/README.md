@@ -103,7 +103,7 @@ inserted once and never read-modify-written.
 | Field | Column | Notes |
 |---|---|---|
 | `id` | `id` | identity-generated surrogate key |
-| `userId` | `user_id` | JWT `sub` of the actor; nullable (see below) |
+| `userId` | `user_id` | JWT `sub` of the actor; nullable only for endpoints where a JWT genuinely can't be resolved |
 | `roles` | `roles` | the JWT's role list, comma-joined into one column |
 | `action` | `action` | `"POST <ControllerSimpleName>.<methodName>"`, not null |
 | `entityType` | `entity_type` | controller simple name minus the `Controller` suffix |
@@ -117,11 +117,14 @@ inserted once and never read-modify-written.
 write-once and only ever read back whole for display, so normalizing it would be pure overhead —
 unlike `ftgo-order-history-service`'s `OrderView` line items, which are genuinely relational.
 
-`userId` is nullable because the aspect discovers the actor by scanning the intercepted method's
-arguments for a `Jwt`, and only `OrderController.createOrder` currently declares an
-`@AuthenticationPrincipal Jwt` parameter. The other audited endpoints therefore record the action
-and outcome with a null `userId`/`roles`. Reading from `SecurityContextHolder` instead would fix
-this everywhere without touching a single controller signature — the obvious next iteration.
+`userId` is nullable in the schema because the aspect discovers the actor by scanning the
+intercepted method's arguments for a `Jwt`, which is only found when the controller method
+declares an `@AuthenticationPrincipal Jwt` parameter. Every audited endpoint across
+`ftgo-order-service`, `ftgo-kitchen-service`, `ftgo-delivery-service`, and `ftgo-consumer-service`
+now declares one for this purpose, so in practice `userId` is populated on every entry these
+services produce. `POST /restaurants` remains entirely unaudited (see below) rather than
+null-`userId` — `ftgo-restaurant-service` has no dependency on `ftgo-common`, so the aspect is
+never woven into its controllers at all.
 
 ## Idempotency & reliability
 

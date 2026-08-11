@@ -82,10 +82,10 @@ This service's single mutating endpoint is audited:
 | `POST /consumers` (`ADMIN`) | `POST ConsumerController.createConsumer` | `Consumer` | null — the id doesn't exist until the call completes |
 
 An `ADMIN` creating consumer accounts is precisely the kind of privileged action an audit log
-exists to record, even without an entity id to attach it to. `userId` is currently null (the
-aspect reads the actor from a `Jwt` method argument, which `createConsumer` doesn't declare).
-Failed calls are recorded with `outcome=FAILURE`; publishing is best-effort and never
-transactional with the consumer write.
+exists to record, even without an entity id to attach it to. `userId` is populated from an
+`@AuthenticationPrincipal Jwt jwt` parameter declared on `createConsumer` (added solely so the
+aspect can find it — the method doesn't otherwise use it). Failed calls are recorded with
+`outcome=FAILURE`; publishing is best-effort and never transactional with the consumer write.
 
 Consumer *verification* during the Create Order saga is not audited — it's a service reacting to
 an event, not a person doing something.

@@ -82,11 +82,11 @@ Saga-driven changes — a `Delivery` being scheduled by the Create Order saga, o
 Cancel Order saga — are **not** audited: no human initiated them directly, and the originating
 action on order-service is what carries the actor.
 
-`userId` is currently null on these entries: the aspect reads the actor from a `Jwt` method
-argument and `DeliveryController`'s methods don't declare one. Rejected transitions are still
-recorded with `outcome=FAILURE` and the exception's simple name as `failureReason`, and the
-exception is rethrown untouched. Publishing is best-effort, never transactional with the delivery
-write.
+`userId` is populated from an `@AuthenticationPrincipal Jwt jwt` parameter declared on each of
+`DeliveryController`'s audited methods (added solely so the aspect can find it — the methods don't
+otherwise use it). Rejected transitions are still recorded with `outcome=FAILURE` and the
+exception's simple name as `failureReason`, and the exception is rethrown untouched. Publishing is
+best-effort, never transactional with the delivery write.
 
 ## Configuration (Ch.11, §11.2)
 
