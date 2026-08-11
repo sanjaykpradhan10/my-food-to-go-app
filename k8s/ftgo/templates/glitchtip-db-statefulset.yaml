@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: glitchtip-db, namespace: {{ .Values.global.namespace }}}
+spec:
+  serviceName: glitchtip-db
+  replicas: 1
+  selector: {matchLabels: {app: glitchtip-db}}
+  template:
+    metadata: {labels: {app: glitchtip-db}}
+    spec:
+      containers:
+        - name: glitchtip-db
+          image: {{ .Values.glitchtipDb.image }}
+          ports: [{containerPort: 5432}]
+          env:
+            - {name: POSTGRES_DB, value: glitchtip}
+            - {name: POSTGRES_USER, value: glitchtip}
+            - {name: POSTGRES_PASSWORD, value: glitchtip}
+          volumeMounts: [{name: glitchtip-db-data, mountPath: /var/lib/postgresql/data}]
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "glitchtip"]}
+  volumeClaimTemplates:
+    - metadata: {name: glitchtip-db-data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: "{{ .Values.glitchtipDb.storageSize }}"}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: glitchtip-db, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: glitchtip-db}
+  ports: [{port: 5432}]

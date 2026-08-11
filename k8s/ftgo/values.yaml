@@ -13,3 +13,16 @@ commonEnv:
   configServerUrl: "http://config-server:8888"
   jwksUri: "http://authorization-server:9000/oauth2/jwks"
   tempoOtlpEndpoint: "http://tempo:4318/v1/traces"
+
+mysql:
+  image: mysql:8.4
+  storageSize: 2Gi
+kafka:
+  zookeeperImage: confluentinc/cp-zookeeper:7.9.0
+  kafkaImage: confluentinc/cp-kafka:7.9.0
+elasticsearch:
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+  storageSize: 2Gi
+glitchtipDb:
+  image: postgres:16
+  storageSize: 1Gi

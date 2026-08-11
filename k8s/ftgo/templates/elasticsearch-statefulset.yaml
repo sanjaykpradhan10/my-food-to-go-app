@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: elasticsearch, namespace: {{ .Values.global.namespace }}}
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector: {matchLabels: {app: elasticsearch}}
+  template:
+    metadata: {labels: {app: elasticsearch}}
+    spec:
+      containers:
+        - name: elasticsearch
+          image: {{ .Values.elasticsearch.image }}
+          ports: [{containerPort: 9200}]
+          env:
+            - {name: discovery.type, value: single-node}
+            - {name: xpack.security.enabled, value: "false"}
+            - {name: ES_JAVA_OPTS, value: "-Xms512m -Xmx512m"}
+          volumeMounts: [{name: es-data, mountPath: /usr/share/elasticsearch/data}]
+          readinessProbe:
+            httpGet: {path: /_cluster/health, port: 9200}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata: {name: es-data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: "{{ .Values.elasticsearch.storageSize }}"}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: elasticsearch, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: elasticsearch}
+  ports: [{port: 9200}]
