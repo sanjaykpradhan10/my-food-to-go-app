@@ -35,3 +35,8 @@ Feature: Place, Revise, and Cancel Order (end-to-end)
     Then the order-service outbox poll interval reported by actuator is 300 milliseconds
     And I place another order and measure the outbox publish delay
     Then the measured outbox publish delay is close to 300 milliseconds
+
+  Scenario: Triggering an uncaught exception reports it to GlitchTip
+    When an admin triggers the order-service diagnostic exception endpoint
+    Then the diagnostic endpoint responds with a server error
+    And GlitchTip eventually reports an IllegalStateException issue for ftgo-order-service
