@@ -32,6 +32,11 @@ spec:
               valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: eureka-url}}
             - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
               valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: jwks-uri}}
+            # optional: true — this Deployment renders before Task 7's provisioner Job
+            # necessarily completes on first install; pods must not crash-loop waiting on a
+            # Secret key that only appears moments later once the post-install hook finishes.
+            - name: SENTRY_DSN
+              valueFrom: {secretKeyRef: {name: glitchtip-dsn, key: sentry-dsn, optional: true}}
             {{- if .kafka }}
             - {name: SPRING_KAFKA_BOOTSTRAP_SERVERS, value: "kafka:29092"}
             {{- end }}

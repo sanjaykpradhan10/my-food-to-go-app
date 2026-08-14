@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: glitchtip-provisioner, namespace: {{ .Values.global.namespace }}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: glitchtip-provisioner, namespace: {{ .Values.global.namespace }}}
+rules:
+  # secrets: writes the glitchtip-dsn Secret (kubectl apply needs get+create+patch, not just create)
+  - {apiGroups: [""], resources: ["secrets"], verbs: ["create", "get", "update", "patch"]}
+  # pods/get,list: locate the glitchtip Pod by label; pods/exec: run the Django bootstrap shell
+  # inside it — this is the namespace-scoped, minimally-privileged replacement for the
+  # docker.sock mount compose's provisioner used (spec Decision 5 forbids docker.sock entirely).
+  - {apiGroups: [""], resources: ["pods"], verbs: ["get", "list"]}
+  - {apiGroups: [""], resources: ["pods/exec"], verbs: ["create"]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: glitchtip-provisioner, namespace: {{ .Values.global.namespace }}}
+subjects: [{kind: ServiceAccount, name: glitchtip-provisioner, namespace: {{ .Values.global.namespace }}}]
+roleRef: {kind: Role, name: glitchtip-provisioner, apiGroup: rbac.authorization.k8s.io}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: glitchtip-provisioner
+  namespace: {{ .Values.global.namespace }}
+  annotations: {"helm.sh/hook": post-install,post-upgrade}
+spec:
+  # compose's glitchtip-provisioner was depended on via `condition: service_completed_successfully`
+  # by every business service; Kubernetes Jobs have no equivalent "block other resources until I
+  # finish" primitive, so the post-install/post-upgrade hook ordering is the closest analog. It's
+  # sufficient here because SENTRY_DSN (Task 5's app-service.yaml, optional: true) isn't consumed
+  # until pod startup, which happens after `helm install`/`upgrade` returns and this hook has run.
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: glitchtip-provisioner
+      restartPolicy: Never
+      enableServiceLinks: false
+      initContainers:
+        {{- include "ftgo.waitFor" (list (dict "name" "glitchtip" "port" 8000)) | nindent 8 }}
+      containers:
+        - name: provisioner
+          image: bitnami/kubectl:1.31
+          volumeMounts: [{name: script, mountPath: /scripts}]
+          command: ["sh", "/scripts/provision.sh"]
+          resources:
+            requests: {memory: "64Mi", cpu: "50m"}
+            limits: {memory: "128Mi"}
+      volumes: [{name: script, configMap: {name: glitchtip-provisioner-script, defaultMode: 0755}}]

@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: glitchtip-provisioner-script, namespace: {{ .Values.global.namespace }}}
+data:
+  provision.sh: |
+    #!/bin/sh
+    set -eu
+
+    # Bootstraps a superuser, organization, and project via GlitchTip's Django management
+    # shell — GlitchTip v4.2.9 has no unauthenticated REST endpoint that can create the first
+    # org/user on a blank instance (confirmed against compose.yml's glitchtip/provision.sh,
+    # which hits the same wall), so both compose and this Job drive the same manage.py shell
+    # script rather than a REST call for this bootstrap step.
+    #
+    # What differs from compose's provisioner (spec Decision 5: no docker.sock) is *how* that
+    # shell is reached: compose used `docker exec` against the daemon socket; here we use
+    # `kubectl exec` against the glitchtip Pod by label, scoped by the Role bound to this Job's
+    # ServiceAccount (pods/exec, namespace-scoped) rather than a socket mount that would hand
+    # the Job control over every container on the node.
+    echo "Provisioning GlitchTip org/project/DSN..."
+
+    GLITCHTIP_POD=$(kubectl get pod -n {{ .Values.global.namespace }} -l app=glitchtip -o jsonpath='{.items[0].metadata.name}')
+
+    kubectl exec -n {{ .Values.global.namespace }} "$GLITCHTIP_POD" -- python manage.py shell -c "
+    from django.contrib.auth import get_user_model
+    from apps.organizations_ext.models import Organization
+    from apps.projects.models import Project, ProjectKey
+
+    User = get_user_model()
+    user, _ = User.objects.get_or_create(email='admin@localhost', defaults={'name': 'admin', 'is_superuser': True, 'is_staff': True})
+    user.set_password('admin')
+    user.save()
+
+    org, _ = Organization.objects.get_or_create(name='ftgo')
+    if not org.is_member(user):
+        org.add_user(user)
+
+    project, _ = Project.objects.get_or_create(name='ftgo', organization=org)
+
+    key = ProjectKey.objects.filter(project=project).first()
+    if key is None:
+        key = ProjectKey.objects.create(project=project)
+
+    print('DSN=' + key.get_dsn())
+    " > /tmp/glitchtip-shell-output.txt
+
+    # GLITCHTIP_DOMAIN (values.yaml glitchtip.domain) is already "http://glitchtip:8000" in this
+    # chart — unlike compose.yml, which bakes in "http://localhost:8000" for a human hitting the
+    # UI from the host and needs a sed rewrite before handing the DSN to other containers — so
+    # key.get_dsn() already resolves inside the cluster and no host rewrite is needed here.
+    DSN_LINE=$(grep '^DSN=' /tmp/glitchtip-shell-output.txt)
+    DSN=${DSN_LINE#DSN=}
+
+    if [ -z "$DSN" ]; then
+      echo "provision.sh: GlitchTip shell produced no DSN line" >&2
+      exit 1
+    fi
+
+    kubectl create secret generic glitchtip-dsn \
+      -n {{ .Values.global.namespace }} \
+      --from-literal=sentry-dsn="$DSN" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    echo "Provisioned. DSN written to Secret glitchtip-dsn."
