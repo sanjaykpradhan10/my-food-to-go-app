@@ -121,4 +121,4 @@ gateways:
   - name: public-gateway
     port: 8091
     ingressPath: /public
-    dependsOn: [{name: service-registry, port: 8761}, {name: restaurant-service, port: 8085}, {name: order-history-service, port: 8088}]
+    dependsOn: [{name: service-registry, port: 8761}, {name: order-service, port: 8082}, {name: kitchen-service, port: 8083}, {name: accounting-service, port: 8084}, {name: delivery-service, port: 8086}, {name: order-history-service, port: 8088}, {name: restaurant-service, port: 8085}]
