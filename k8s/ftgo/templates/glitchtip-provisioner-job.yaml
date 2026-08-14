@@ -42,7 +42,10 @@ spec:
         {{- include "ftgo.waitFor" (list (dict "name" "glitchtip" "port" 8000)) | nindent 8 }}
       containers:
         - name: provisioner
-          image: bitnami/kubectl:1.31
+          # bitnami/kubectl's old free-tier tag namespace (bitnami/kubectl:1.31) was retired from
+          # Docker Hub; bitnamilegacy/kubectl:1.31 is the same image kept available under Bitnami's
+          # legacy namespace, and (unlike some minimal kubectl-only images) still ships /usr/bin/sh.
+          image: bitnamilegacy/kubectl:1.31
           volumeMounts: [{name: script, mountPath: /scripts}]
           command: ["sh", "/scripts/provision.sh"]
           resources:

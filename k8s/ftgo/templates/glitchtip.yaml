@@ -82,5 +82,9 @@ spec:
             - {name: DEFAULT_FROM_EMAIL, value: "glitchtip@localhost"}
             - {name: ENABLE_OPEN_USER_REGISTRATION, value: "false"}
           resources:
-            requests: {memory: "256Mi", cpu: "100m"}
-            limits: {memory: "512Mi"}
+            # celery's default prefork pool spawns concurrency=10 worker processes (one per
+            # detected CPU on the kind node, not per-container cpu limit) — 512Mi observed
+            # OOMKilled (exit 137) at startup before any task ran; 1Gi is the smallest limit
+            # that got it past the boot-time OOM in testing.
+            requests: {memory: "512Mi", cpu: "100m"}
+            limits: {memory: "1Gi"}
