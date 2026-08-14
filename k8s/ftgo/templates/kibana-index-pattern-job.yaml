@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: kibana-index-pattern, namespace: {{ .Values.global.namespace }}}
+data:
+  # Path is chart-root-relative (k8s/ftgo/kibana/...) because Helm's .Files.Glob cannot traverse ../
+{{ (.Files.Glob "kibana/saved-objects/index-pattern.ndjson").AsConfig | indent 2 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kibana-index-pattern-registrar
+  namespace: {{ .Values.global.namespace }}
+  annotations: {"helm.sh/hook": post-install,post-upgrade}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        {{- include "ftgo.waitFor" (list (dict "name" "kibana" "port" 5601)) | nindent 8 }}
+      containers:
+        - name: registrar
+          image: curlimages/curl:8.10.1
+          volumeMounts: [{name: pattern, mountPath: /index-pattern.ndjson, subPath: index-pattern.ndjson}]
+          resources: {requests: {memory: "32Mi", cpu: "25m"}, limits: {memory: "64Mi"}}
+          command:
+            - sh
+            - -c
+            - |
+              curl -s -X POST http://kibana:5601/api/saved_objects/_import?overwrite=true \
+                -H "kbn-xsrf: true" \
+                --form file=@/index-pattern.ndjson
+      volumes: [{name: pattern, configMap: {name: kibana-index-pattern}}]
