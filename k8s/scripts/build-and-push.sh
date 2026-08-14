@@ -20,4 +20,5 @@ build_and_push ftgo-accounting-service
 build_and_push ftgo-delivery-service
 build_and_push ftgo-order-history-service
 build_and_push ftgo-audit-log-service
-# Task 10 appends the remaining 2 services to this same function-call list.
+build_and_push ftgo-mobile-gateway
+build_and_push ftgo-public-gateway

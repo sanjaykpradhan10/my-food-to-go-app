@@ -112,3 +112,13 @@ glitchtip:
 kafkaConnect:
   image: debezium/connect:3.0.0.Final
   outboxPublishMode: polling
+
+gateways:
+  - name: mobile-gateway
+    port: 8090
+    ingressPath: /mobile
+    dependsOn: [{name: service-registry, port: 8761}, {name: order-service, port: 8082}, {name: kitchen-service, port: 8083}, {name: accounting-service, port: 8084}, {name: delivery-service, port: 8086}]
+  - name: public-gateway
+    port: 8091
+    ingressPath: /public
+    dependsOn: [{name: service-registry, port: 8761}, {name: restaurant-service, port: 8085}, {name: order-history-service, port: 8088}]

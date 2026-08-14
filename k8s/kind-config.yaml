@@ -7,6 +7,11 @@ containerdConfigPatches:
       endpoint = ["http://kind-registry:5000"]
 nodes:
   - role: control-plane
+    # ingress-nginx's kind provider manifest node-selects on this label
+    # (deploy/static/provider/kind/deploy.yaml); without it the controller
+    # pod stays Pending forever with "didn't match Pod's node affinity".
+    labels:
+      ingress-ready: "true"
     extraPortMappings:
       - containerPort: 80
         hostPort: 18000
