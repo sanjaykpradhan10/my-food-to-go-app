@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kibana, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: kibana}}
+  template:
+    metadata: {labels: {app: kibana}}
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        {{- include "ftgo.waitFor" (list (dict "name" "elasticsearch" "port" 9200)) | nindent 8 }}
+      containers:
+        - name: kibana
+          image: {{ .Values.observability.kibanaImage }}
+          ports: [{containerPort: 5601}]
+          env:
+            - {name: ELASTICSEARCH_HOSTS, value: "http://elasticsearch:9200"}
+          resources:
+            requests: {memory: "256Mi", cpu: "50m"}
+            limits: {memory: "512Mi"}
+          readinessProbe: {httpGet: {path: /api/status, port: 5601}, initialDelaySeconds: 30, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /api/status, port: 5601}, initialDelaySeconds: 45, periodSeconds: 15}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: kibana, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: kibana}
+  ports: [{port: 5601}]

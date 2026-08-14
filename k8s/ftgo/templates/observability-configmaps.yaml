@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: tempo-config, namespace: {{ .Values.global.namespace }}}
+data:
+{{ (.Files.Glob "tempo/tempo.yaml").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: prometheus-config, namespace: {{ .Values.global.namespace }}}
+data:
+{{ (.Files.Glob "prometheus/*.yml").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: logstash-pipeline, namespace: {{ .Values.global.namespace }}}
+data:
+{{ (.Files.Glob "logstash/pipeline/*").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: filebeat-config, namespace: {{ .Values.global.namespace }}}
+data:
+{{ (.Files.Glob "filebeat/filebeat.yml").AsConfig | indent 2 }}
+---
+# Split by subdirectory (rather than one ConfigMap for all of grafana/provisioning/**) because
+# .Files.Glob/AsConfig flattens paths to basenames — datasources/*.yml and dashboards/*.yml must
+# land in separate directories on disk (/etc/grafana/provisioning/{datasources,dashboards}), so
+# each needs its own ConfigMap mounted as a directory.
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: grafana-datasources-provisioning, namespace: {{ .Values.global.namespace }}}
+data:
+{{ (.Files.Glob "grafana/provisioning/datasources/*").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: grafana-dashboards-provisioning, namespace: {{ .Values.global.namespace }}}
+data:
+{{ (.Files.Glob "grafana/provisioning/dashboards/*").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: grafana-dashboards, namespace: {{ .Values.global.namespace }}}
+data:
+{{ (.Files.Glob "grafana/dashboards/*").AsConfig | indent 2 }}

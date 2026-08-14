@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: logstash, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: logstash}}
+  template:
+    metadata: {labels: {app: logstash}}
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        {{- include "ftgo.waitFor" (list (dict "name" "elasticsearch" "port" 9200)) | nindent 8 }}
+      containers:
+        - name: logstash
+          image: {{ .Values.observability.logstashImage }}
+          ports: [{containerPort: 5044}]
+          env:
+            - {name: LS_JAVA_OPTS, value: "-Xms256m -Xmx256m"}
+          resources:
+            requests: {memory: "256Mi", cpu: "50m"}
+            limits: {memory: "512Mi"}
+          volumeMounts:
+            - {name: pipeline, mountPath: /usr/share/logstash/pipeline}
+      volumes:
+        - {name: pipeline, configMap: {name: logstash-pipeline}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: logstash, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: logstash}
+  ports: [{port: 5044}]

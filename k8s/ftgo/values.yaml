@@ -93,3 +93,11 @@ businessServices:
     db: ftgo_audit_log
     kafka: true
     dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+
+observability:
+  tempoImage: grafana/tempo:2.6.1
+  prometheusImage: prom/prometheus:v2.55.1
+  grafanaImage: grafana/grafana:11.3.1
+  logstashImage: docker.elastic.co/logstash/logstash:8.15.3
+  kibanaImage: docker.elastic.co/kibana/kibana:8.15.3
+  filebeatImage: docker.elastic.co/beats/filebeat:8.15.3
