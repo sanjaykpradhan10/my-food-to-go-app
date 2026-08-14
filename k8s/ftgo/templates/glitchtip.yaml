@@ -71,7 +71,13 @@ spec:
           # GlitchTip's uwsgi process only accepts the event envelope and enqueues it on Redis;
           # a separate Celery worker actually processes the queue into a stored Issue. Without
           # this Deployment, POST /api/1/envelope/ returns 200 but no Issue is ever created.
-          command: ["celery", "-A", "glitchtip", "worker", "-B", "-l", "info"]
+          #
+          # --concurrency=2: celery's prefork pool otherwise sizes itself off the node's total
+          # CPU count (not this container's cpu limit), spawning ~10 worker processes on the kind
+          # node and OOM-killing itself under any container memory limit reasonable for a single
+          # dev-cluster node shared with 20+ other pods (Tasks 1-6). Pinning concurrency low keeps
+          # this at low-e2e-test-volume throughput, which is all this dev deployment needs.
+          command: ["celery", "-A", "glitchtip", "worker", "-B", "-l", "info", "--concurrency=2"]
           env:
             - {name: DATABASE_URL, value: "postgres://glitchtip:glitchtip@glitchtip-db:5432/glitchtip"}
             - name: SECRET_KEY
@@ -82,9 +88,10 @@ spec:
             - {name: DEFAULT_FROM_EMAIL, value: "glitchtip@localhost"}
             - {name: ENABLE_OPEN_USER_REGISTRATION, value: "false"}
           resources:
-            # celery's default prefork pool spawns concurrency=10 worker processes (one per
-            # detected CPU on the kind node, not per-container cpu limit) — 512Mi observed
-            # OOMKilled (exit 137) at startup before any task ran; 1Gi is the smallest limit
-            # that got it past the boot-time OOM in testing.
-            requests: {memory: "512Mi", cpu: "100m"}
-            limits: {memory: "1Gi"}
+            # Cut down from an earlier 1Gi limit once --concurrency=2 (above) fixed the actual
+            # cause of the boot-time OOM (default concurrency=10 processes, not this limit being
+            # too tight): the chart's total container memory limits across Tasks 1-7 were found
+            # to exceed the kind node's ~11Gi capacity, so this container's budget was trimmed
+            # back down rather than left inflated once the process-count fix made that possible.
+            requests: {memory: "192Mi", cpu: "50m"}
+            limits: {memory: "384Mi"}
