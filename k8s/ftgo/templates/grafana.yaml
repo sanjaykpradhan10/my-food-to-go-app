@@ -15,6 +15,9 @@ spec:
           image: {{ .Values.observability.grafanaImage }}
           ports: [{containerPort: 3000}]
           env:
+            # Matches compose.yml: anonymous viewer access, acceptable only because this is a
+            # local kind cluster with no ingress exposure — not something to carry into a
+            # production values overlay.
             - {name: GF_AUTH_ANONYMOUS_ENABLED, value: "true"}
             - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer}
           resources:
