@@ -108,3 +108,7 @@ glitchtip:
   # in-cluster callers (business services, the provisioner Job) always address it as
   # "glitchtip:8000" via the Service, never via this domain.
   domain: "http://glitchtip:8000"
+
+kafkaConnect:
+  image: debezium/connect:3.0.0.Final
+  outboxPublishMode: polling

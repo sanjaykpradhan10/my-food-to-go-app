@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: outbox-connector-config, namespace: {{ .Values.global.namespace }}}
+data:
+{{ (.Files.Glob "infrastructure/debezium/outbox-connector.json").AsConfig | indent 2 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: connector-registrar
+  namespace: {{ .Values.global.namespace }}
+  annotations: {"helm.sh/hook": post-install,post-upgrade}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        {{- include "ftgo.waitFor" (list (dict "name" "kafka-connect" "port" 8083)) | nindent 8 }}
+      containers:
+        - name: connector-registrar
+          image: curlimages/curl:8.10.1
+          volumeMounts: [{name: config, mountPath: /outbox-connector.json, subPath: outbox-connector.json}]
+          env: [{name: OUTBOX_PUBLISH_MODE, value: {{ .Values.kafkaConnect.outboxPublishMode | quote }}}]
+          command:
+            - sh
+            - -c
+            - |
+              if [ "$OUTBOX_PUBLISH_MODE" = "cdc" ]; then
+                curl -s -X PUT http://kafka-connect:8083/connectors/outbox-connector/config -H "Content-Type: application/json" -d @/outbox-connector.json
+              else
+                curl -s -X DELETE http://kafka-connect:8083/connectors/outbox-connector || true
+              fi
+      volumes: [{name: config, configMap: {name: outbox-connector-config}}]

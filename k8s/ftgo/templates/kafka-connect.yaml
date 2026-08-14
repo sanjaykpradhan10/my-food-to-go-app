@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kafka-connect, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: kafka-connect}}
+  template:
+    metadata: {labels: {app: kafka-connect}}
+    spec:
+      initContainers:
+        {{- include "ftgo.waitFor" (list (dict "name" "kafka" "port" 29092) (dict "name" "mysql" "port" 3306)) | nindent 8 }}
+      containers:
+        - name: kafka-connect
+          image: {{ .Values.kafkaConnect.image }}
+          ports: [{containerPort: 8083}]
+          env:
+            - {name: BOOTSTRAP_SERVERS, value: "kafka:29092"}
+            - {name: GROUP_ID, value: "1"}
+            - {name: CONFIG_STORAGE_TOPIC, value: "connect-configs"}
+            - {name: OFFSET_STORAGE_TOPIC, value: "connect-offsets"}
+            - {name: STATUS_STORAGE_TOPIC, value: "connect-status"}
+          readinessProbe: {httpGet: {path: /, port: 8083}, initialDelaySeconds: 15, periodSeconds: 10}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: kafka-connect, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: kafka-connect}
+  ports: [{port: 8083}]
