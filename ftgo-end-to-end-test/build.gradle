@@ -41,7 +41,16 @@ tasks.register('e2eTest', Test) {
 dockerCompose {
     useComposeFiles = ["${rootDir}/compose.yml"]
     projectName = 'ftgo-e2e-test'
-    isRequiredBy(tasks.named('e2eTest'))
     waitForTcpPorts = true
     environment.put 'SAGA_MODE', 'orchestration'
+}
+
+// Only wire composeUp/composeDown as e2eTest dependencies for the default (compose-targeting)
+// run. Passing -Dgateway.base-url points the suite at a live K8s cluster instead (Task 12) --
+// building/starting a second, unrelated compose stack on top of that cluster would waste ~30min
+// building 13 images and then fight the cluster's kubectl port-forwards for the same host ports.
+if (System.getProperty('gateway.base-url') == null) {
+    dockerCompose {
+        isRequiredBy(tasks.named('e2eTest'))
+    }
 }

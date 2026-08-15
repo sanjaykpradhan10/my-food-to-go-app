@@ -25,6 +25,7 @@ data:
     from django.contrib.auth import get_user_model
     from apps.organizations_ext.models import Organization
     from apps.projects.models import Project, ProjectKey
+    from apps.api_tokens.models import APIToken
 
     User = get_user_model()
     user, _ = User.objects.get_or_create(email='admin@localhost', defaults={'name': 'admin', 'is_superuser': True, 'is_staff': True})
@@ -42,6 +43,20 @@ data:
         key = ProjectKey.objects.create(project=project)
 
     print('DSN=' + key.get_dsn())
+
+    # e2e-test's ExceptionTrackingStepDefinitions polls GlitchTip's Sentry-compatible issues API,
+    # which needs an API token, not just the event-ingest DSN above — compose's provisioner mints
+    # one (glitchtip/provision.sh) but this Job originally didn't, so k8s runs of that suite had
+    # no way to authenticate. Same org:read/project:read/event:read/member:read scope as compose,
+    # get_or_create'd by label so re-running this hook (helm upgrade) doesn't mint a new token.
+    token = APIToken.objects.filter(user=user, label='e2e-test').first()
+    if token is None:
+        token = APIToken.objects.create(user=user, label='e2e-test')
+        for flag in ('org:read', 'project:read', 'event:read', 'member:read'):
+            setattr(token.scopes, flag, True)
+        token.save()
+
+    print('APITOKEN=' + token.token)
     " > /tmp/glitchtip-shell-output.txt
 
     # GLITCHTIP_DOMAIN (values.yaml glitchtip.domain) is already "http://glitchtip:8000" in this
@@ -50,15 +65,22 @@ data:
     # key.get_dsn() already resolves inside the cluster and no host rewrite is needed here.
     DSN_LINE=$(grep '^DSN=' /tmp/glitchtip-shell-output.txt)
     DSN=${DSN_LINE#DSN=}
+    TOKEN_LINE=$(grep '^APITOKEN=' /tmp/glitchtip-shell-output.txt)
+    APITOKEN=${TOKEN_LINE#APITOKEN=}
 
     if [ -z "$DSN" ]; then
       echo "provision.sh: GlitchTip shell produced no DSN line" >&2
+      exit 1
+    fi
+    if [ -z "$APITOKEN" ]; then
+      echo "provision.sh: GlitchTip shell produced no APITOKEN line" >&2
       exit 1
     fi
 
     kubectl create secret generic glitchtip-dsn \
       -n {{ .Values.global.namespace }} \
       --from-literal=sentry-dsn="$DSN" \
+      --from-literal=api-token="$APITOKEN" \
       --dry-run=client -o yaml | kubectl apply -f -
 
-    echo "Provisioned. DSN written to Secret glitchtip-dsn."
+    echo "Provisioned. DSN and API token written to Secret glitchtip-dsn."
