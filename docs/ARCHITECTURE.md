@@ -1715,7 +1715,7 @@ future work, not implemented here.
 |---|---|---|
 | Service with a named volume | `StatefulSet` + `PersistentVolumeClaim` | `mysql`, `zookeeper`+`kafka`, `elasticsearch`, `glitchtip-db`, `glitchtip-redis` |
 | Stateless service, published port | `Deployment` + `Service` (ClusterIP) | 13 app services, `authorization-server`, `config-server`, `service-registry`, `tempo`, `prometheus`, `grafana`, `logstash`, `kibana`, `glitchtip`, `glitchtip-worker` |
-| Host-mount-based log/metric collector | `DaemonSet` | `filebeat` (reads `/var/log/pods` instead of compose's Docker-socket + container-log-dir mounts) |
+| Host-mount-based log/metric collector | `DaemonSet` | `filebeat` (mounts `/var/log/pods`, but the shipped `filebeat.yml` still uses compose's `docker` autodiscover input requiring `/var/run/docker.sock`, which is deliberately not wired in — filebeat is deployed on k8s but non-functional there, pending a future `/var/log/pods`-based input; out of scope for this sub-project) |
 | One-shot setup container (`restart: "no"`) | Helm hook `Job` (`post-install,post-upgrade`) | `connector-registrar`, `kibana-index-pattern-registrar`, GlitchTip provisioning (replaces `glitchtip-provisioner`) |
 | `depends_on: condition: service_healthy/service_started` | `initContainers` (wait-for-dependency loops) + Helm hook weights for ordering across Jobs | All services with `depends_on` |
 | Plaintext `environment:` values (non-secret) | `ConfigMap`, Helm-templated | All services |

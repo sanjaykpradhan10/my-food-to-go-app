@@ -10,5 +10,6 @@ Usage: {{ include "ftgo.waitFor" (list (dict "name" "mysql" "port" 3306) (dict "
 - name: wait-for-{{ .name }}
   image: busybox:1.36
   command: ["sh", "-c", "until nc -z {{ .name }} {{ .port }}; do echo waiting for {{ .name }}:{{ .port }}; sleep 2; done"]
+  resources: {requests: {memory: "8Mi", cpu: "10m"}, limits: {memory: "16Mi"}}
 {{- end }}
 {{- end -}}

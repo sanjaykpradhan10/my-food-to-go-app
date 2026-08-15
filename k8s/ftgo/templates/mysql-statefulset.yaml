@@ -31,7 +31,7 @@ spec:
             - {name: mysql-data, mountPath: /var/lib/mysql}
             - {name: init-sql, mountPath: /docker-entrypoint-initdb.d}
           readinessProbe:
-            exec: {command: ["mysqladmin", "ping", "-h", "localhost", "-u", "ftgo", "-pftgo"]}
+            exec: {command: ["sh", "-c", "mysqladmin ping -h localhost -u ftgo -p\"$MYSQL_PASSWORD\""]}
             initialDelaySeconds: 10
             periodSeconds: 10
       volumes:

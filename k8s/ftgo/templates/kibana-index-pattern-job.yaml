@@ -26,7 +26,7 @@ spec:
             - sh
             - -c
             - |
-              curl -s -X POST http://kibana:5601/api/saved_objects/_import?overwrite=true \
+              curl -sf -X POST http://kibana:5601/api/saved_objects/_import?overwrite=true \
                 -H "kbn-xsrf: true" \
                 --form file=@/index-pattern.ndjson
       volumes: [{name: pattern, configMap: {name: kibana-index-pattern}}]

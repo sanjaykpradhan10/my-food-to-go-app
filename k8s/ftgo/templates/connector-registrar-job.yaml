@@ -28,8 +28,8 @@ spec:
             - -c
             - |
               if [ "$OUTBOX_PUBLISH_MODE" = "cdc" ]; then
-                curl -s -X PUT http://kafka-connect:8083/connectors/outbox-connector/config -H "Content-Type: application/json" -d @/outbox-connector.json
+                curl -sf -X PUT http://kafka-connect:8083/connectors/outbox-connector/config -H "Content-Type: application/json" -d @/outbox-connector.json
               else
-                curl -s -X DELETE http://kafka-connect:8083/connectors/outbox-connector || true
+                curl -sf -X DELETE http://kafka-connect:8083/connectors/outbox-connector || true
               fi
       volumes: [{name: config, configMap: {name: outbox-connector-config}}]
