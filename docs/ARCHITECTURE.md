@@ -1696,3 +1696,151 @@ containerized stack and polls `GET /audit-log` until an `entityType=Order` entry
 contains `createOrder` appears. The step definitions filter client-side rather than by query
 parameter, because `createOrder`'s entry has a null `entityId` (no path variable) and the query
 API supports only single-field lookups.
+
+## Kubernetes deployment (Ch.12, §12.4)
+
+Sub-project B1 of Ch.12 §12.4 (Deploying microservices — Kubernetes) redeploys the entire
+`compose.yml` stack — all 13 buildable app images, MySQL, Kafka/Zookeeper, the ELK stack,
+Prometheus/Grafana/Tempo, and GlitchTip + its Postgres/Redis — onto a local `kind` cluster via a
+single umbrella Helm chart at `k8s/ftgo/`, rather than the book's illustrative partial example
+(`restaurant-service` + one gateway). Compose already proves the full system works together; a
+partial K8s conversion would leave two parallel, drifting deployment definitions instead of one
+chart in parity with the other. This is B1 of three planned §12.4 sub-projects — B2 (zero-downtime
+rolling deployment) and B3 (service mesh, closing out the topic deferred from Ch.11 §11.4) are
+future work, not implemented here.
+
+### Resource mapping from `compose.yml`
+
+| Compose concept | Kubernetes equivalent | Services |
+|---|---|---|
+| Service with a named volume | `StatefulSet` + `PersistentVolumeClaim` | `mysql`, `zookeeper`+`kafka`, `elasticsearch`, `glitchtip-db`, `glitchtip-redis` |
+| Stateless service, published port | `Deployment` + `Service` (ClusterIP) | 13 app services, `authorization-server`, `config-server`, `service-registry`, `tempo`, `prometheus`, `grafana`, `logstash`, `kibana`, `glitchtip`, `glitchtip-worker` |
+| Host-mount-based log/metric collector | `DaemonSet` | `filebeat` (reads `/var/log/pods` instead of compose's Docker-socket + container-log-dir mounts) |
+| One-shot setup container (`restart: "no"`) | Helm hook `Job` (`post-install,post-upgrade`) | `connector-registrar`, `kibana-index-pattern-registrar`, GlitchTip provisioning (replaces `glitchtip-provisioner`) |
+| `depends_on: condition: service_healthy/service_started` | `initContainers` (wait-for-dependency loops) + Helm hook weights for ordering across Jobs | All services with `depends_on` |
+| Plaintext `environment:` values (non-secret) | `ConfigMap`, Helm-templated | All services |
+| Plaintext `environment:` values (credentials) | `Secret`, Helm-templated | `mysql`, `glitchtip*`, any service consuming those credentials |
+| `ports:` host publish | `Service` (ClusterIP) for internal traffic; `Ingress` for the two gateways only | All |
+| Docker-socket-mounted `glitchtip-provisioner` | K8s `Job` driving the GlitchTip bootstrap shell via `kubectl exec` (see deviation below) | `glitchtip-provisioner` → new job |
+
+Images are built by `k8s/scripts/build-and-push.sh` (same 13 Dockerfiles `docker compose build`
+already uses) and pushed to a local Docker registry container connected to the `kind` network;
+`values.yaml` per-service `image.repository`/`image.tag` point at that registry rather than using
+`kind load docker-image`, so a rebuild-and-redeploy loop looks the same as it would against any
+real registry. External access to `mobile-gateway`/`public-gateway` goes through nginx-ingress,
+installed into the cluster as a documented one-time prerequisite (`k8s/README.md`); on this
+machine the ingress's host port mapping is 18000, not the plan's original 8000, because 8000 was
+already bound by an unrelated container from another local worktree.
+
+### The generic `app-service` template
+
+Rather than 8 near-identical template files — one per business service, differing only in name,
+port, database, and environment overrides — `k8s/ftgo/templates/app-service.yaml` is a single
+template that iterates a `businessServices` list in `values.yaml`, rendering one `Deployment` +
+`Service` pair per entry. This mirrors duplication already visible in `compose.yml` itself: every
+business service there repeats the same `depends_on`/`environment` shape. Collapsing that
+duplication in the chart is an intentional improvement, not scope creep — 8 copy-pasted ~40-line
+templates would themselves be a maintenance liability the next sub-project (B2, zero-downtime
+deployment) would have to touch 8 times instead of once. Non-business-service infrastructure
+(gateways, `authorization-server`, `config-server`, `service-registry`, Kafka Connect, the
+observability stack, GlitchTip) keeps its own dedicated templates, since those don't share a
+common shape the way the 8 business services do.
+
+### `ftgo.waitFor`: the `depends_on` replacement
+
+Kubernetes has no native equivalent of compose's `depends_on: condition: service_healthy` — a
+Deployment's pods start as soon as they're scheduled, regardless of whether the services they
+call are ready. `_helpers.tpl` defines `ftgo.waitFor`, a Helm template helper that renders an
+`initContainers` block from a list of `{name, port}` dependencies:
+
+```yaml
+{{- define "ftgo.waitFor" -}}
+{{- range . }}
+- name: wait-for-{{ .name }}
+  image: busybox:1.36
+  command: ["sh", "-c", "until nc -z {{ .name }} {{ .port }}; do echo waiting for {{ .name }}:{{ .port }}; sleep 2; done"]
+{{- end }}
+{{- end -}}
+```
+
+Each entry becomes a `busybox` initContainer that blocks the pod's main containers from starting
+until a TCP connection to the named dependency's port succeeds — e.g.
+`{{ include "ftgo.waitFor" (list (dict "name" "mysql" "port" 3306) (dict "name" "kafka" "port" 29092)) }}`.
+This is coarser than compose's `service_healthy` (it checks only that a port accepts connections,
+not that `/actuator/health` reports `UP`), but it's sufficient for every dependency edge this
+chart has, since none of them need finer-grained readiness than "the process is listening."
+Ordering across Helm hook `Job`s (e.g. GlitchTip provisioning must run after `glitchtip` itself is
+ready) is handled the same way, via a `ftgo.waitFor` initContainer inside the Job's pod spec, not
+via Helm hook weights.
+
+### GlitchTip provisioning-Job flow, and the Decision-5 deviation
+
+**What the design called for.** The B1 spec's Decision 5 said the GlitchTip provisioning Job
+should "call GlitchTip's REST API directly" to create the org/user/project/DSN, replacing
+compose's `glitchtip-provisioner` (which shells out to `docker run` via a host `docker.sock`
+mount — inapplicable inside a pod, and a security concern the design was explicit about avoiding).
+
+**What was actually built.** GlitchTip v4.2.9 has no unauthenticated REST endpoint that can
+bootstrap the first org/user/project on a blank instance — the same wall compose's own
+provisioner already hit, which is why compose drives GlitchTip's Django `manage.py shell` instead
+of a REST call. The Kubernetes Job does the same thing: it waits for the `glitchtip` Service to
+accept TCP connections on port 8000 (via `ftgo.waitFor`), locates the `glitchtip` pod by label,
+and runs `kubectl exec ... -- python manage.py shell -c "..."` to create the superuser,
+organization, project, and a scoped API token, then parses the DSN and token out of the shell's
+stdout and writes them to a `glitchtip-dsn` Secret via `kubectl create secret ... --dry-run=client
+-o yaml | kubectl apply -f -`. A dedicated `ServiceAccount` + `Role` scoped to this namespace
+grants exactly `pods` get/list, `pods/exec` create, and `secrets` create/get/update/patch — no
+`docker.sock` mount, no access to any other namespace or node.
+
+**Why this is a deviation, and why it was accepted.** `kubectl exec` is not literally an HTTP REST
+call, so this is a genuine departure from Decision 5's literal wording, not just an
+implementation detail. It was escalated to a human partner during Task 7's review, and the ruling
+was to accept `kubectl exec` as implemented: the actual security intent behind Decision 5 was
+eliminating the `docker.sock` mount (a socket that hands out root-equivalent control over every
+container on the host), and the `kubectl exec` approach satisfies that intent — the Job's RBAC is
+namespace-scoped and limited to one pod's exec stream, nothing like the blast radius a mounted
+Docker socket would have carried. The literal "call the REST API" wording was written before it
+was known that GlitchTip v4.2.9 has no bootstrap REST endpoint to call.
+
+**End-to-end sequence, once the Job runs:**
+
+```mermaid
+sequenceDiagram
+    participant Job as glitchtip-provisioner Job
+    participant GT as glitchtip Pod
+    participant K8s as Kubernetes API
+    participant App as business-service Pod
+
+    Job->>GT: wait-for-glitchtip initContainer (TCP poll :8000)
+    GT-->>Job: port open
+    Job->>K8s: kubectl get pod -l app=glitchtip
+    K8s-->>Job: glitchtip pod name
+    Job->>GT: kubectl exec -- python manage.py shell -c "..."
+    GT-->>Job: stdout: DSN=..., APITOKEN=...
+    Job->>K8s: kubectl apply -f - (Secret glitchtip-dsn)
+    K8s-->>Job: Secret created/updated
+    Note over App: on next restart, or if not yet started
+    App->>K8s: mount SENTRY_DSN via optional secretKeyRef on glitchtip-dsn
+    K8s-->>App: DSN injected (or absent, if Secret doesn't exist yet)
+```
+
+The business-service `app-service` template mounts `SENTRY_DSN` from the `glitchtip-dsn` Secret
+via an `optional: true` `secretKeyRef` — the same non-blocking contract compose's DSN-file mount
+already used (§11.3.5). A pod that starts before the provisioning Job has run simply comes up
+without exception tracking rather than failing; a pod that starts after picks up the DSN
+normally. Helm's `post-install,post-upgrade` hook ordering is the mechanism that makes this work
+in practice on a fresh install: `SENTRY_DSN` isn't consumed until pod startup, which happens after
+`helm install`/`upgrade` returns and the hook Job has already run.
+
+### Verification
+
+The existing `ftgo-end-to-end-test` Cucumber suite gained a Kubernetes profile — base URLs pointed
+at nginx-ingress instead of `localhost:<port>` — and was run against the live `kind` cluster as
+this sub-project's acceptance gate, rather than relying on `kubectl get pods` / manual `curl`s
+alone. That run surfaced one genuine, non-chart bug: a Kafka-listener-thread race in
+`ftgo-accounting-service`'s `SagaJoinService` (three concurrent per-order handlers racing on a
+`findById().orElseGet(new SagaJoinState())` create) that K8s's persistent `mysql-0` StatefulSet
+exposed but compose's fresh-MySQL-per-run habit had been masking; the fix (atomic
+`INSERT IGNORE` + `PESSIMISTIC_WRITE`-locked lookup) is an accounting-service saga concern, not a
+Kubernetes-deployment one — see `CONTEXT.md`'s 2026-08-13 session log entry for the specific race
+and fix.
