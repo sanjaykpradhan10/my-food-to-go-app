@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: authorization-server, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: authorization-server}}
+  template:
+    metadata: {labels: {app: authorization-server}}
+    spec:
+      # Service name == Deployment name; disable Docker-links-style env
+      # injection defensively (see Task 3's kafka service-link bug).
+      enableServiceLinks: false
+      containers:
+        - name: authorization-server
+          image: "{{ .Values.global.imageRegistry }}/ftgo-authorization-server:{{ .Values.global.imageTag }}"
+          ports: [{containerPort: 9000}]
+          resources:
+            requests: {memory: "256Mi", cpu: "100m"}
+            limits: {memory: "512Mi"}
+          # compose.yml's own healthcheck for this service targets /oauth2/jwks,
+          # not /actuator/health, so mirror that choice here.
+          readinessProbe: {httpGet: {path: /oauth2/jwks, port: 9000}, initialDelaySeconds: 15, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /oauth2/jwks, port: 9000}, initialDelaySeconds: 30, periodSeconds: 15}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: authorization-server, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: authorization-server}
+  ports: [{port: 9000}]

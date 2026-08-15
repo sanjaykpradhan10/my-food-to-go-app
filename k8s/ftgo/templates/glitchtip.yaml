@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: glitchtip, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: glitchtip}}
+  template:
+    metadata: {labels: {app: glitchtip}}
+    spec:
+      # Container name == Service name below; disable Docker-links-style env
+      # injection defensively (see Task 3's kafka service-link bug).
+      enableServiceLinks: false
+      initContainers:
+        {{- include "ftgo.waitFor" (list (dict "name" "glitchtip-db" "port" 5432) (dict "name" "glitchtip-redis" "port" 6379)) | nindent 8 }}
+      containers:
+        - name: glitchtip
+          image: {{ .Values.glitchtip.image }}
+          # image's default entrypoint (./bin/start.sh) only runs migrations when a Heroku-style
+          # DYNO env var is set, which we don't set; run migrate explicitly before uwsgi instead
+          command: ["sh", "-c", "./bin/run-migrate.sh && ./bin/run-uwsgi.sh"]
+          ports: [{containerPort: 8000}]
+          env:
+            - {name: DATABASE_URL, value: "postgres://glitchtip:glitchtip@glitchtip-db:5432/glitchtip"}
+            - name: SECRET_KEY
+              valueFrom: {secretKeyRef: {name: ftgo-credentials, key: glitchtip-secret-key}}
+            # both must point at glitchtip-redis: REDIS_URL backs the Django cache (defaults to
+            # host "redis", which doesn't exist in this namespace) and CELERY_BROKER_URL backs Celery
+            - {name: REDIS_URL, value: "redis://glitchtip-redis:6379/0"}
+            - {name: CELERY_BROKER_URL, value: "redis://glitchtip-redis:6379/0"}
+            - {name: GLITCHTIP_DOMAIN, value: {{ .Values.glitchtip.domain | quote }}}
+            - {name: DEFAULT_FROM_EMAIL, value: "glitchtip@localhost"}
+            - {name: ENABLE_OPEN_USER_REGISTRATION, value: "false"}
+            # the glitchtip image's uwsgi entrypoint defaults to PORT=8080; pin it to 8000 so it
+            # matches the Service port and the readiness probe below without an extra port remap
+            - {name: PORT, value: "8000"}
+          resources:
+            requests: {memory: "256Mi", cpu: "100m"}
+            limits: {memory: "512Mi"}
+          readinessProbe:
+            # the glitchtip image has no curl/wget; python3 is present, so use it directly
+            exec: {command: ["python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/_health/')"]}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            exec: {command: ["python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/_health/')"]}
+            initialDelaySeconds: 40
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata: {name: glitchtip, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: glitchtip}
+  ports: [{port: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: glitchtip-worker, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: glitchtip-worker}}
+  template:
+    metadata: {labels: {app: glitchtip-worker}}
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        {{- include "ftgo.waitFor" (list (dict "name" "glitchtip-db" "port" 5432) (dict "name" "glitchtip-redis" "port" 6379)) | nindent 8 }}
+      containers:
+        - name: glitchtip-worker
+          image: {{ .Values.glitchtip.image }}
+          # GlitchTip's uwsgi process only accepts the event envelope and enqueues it on Redis;
+          # a separate Celery worker actually processes the queue into a stored Issue. Without
+          # this Deployment, POST /api/1/envelope/ returns 200 but no Issue is ever created.
+          #
+          # --concurrency=2: celery's prefork pool otherwise sizes itself off the node's total
+          # CPU count (not this container's cpu limit), spawning ~10 worker processes on the kind
+          # node and OOM-killing itself under any container memory limit reasonable for a single
+          # dev-cluster node shared with 20+ other pods (Tasks 1-6). Pinning concurrency low keeps
+          # this at low-e2e-test-volume throughput, which is all this dev deployment needs.
+          command: ["celery", "-A", "glitchtip", "worker", "-B", "-l", "info", "--concurrency=2"]
+          env:
+            - {name: DATABASE_URL, value: "postgres://glitchtip:glitchtip@glitchtip-db:5432/glitchtip"}
+            - name: SECRET_KEY
+              valueFrom: {secretKeyRef: {name: ftgo-credentials, key: glitchtip-secret-key}}
+            - {name: REDIS_URL, value: "redis://glitchtip-redis:6379/0"}
+            - {name: CELERY_BROKER_URL, value: "redis://glitchtip-redis:6379/0"}
+            - {name: GLITCHTIP_DOMAIN, value: {{ .Values.glitchtip.domain | quote }}}
+            - {name: DEFAULT_FROM_EMAIL, value: "glitchtip@localhost"}
+            - {name: ENABLE_OPEN_USER_REGISTRATION, value: "false"}
+          resources:
+            # Cut down from an earlier 1Gi limit once --concurrency=2 (above) fixed the actual
+            # cause of the boot-time OOM (default concurrency=10 processes, not this limit being
+            # too tight): the chart's total container memory limits across Tasks 1-7 were found
+            # to exceed the kind node's ~11Gi capacity, so this container's budget was trimmed
+            # back down rather than left inflated once the process-count fix made that possible.
+            requests: {memory: "192Mi", cpu: "50m"}
+            limits: {memory: "384Mi"}

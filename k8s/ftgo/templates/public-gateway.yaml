@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: public-gateway
+  namespace: {{ .Values.global.namespace }}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: public-gateway}}
+  template:
+    metadata: {labels: {app: public-gateway}}
+    spec:
+      initContainers:
+        {{- include "ftgo.waitFor" (index .Values.gateways 1).dependsOn | nindent 8 }}
+      containers:
+        - name: public-gateway
+          image: "{{ .Values.global.imageRegistry }}/ftgo-public-gateway:{{ .Values.global.imageTag }}"
+          ports: [{containerPort: 8091}]
+          env:
+            - name: EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE
+              valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: eureka-url}}
+            - name: GATEWAY_JWT_JWKSETURI
+              valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: jwks-uri}}
+            - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+              valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: tempo-otlp-endpoint}}
+            - name: SPRING_CONFIG_IMPORT
+              value: "optional:configserver:$(CONFIG_SERVER_URL)"
+            - name: CONFIG_SERVER_URL
+              valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: config-server-url}}
+          # Same modest per-container budget used by the business services (app-service.yaml)
+          # to avoid re-triggering the node-OOM crash-loop fixed in Task 3.
+          resources:
+            requests: {memory: "256Mi", cpu: "100m"}
+            limits: {memory: "512Mi"}
+          readinessProbe: {httpGet: {path: /actuator/health, port: 8091}, initialDelaySeconds: 15, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /actuator/health, port: 8091}, initialDelaySeconds: 30, periodSeconds: 15}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-gateway
+  namespace: {{ .Values.global.namespace }}
+spec:
+  selector: {app: public-gateway}
+  ports: [{port: 8091}]

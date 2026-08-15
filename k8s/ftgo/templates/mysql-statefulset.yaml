@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: {{ .Values.global.namespace }}
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels: {app: mysql}
+  template:
+    metadata:
+      labels: {app: mysql}
+    spec:
+      containers:
+        - name: mysql
+          image: {{ .Values.mysql.image }}
+          args: ["--log-bin=mysql-bin", "--binlog-format=ROW", "--binlog-row-image=FULL", "--server-id=1"]
+          ports: [{containerPort: 3306}]
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom: {secretKeyRef: {name: ftgo-credentials, key: mysql-root-password}}
+            - name: MYSQL_USER
+              value: ftgo
+            - name: MYSQL_PASSWORD
+              valueFrom: {secretKeyRef: {name: ftgo-credentials, key: mysql-password}}
+          resources:
+            requests: {memory: "256Mi", cpu: "100m"}
+            limits: {memory: "512Mi"}
+          volumeMounts:
+            - {name: mysql-data, mountPath: /var/lib/mysql}
+            - {name: init-sql, mountPath: /docker-entrypoint-initdb.d}
+          readinessProbe:
+            exec: {command: ["sh", "-c", "mysqladmin ping -h localhost -u ftgo -p\"$MYSQL_PASSWORD\""]}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: init-sql
+          configMap: {name: mysql-init-sql}
+  volumeClaimTemplates:
+    - metadata: {name: mysql-data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: "{{ .Values.mysql.storageSize }}"}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: {{ .Values.global.namespace }}
+spec:
+  clusterIP: None
+  selector: {app: mysql}
+  ports: [{port: 3306}]

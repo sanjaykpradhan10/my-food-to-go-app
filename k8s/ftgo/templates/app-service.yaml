@@ -1,0 +1,64 @@
+{{- range .Values.businessServices }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.global.namespace }}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: {{ .name }}}}
+  template:
+    metadata: {labels: {app: {{ .name }}}}
+    spec:
+      # Service name == Deployment name; disable Docker-links-style env
+      # injection defensively (see Task 3's kafka service-link bug).
+      enableServiceLinks: false
+      initContainers:
+        {{- include "ftgo.waitFor" .dependsOn | nindent 8 }}
+      containers:
+        - name: {{ .name }}
+          image: "{{ $.Values.global.imageRegistry }}/ftgo-{{ .name }}:{{ $.Values.global.imageTag }}"
+          ports: [{containerPort: {{ .port }}}]
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://mysql:3306/{{ .db }}"
+            - name: SPRING_CONFIG_IMPORT
+              value: "optional:configserver:$(CONFIG_SERVER_URL)"
+            - name: CONFIG_SERVER_URL
+              valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: config-server-url}}
+            - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+              valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: tempo-otlp-endpoint}}
+            - name: EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE
+              valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: eureka-url}}
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI
+              valueFrom: {configMapKeyRef: {name: ftgo-common-config, key: jwks-uri}}
+            # optional: true — this Deployment renders before Task 7's provisioner Job
+            # necessarily completes on first install; pods must not crash-loop waiting on a
+            # Secret key that only appears moments later once the post-install hook finishes.
+            - name: SENTRY_DSN
+              valueFrom: {secretKeyRef: {name: glitchtip-dsn, key: sentry-dsn, optional: true}}
+            {{- if .kafka }}
+            - {name: SPRING_KAFKA_BOOTSTRAP_SERVERS, value: "kafka:29092"}
+            {{- end }}
+            {{- range $k, $v := .extraEnv }}
+            - {name: {{ $k }}, value: {{ $v | quote }}}
+            {{- end }}
+          # Modest per-container budget (Task 3's 8 infra containers total ~2.9Gi,
+          # Task 4's 3 platform containers total ~1.5Gi) so 8 more business-service
+          # containers don't re-trigger the node-OOM crash-loop fixed in Task 3.
+          resources:
+            requests: {memory: "256Mi", cpu: "100m"}
+            limits: {memory: "512Mi"}
+          readinessProbe: {httpGet: {path: /actuator/health, port: {{ .port }}}, initialDelaySeconds: 15, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /actuator/health, port: {{ .port }}}, initialDelaySeconds: 30, periodSeconds: 15}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.global.namespace }}
+spec:
+  selector: {app: {{ .name }}}
+  ports: [{port: {{ .port }}}]
+---
+{{- end }}

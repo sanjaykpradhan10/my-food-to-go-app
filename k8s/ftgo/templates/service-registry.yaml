@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: service-registry, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: service-registry}}
+  template:
+    metadata: {labels: {app: service-registry}}
+    spec:
+      # Service name == Deployment name, so Kubernetes would otherwise inject
+      # SERVICE_REGISTRY_PORT/SERVICE_REGISTRY_SERVICE_HOST Docker-links-style
+      # env vars; disable defensively (see Task 3's kafka service-link bug).
+      enableServiceLinks: false
+      containers:
+        - name: service-registry
+          image: "{{ .Values.global.imageRegistry }}/ftgo-service-registry:{{ .Values.global.imageTag }}"
+          ports: [{containerPort: 8761}]
+          resources:
+            requests: {memory: "256Mi", cpu: "100m"}
+            limits: {memory: "512Mi"}
+          readinessProbe: {httpGet: {path: /actuator/health, port: 8761}, initialDelaySeconds: 15, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /actuator/health, port: 8761}, initialDelaySeconds: 30, periodSeconds: 15}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: service-registry, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: service-registry}
+  ports: [{port: 8761}]

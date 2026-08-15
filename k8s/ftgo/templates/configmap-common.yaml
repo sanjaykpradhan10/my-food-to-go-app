@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ftgo-common-config
+  namespace: {{ .Values.global.namespace }}
+data:
+  eureka-url: {{ .Values.commonEnv.eurekaUrl | quote }}
+  config-server-url: {{ .Values.commonEnv.configServerUrl | quote }}
+  jwks-uri: {{ .Values.commonEnv.jwksUri | quote }}
+  tempo-otlp-endpoint: {{ .Values.commonEnv.tempoOtlpEndpoint | quote }}

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: grafana, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: grafana}}
+  template:
+    metadata: {labels: {app: grafana}}
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        {{- include "ftgo.waitFor" (list (dict "name" "prometheus" "port" 9090)) | nindent 8 }}
+      containers:
+        - name: grafana
+          image: {{ .Values.observability.grafanaImage }}
+          ports: [{containerPort: 3000}]
+          env:
+            # Matches compose.yml: anonymous viewer access, acceptable only because this is a
+            # local kind cluster with no ingress exposure — not something to carry into a
+            # production values overlay.
+            - {name: GF_AUTH_ANONYMOUS_ENABLED, value: "true"}
+            - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer}
+          resources:
+            requests: {memory: "128Mi", cpu: "50m"}
+            limits: {memory: "256Mi"}
+          volumeMounts:
+            - {name: datasources, mountPath: /etc/grafana/provisioning/datasources}
+            - {name: dashboards-provisioning, mountPath: /etc/grafana/provisioning/dashboards}
+            - {name: dashboards, mountPath: /etc/grafana/dashboards}
+          readinessProbe: {httpGet: {path: /api/health, port: 3000}, initialDelaySeconds: 10, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /api/health, port: 3000}, initialDelaySeconds: 20, periodSeconds: 15}
+      volumes:
+        - {name: datasources, configMap: {name: grafana-datasources-provisioning}}
+        - {name: dashboards-provisioning, configMap: {name: grafana-dashboards-provisioning}}
+        - {name: dashboards, configMap: {name: grafana-dashboards}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: grafana, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: grafana}
+  ports: [{port: 3000}]

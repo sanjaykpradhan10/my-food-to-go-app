@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: tempo, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: tempo}}
+  template:
+    metadata: {labels: {app: tempo}}
+    spec:
+      # Service name == Deployment name (see Task 3's kafka service-link bug).
+      enableServiceLinks: false
+      containers:
+        - name: tempo
+          image: {{ .Values.observability.tempoImage }}
+          args: ["-config.file=/etc/tempo.yaml"]
+          ports: [{containerPort: 3200}, {containerPort: 4318}]
+          resources:
+            requests: {memory: "128Mi", cpu: "50m"}
+            limits: {memory: "256Mi"}
+          volumeMounts: [{name: config, mountPath: /etc/tempo.yaml, subPath: tempo.yaml}]
+          readinessProbe: {httpGet: {path: /ready, port: 3200}, initialDelaySeconds: 10, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /ready, port: 3200}, initialDelaySeconds: 20, periodSeconds: 15}
+      volumes: [{name: config, configMap: {name: tempo-config}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: tempo, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: tempo}
+  ports: [{name: http, port: 3200}, {name: otlp, port: 4318}]

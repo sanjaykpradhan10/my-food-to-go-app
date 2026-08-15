@@ -1,0 +1,36 @@
+{{- $gitUri := "" -}}
+{{- range .Values.platformServices -}}
+{{- if eq .name "config-server" -}}
+{{- $gitUri = .extraEnv.CONFIG_SERVER_GIT_URI -}}
+{{- end -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: config-server, namespace: {{ .Values.global.namespace }}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: config-server}}
+  template:
+    metadata: {labels: {app: config-server}}
+    spec:
+      # Service name == Deployment name; disable Docker-links-style env
+      # injection defensively (see Task 3's kafka service-link bug).
+      enableServiceLinks: false
+      containers:
+        - name: config-server
+          image: "{{ .Values.global.imageRegistry }}/ftgo-config-server:{{ .Values.global.imageTag }}"
+          ports: [{containerPort: 8888}]
+          env:
+            - name: CONFIG_SERVER_GIT_URI
+              value: {{ $gitUri | quote }}
+          resources:
+            requests: {memory: "256Mi", cpu: "100m"}
+            limits: {memory: "512Mi"}
+          # compose.yml has no healthcheck for config-server either — don't add one it doesn't have.
+---
+apiVersion: v1
+kind: Service
+metadata: {name: config-server, namespace: {{ .Values.global.namespace }}}
+spec:
+  selector: {app: config-server}
+  ports: [{port: 8888}]

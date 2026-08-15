@@ -1,0 +1,124 @@
+global:
+  namespace: ftgo
+  imageRegistry: "localhost:5000/ftgo"
+  imageTag: local
+
+secrets:
+  mysqlRootPassword: root
+  mysqlPassword: ftgo
+  glitchtipSecretKey: local-dev-only-not-a-real-secret
+
+commonEnv:
+  eurekaUrl: "http://service-registry:8761/eureka/"
+  configServerUrl: "http://config-server:8888"
+  jwksUri: "http://authorization-server:9000/oauth2/jwks"
+  tempoOtlpEndpoint: "http://tempo:4318/v1/traces"
+
+mysql:
+  image: mysql:8.4
+  storageSize: 2Gi
+kafka:
+  zookeeperImage: confluentinc/cp-zookeeper:7.9.0
+  kafkaImage: confluentinc/cp-kafka:7.9.0
+elasticsearch:
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+  storageSize: 2Gi
+glitchtipDb:
+  image: postgres:16
+  storageSize: 1Gi
+
+platformServices:
+  - name: service-registry
+    port: 8761
+    dependsOn: []
+  - name: authorization-server
+    port: 9000
+    dependsOn: []
+  - name: config-server
+    port: 8888
+    dependsOn: []
+    extraEnv:
+      CONFIG_SERVER_GIT_URI: "file:///config-source-repo"
+
+businessServices:
+  - name: restaurant-service
+    port: 8085
+    db: ftgo_restaurant
+    kafka: false
+    dependsOn: [{name: mysql, port: 3306}]
+  - name: order-service
+    port: 8082
+    db: ftgo_order
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}, {name: restaurant-service, port: 8085}]
+    extraEnv:
+      OUTBOX_PUBLISH_MODE: polling
+      SAGA_MODE: choreography
+      PERSISTENCE_MODE: jpa
+  - name: kitchen-service
+    port: 8083
+    db: ftgo_kitchen
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+    extraEnv:
+      SAGA_MODE: choreography
+  - name: consumer-service
+    port: 8081
+    db: ftgo_consumer
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+    extraEnv:
+      SAGA_MODE: choreography
+  - name: accounting-service
+    port: 8084
+    db: ftgo_accounting
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+    extraEnv:
+      SAGA_MODE: choreography
+  - name: delivery-service
+    port: 8086
+    db: ftgo_delivery
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+    extraEnv:
+      SAGA_MODE: choreography
+  - name: order-history-service
+    port: 8088
+    db: ftgo_order_history
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+  - name: audit-log-service
+    port: 8089
+    db: ftgo_audit_log
+    kafka: true
+    dependsOn: [{name: mysql, port: 3306}, {name: kafka, port: 29092}]
+
+observability:
+  tempoImage: grafana/tempo:2.6.1
+  prometheusImage: prom/prometheus:v2.55.1
+  grafanaImage: grafana/grafana:11.3.1
+  logstashImage: docker.elastic.co/logstash/logstash:8.15.3
+  kibanaImage: docker.elastic.co/kibana/kibana:8.15.3
+  filebeatImage: docker.elastic.co/beats/filebeat:8.15.3
+
+glitchtip:
+  image: glitchtip/glitchtip:v4.2.9
+  # Used only as GLITCHTIP_DOMAIN (baked into DSNs shown in the GlitchTip UI for humans);
+  # in-cluster callers (business services, the provisioner Job) always address it as
+  # "glitchtip:8000" via the Service, never via this domain.
+  domain: "http://glitchtip:8000"
+
+kafkaConnect:
+  image: debezium/connect:3.0.0.Final
+  outboxPublishMode: polling
+
+gateways:
+  - name: mobile-gateway
+    port: 8090
+    ingressPath: /mobile
+    dependsOn: [{name: service-registry, port: 8761}, {name: order-service, port: 8082}, {name: kitchen-service, port: 8083}, {name: accounting-service, port: 8084}, {name: delivery-service, port: 8086}]
+  - name: public-gateway
+    port: 8091
+    ingressPath: /public
+    dependsOn: [{name: service-registry, port: 8761}, {name: order-service, port: 8082}, {name: kitchen-service, port: 8083}, {name: accounting-service, port: 8084}, {name: delivery-service, port: 8086}, {name: order-history-service, port: 8088}, {name: restaurant-service, port: 8085}]

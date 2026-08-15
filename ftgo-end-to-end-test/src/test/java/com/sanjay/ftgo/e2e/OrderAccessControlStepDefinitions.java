@@ -11,7 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class OrderAccessControlStepDefinitions {
 
-    private static final String GATEWAY_BASE_URL = "http://localhost:8091/api/v1";
+    // Overridable so the suite can target either the compose stack (default, direct
+    // public-gateway port) or a live K8s cluster (public-gateway reached only through the
+    // Ingress at localhost:18000/public — see Task 12's -Dgateway.base-url run).
+    private static final String GATEWAY_BASE_URL =
+            System.getProperty("gateway.base-url", "http://localhost:8091/api/v1");
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final TokenClient tokenClient = new TokenClient();
