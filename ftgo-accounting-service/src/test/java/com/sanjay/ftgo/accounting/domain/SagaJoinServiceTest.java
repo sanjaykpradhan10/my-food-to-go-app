@@ -36,7 +36,7 @@ class SagaJoinServiceTest {
     void authorizesWhenConsumerVerifiedArrivesFirstThenTicketCreatedUnderLimit() {
         SagaJoinState state = new SagaJoinState(42L);
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(state));
         when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
@@ -51,7 +51,7 @@ class SagaJoinServiceTest {
     void authorizesWhenTicketCreatedArrivesFirstThenConsumerVerified() {
         SagaJoinState state = new SagaJoinState(42L);
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(state));
         when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.handleKitchenEvent("e1", 42L, "TicketCreated", 5);
@@ -66,7 +66,7 @@ class SagaJoinServiceTest {
     void declinesWhenTotalQuantityExceedsLimit() {
         SagaJoinState state = new SagaJoinState(42L);
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(state));
         when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
@@ -81,7 +81,7 @@ class SagaJoinServiceTest {
     void abandonsJoinWhenConsumerVerificationFails() {
         SagaJoinState state = new SagaJoinState(42L);
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(state));
         when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.handleConsumerEvent("e1", 42L, "ConsumerVerificationFailed");
@@ -96,7 +96,7 @@ class SagaJoinServiceTest {
     void abandonsJoinWhenTicketCreationFails() {
         SagaJoinState state = new SagaJoinState(42L);
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(state));
         when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.handleKitchenEvent("e1", 42L, "TicketCreationFailed", null);
@@ -113,14 +113,14 @@ class SagaJoinServiceTest {
 
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
 
-        verify(sagaJoinStateRepository, never()).findById(any());
+        verify(sagaJoinStateRepository, never()).findByIdForUpdate(any());
     }
 
     @Test
     void ignoresLateDuplicateEventAfterJoinAlreadyResolved() {
         SagaJoinState state = new SagaJoinState(42L);
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(state));
         when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
@@ -138,7 +138,7 @@ class SagaJoinServiceTest {
     void resolvesOnlyAfterAllThreeLegs() {
         SagaJoinState state = new SagaJoinState(42L);
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(state));
         when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.handleConsumerEvent("e1", 42L, "ConsumerVerified");
@@ -155,7 +155,7 @@ class SagaJoinServiceTest {
     void deliverySchedulingFailedMarksJoinFailed() {
         SagaJoinState state = new SagaJoinState(42L);
         when(processedEventRepository.existsById(any())).thenReturn(false);
-        when(sagaJoinStateRepository.findById(42L)).thenReturn(Optional.of(state));
+        when(sagaJoinStateRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(state));
         when(sagaJoinStateRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.handleDeliveryEvent("e1", 42L, "DeliverySchedulingFailed");
