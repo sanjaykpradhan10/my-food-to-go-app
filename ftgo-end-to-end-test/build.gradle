@@ -36,6 +36,13 @@ tasks.register('e2eTest', Test) {
     useJUnitPlatform()
     // Compose state (fresh containers/data each run) makes result caching meaningless here.
     outputs.upToDateWhen { false }
+    // Test tasks fork a separate JVM; a `-D` on the `./gradlew` command line only lands in the
+    // Gradle daemon's JVM unless explicitly forwarded here. Without this, `gateway.base-url`
+    // silently no-ops in the forked test JVM and step definitions fall back to their compose-port
+    // defaults (Task 12b finding).
+    if (System.getProperty('gateway.base-url') != null) {
+        systemProperty 'gateway.base-url', System.getProperty('gateway.base-url')
+    }
 }
 
 dockerCompose {

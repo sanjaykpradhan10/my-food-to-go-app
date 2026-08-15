@@ -48,7 +48,8 @@ public class SagaJoinService {
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
 
-        SagaJoinState state = sagaJoinStateRepository.findById(orderId).orElseGet(() -> new SagaJoinState(orderId));
+        sagaJoinStateRepository.insertIfAbsent(orderId);
+        SagaJoinState state = sagaJoinStateRepository.findByIdForUpdate(orderId).orElseThrow();
         if (state.isResolved() || state.isFailed()) {
             return;
         }
@@ -71,7 +72,8 @@ public class SagaJoinService {
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
 
-        SagaJoinState state = sagaJoinStateRepository.findById(orderId).orElseGet(() -> new SagaJoinState(orderId));
+        sagaJoinStateRepository.insertIfAbsent(orderId);
+        SagaJoinState state = sagaJoinStateRepository.findByIdForUpdate(orderId).orElseThrow();
         if (state.isResolved() || state.isFailed()) {
             return;
         }
@@ -94,7 +96,8 @@ public class SagaJoinService {
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
 
-        SagaJoinState state = sagaJoinStateRepository.findById(orderId).orElseGet(() -> new SagaJoinState(orderId));
+        sagaJoinStateRepository.insertIfAbsent(orderId);
+        SagaJoinState state = sagaJoinStateRepository.findByIdForUpdate(orderId).orElseThrow();
         if (state.isResolved() || state.isFailed()) {
             return;
         }
