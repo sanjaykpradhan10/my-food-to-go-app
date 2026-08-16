@@ -1870,12 +1870,13 @@ capability only; the book's zero-downtime pattern itself was already present.
 **Instrumentation and verification.** Sub-project B2 added two pieces: a response header and a
 verification Job.
 
-- **`X-Service-Version` header:** Every response from every business service now carries an
+- **`X-Service-Version` header:** Every response from `order-service` now carries an
   `X-Service-Version` header sourced from the `ftgo.service-version` Spring Boot property
-  (configured in each service's `application.yml`), set by a `ServiceVersionHeaderFilter` (a
-  simple `GenericFilterBean` that adds the header to all responses). This lets a load test
-  watching the response stream detect when the version changes, confirming that traffic actually
-  flowed through the new pod.
+  (configured in `order-service`'s `application.yml`), set by a `ServiceVersionHeaderFilter` (a
+  simple `GenericFilterBean` that adds the header to all responses). This is scoped to
+  `order-service` only — the demo target for this sub-project — not rolled out to other business
+  services. This lets a load test watching the response stream detect when the version changes,
+  confirming that traffic actually flowed through the new pod.
 
 - **Standalone k6 verification Job:** A new `k8s/verification/` directory (deliberately outside
   Helm's `templates/` directory) contains Kubernetes `ConfigMap` and `Job` manifests for a k6
@@ -1912,6 +1913,15 @@ landing on the outgoing pod in the narrow window between the Service's endpoint 
 pod's shutdown drain), fundamentally different from and much smaller than the 63–77% sustained
 failure the original probe-tuning defect produced. The zero-downtime mechanism now works as
 intended.
+
+**Known follow-up (not yet applied):** the single rollback-direction 503 was not further
+isolated, but the standard fix for this exact race — Kubernetes removing an endpoint while
+the outgoing pod is still serving an in-flight connection — is (1) `server.shutdown: graceful`
+plus `spring.lifecycle.timeout-per-shutdown-phase` in `order-service`'s `application.yml` (Spring
+Boot does not drain connections gracefully by default), and (2) a `preStop: exec: [sleep, 5]`
+hook on the container so endpoint-list propagation has time to complete before the JVM stops
+accepting connections. Deferred rather than applied here, since the residual (1/36,924) does not
+block this sub-project's zero-downtime goal.
 
 **Rollback.** Rolling back from a failed deployment is a single command: `kubectl rollout undo
 deployment/order-service -n ftgo`. Kubernetes maintains a rollout history (visible via `kubectl
