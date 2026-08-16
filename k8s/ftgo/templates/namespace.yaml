@@ -9,7 +9,11 @@ metadata:
     # pod restarts (Ch.12 B2 Task 5) — a second uncapped container per pod is a needless
     # repeat of that risk.
     linkerd.io/inject: enabled
-    config.linkerd.io/proxy-cpu-request: "50m"
-    config.linkerd.io/proxy-cpu-limit: "100m"
+    # CPU request/limit raised from 50m/100m during Task 4's full-namespace rollout: the
+    # original pins still let the proxy get throttled (probe timeouts to its own :4191
+    # admin port, cascading readiness/liveness failures) once 11 Deployments restarted
+    # together on this single-node kind cluster. See the Task 4 evidence entry.
+    config.linkerd.io/proxy-cpu-request: "100m"
+    config.linkerd.io/proxy-cpu-limit: "200m"
     config.linkerd.io/proxy-memory-request: "20Mi"
     config.linkerd.io/proxy-memory-limit: "50Mi"
