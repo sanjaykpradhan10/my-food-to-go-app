@@ -1844,3 +1844,78 @@ exposed but compose's fresh-MySQL-per-run habit had been masking; the fix (atomi
 `INSERT IGNORE` + `PESSIMISTIC_WRITE`-locked lookup) is an accounting-service saga concern, not a
 Kubernetes-deployment one — see `CONTEXT.md`'s 2026-08-13 session log entry for the specific race
 and fix.
+
+### Zero-downtime rolling deployment (§12.4.4)
+
+Sub-project B2 of Ch.12 §12.4 (Deploying microservices — Kubernetes) adds instrumentation and
+verification for zero-downtime rolling deployments. Kubernetes already has the core mechanism
+built in — the `readinessProbe` on each business service's `app-service.yaml` Deployment tells
+Kubernetes which pods are ready to receive traffic, and the `Service` endpoint list automatically
+excludes pods that fail the probe. During a `kubectl rollout` (or `helm upgrade` of the chart),
+Kubernetes uses `maxSurge` and `maxUnavailable` from the `RollingUpdate` strategy to manage the
+transition: it starts the new pods and scales down the old ones only as the new ones pass their
+`readinessProbe` checks. At `replicas: 1` with the default `maxSurge: 25%` and `maxUnavailable:
+25%`, these round to 1 pod for both (not 0.25 each) — meaning one new pod can be surge-scheduled
+while the old one is still draining, eliminating the gap where zero backing pods exist. A
+`readinessProbe` failure pulls the pod off the endpoint list immediately, so client requests never
+land on an unready pod.
+
+The one real gap this sub-project closed: before B2, `values.yaml` had a single shared
+`global.imageTag` value. Every business service used it, so a `helm upgrade --install` moved them
+all at once. Now, `businessServices[].imageTag` (an optional per-entry override, see the B1 section
+on the `app-service` template) lets one service roll out independently — either as a canary
+(rolling out 1.1.0 while others stay on 1.0.0) or for planned gradual rollouts. This is a chart
+capability only; the book's zero-downtime pattern itself was already present.
+
+**Instrumentation and verification.** Sub-project B2 added two pieces: a response header and a
+verification Job.
+
+- **`X-Service-Version` header:** Every response from every business service now carries an
+  `X-Service-Version` header sourced from the `ftgo.service-version` Spring Boot property
+  (configured in each service's `application.yml`), set by a `ServiceVersionHeaderFilter` (a
+  simple `GenericFilterBean` that adds the header to all responses). This lets a load test
+  watching the response stream detect when the version changes, confirming that traffic actually
+  flowed through the new pod.
+
+- **Standalone k6 verification Job:** A new `k8s/verification/` directory (deliberately outside
+  Helm's `templates/` directory) contains Kubernetes `ConfigMap` and `Job` manifests for a k6
+  load generator. The Job runs a constant-load test (5 VUs) against an in-cluster service (e.g.
+  `http://order-service:8082/actuator/health`) while a `helm upgrade` is occurring, hitting it
+  with high request volume to catch any dropped connections. Each request logs its HTTP status
+  code and the `X-Service-Version` header value, so a version transition (1.0.0 → 1.1.0 → rolled
+  back to 1.0.0) is visible in the logs as a clean sequence of status codes and versions. The Job
+  lives outside `templates/` because Kubernetes `batch/v1` Job specs are immutable after creation
+  — if Helm tried to template and apply a Job with the same name on every `helm upgrade`, the
+  second upgrade would fail trying to patch the immutable spec. By keeping the Job definition
+  outside the chart, it's applied once (manually or via a separate `kubectl apply`), and the chart
+  upgrades don't interfere with it.
+
+**Captured evidence.** See `docs/superpowers/plans/2026-08-15-ch12-zero-downtime-rollout-evidence.md`
+for the full run details. The original test run discovered a genuine defect: the shared
+`app-service.yaml` template's `readinessProbe` and `livenessProbe` defaulted to Kubernetes'
+implicit 1-second timeout with 3 consecutive failures allowed before marking the pod `NotReady`.
+Under rollout-induced contention on the shared `kind` node, probe latency blew those tight budgets,
+causing healthy pods to be marked `NotReady` and pulled from the endpoint list for tens of seconds
+at a time, producing 63–77% client-request failure rates — the exact opposite of zero-downtime.
+
+A probe/resource tuning fix was applied (commit `0ceb085`): the shared template's probes gained
+`timeoutSeconds: 5` and `failureThreshold: 5`, and the CPU `requests` value was raised from `100m`
+to `250m` (deliberately no CPU `limit` added, to avoid CFS throttling making probe latency worse).
+This is a general chart-correctness fix applied to the shared template, not service-specific, since
+every business service uses the same `app-service.yaml` probe/resource configuration.
+
+After the fix, the forward rollout (1.0.0 → 1.1.0) achieved **zero failures across 62,881
+requests** — a clean, instantaneous version transition with no dropped connections. The rollback
+(1.1.0 → 1.0.0) achieved **1 transient 503 across 36,924 requests** — a single failed request at
+the exact cutover instant, a Spring Boot graceful-shutdown edge case (one in-flight request
+landing on the outgoing pod in the narrow window between the Service's endpoint update and the
+pod's shutdown drain), fundamentally different from and much smaller than the 63–77% sustained
+failure the original probe-tuning defect produced. The zero-downtime mechanism now works as
+intended.
+
+**Rollback.** Rolling back from a failed deployment is a single command: `kubectl rollout undo
+deployment/order-service -n ftgo`. Kubernetes maintains a rollout history (visible via `kubectl
+rollout history deployment/order-service`) and can revert to any prior revision by ReplicaSet
+name; `undo` reverts to the immediately prior revision. The `readinessProbe` protects rollback
+the same way it protects forward rollout — the old pod is only brought back into the endpoint
+list once its `readinessProbe` passes again.
