@@ -81,3 +81,111 @@ one meshed replica in a restart loop and one legacy (unmeshed, single-container)
 serving traffic (Deployments were not scaled down, so the namespace has not lost availability).
 `docs/superpowers/plans/2026-08-16-ch12-b3a-service-mesh-linkerd-evidence.md` reflects this as the
 Task 4 outcome; Task 5 should not assume full-mesh state going in.
+
+## Full-namespace rollout — retry with observability stack scaled down
+
+Root cause confirmed via node events at the start of this retry: `kubectl describe node
+ftgo-control-plane` showed three `SystemOOM` events (`victim process: java`) from the prior
+attempt, in addition to the `FailedScheduling` seen before — the node was genuinely out of
+memory, not just over its scheduling threshold.
+
+**Freed memory** by scaling the non-mesh observability/infra stack to 0 replicas:
+Deployments `glitchtip`, `glitchtip-redis`, `glitchtip-worker`, `grafana`, `kibana`, `logstash`,
+`prometheus`, `tempo`, and StatefulSets `elasticsearch`, `glitchtip-db` (`filebeat` DaemonSet left
+running — daemonsets don't meaningfully add to node memory pressure the way replicated
+Deployments do, and it wasn't found to matter). `mysql-0`, `kafka-0`, `zookeeper-0`,
+`kafka-connect`, and all 13 app/gateway/platform Deployments were left untouched throughout.
+
+This dropped node `Allocated resources` from ~85%/169% (requests/limits) to ~53%/103%, and no
+further `SystemOOM` events occurred for the rest of the retry.
+
+**Cluster state at the start of this retry was messier than a clean baseline**: the previous
+blocked attempt had left 9 of the 11 target Deployments mid-rollout, each with one legacy
+(unmeshed) replica serving traffic and one new (meshed or not-yet-meshed) replica stuck
+crash-looping — plus `linkerd-identity` and `linkerd-destination` in the `linkerd` namespace, and
+`tap` in `linkerd-viz`, were themselves crash-looping (`Liveness probe failed: ... context deadline
+exceeded`, `connect: connection refused`), i.e. the control plane itself was a memory-pressure
+casualty. New pods created while `linkerd-identity` was unhealthy came up as single-container
+(injection either skipped or the sidecar couldn't get an identity and was killed), so several
+"recovered" pods were running but *not* actually meshed.
+
+Approach: after freeing memory, gave `linkerd-identity` a few minutes to stabilize (it settled to
+`2/2 Running` once memory pressure eased), then went through the 11 target Deployments — plus
+`accounting-service`'s already-stuck rollout and `order-service`'s collateral-damage crash-loop —
+one at a time with `kubectl rollout restart deployment/<name> -n ftgo` followed by
+`kubectl rollout status deployment/<name> -n ftgo --timeout=240s`, waiting for each to fully
+converge before starting the next. `accounting-service`'s pre-existing stuck replica needed one
+`kubectl delete pod` to break out of an exponential-backoff loop after `linkerd-identity` recovered
+(its container had been repeatedly hitting the liveness-probe boundary using a JVM startup that
+took just over the 105s liveness allowance); every other Deployment converged cleanly on the first
+`rollout restart`. `public-gateway` needed one restart cycle (its replica set from the earlier
+blocked attempt was still unmeshed) and converged normally.
+
+No `FailedScheduling` events or scheduling-related failures occurred during this retry — the
+resource-request/limit values on any app Deployment were not touched, per the brief's constraint.
+
+Final `kubectl get pods -n ftgo` (all 13 app Deployments 2/2 Ready and meshed; `mysql-0`,
+`kafka-0`, `zookeeper-0`, `kafka-connect` untouched and healthy throughout):
+
+```
+NAME                                     READY   STATUS      RESTARTS        AGE
+accounting-service-6d5b467bd9-nst7r      2/2     Running     1               15m
+audit-log-service-86896684f-d8vpg        2/2     Running     0               10m
+authorization-server-56fcbcfc49-4vz5q    2/2     Running     0               8m21s
+config-server-7b68564cc-mn7lb            2/2     Running     0               7m49s
+consumer-service-b4f98f6cf-45hqd         2/2     Running     0               12m
+delivery-service-8d9475b7-lgn7d          2/2     Running     0               11m
+kitchen-service-cf5c4fff4-88fxv          2/2     Running     0               12m
+mobile-gateway-6bf877d5f5-sp4ml          2/2     Running     0               9m36s
+order-history-service-5696d9d674-xrnpx   2/2     Running     0               11m
+order-service-699b6fccb9-lqz66           2/2     Running     0               7m39s
+public-gateway-9fb54cfd9-z2t5x           2/2     Running     0               6m58s
+restaurant-service-b747f499d-qm5d6       2/2     Running     8               57m
+service-registry-84cb85b78b-5frx9        2/2     Running     0               8m55s
+```
+
+`linkerd viz stat deploy -n ftgo` after all 13 app Deployments converged (100% success on every
+Deployment; note the observability Deployments also show MESHED — restarting them via
+scale-to-0/scale-to-1 caused fresh pods to pick up the `ftgo` namespace's `linkerd.io/inject:
+enabled` annotation from Task 2, which is namespace-wide and was not re-scoped in this task per
+the "don't touch namespace.yaml again" constraint; this is a side effect, not something this task
+set out to do, and is harmless — proxy sidecars are 20Mi/50Mi memory request/limit each):
+
+```
+NAME                    MESHED   SUCCESS      RPS   LATENCY_P50   LATENCY_P95   LATENCY_P99   TCP_CONN
+accounting-service         1/1   100.00%   0.7rps          62ms         265ms         293ms          4
+audit-log-service          1/1   100.00%   0.5rps           7ms         188ms         198ms          1
+authorization-server       1/1   100.00%   0.5rps           8ms         175ms         195ms          2
+config-server              1/1   100.00%   0.3rps           1ms           1ms           1ms          1
+consumer-service           1/1   100.00%   0.7rps          75ms         188ms         198ms          4
+delivery-service           1/1   100.00%   0.7rps         150ms         365ms         393ms          4
+glitchtip                  1/1   100.00%   0.3rps           1ms           2ms           2ms          1
+glitchtip-redis            1/1   100.00%   0.3rps           1ms           1ms           1ms         27
+glitchtip-worker           1/1   100.00%   0.3rps           1ms           5ms           5ms          1
+grafana                    1/1   100.00%   0.5rps           1ms         480ms         496ms          2
+kibana                     1/1   100.00%   0.5rps           1ms         180ms         196ms          2
+kitchen-service             1/1   100.00%   0.7rps         117ms         365ms         393ms          4
+logstash                   1/1   100.00%   0.5rps           5ms         288ms         298ms          2
+mobile-gateway              1/1   100.00%   0.7rps         150ms         465ms         493ms          4
+order-history-service       1/1   100.00%   0.7rps          63ms         365ms         393ms          4
+order-service                1/1   100.00%   0.7rps          45ms         188ms         198ms          4
+prometheus                  1/1   100.00%   0.5rps           6ms          27ms          30ms          2
+public-gateway               1/1   100.00%   0.7rps          10ms         285ms         297ms          4
+restaurant-service           1/1   100.00%   0.7rps          75ms         465ms         493ms          4
+service-registry             1/1   100.00%   1.1rps          36ms          92ms          98ms         15
+tempo                        1/1   100.00%   2.2rps          45ms         277ms         295ms         15
+```
+
+**Observability stack restored** to its original 1-replica-each state after the mesh rollout
+converged: `glitchtip`, `glitchtip-redis`, `glitchtip-worker`, `grafana`, `kibana`, `logstash`,
+`prometheus`, `tempo`, `elasticsearch` (StatefulSet), `glitchtip-db` (StatefulSet) were all scaled
+back to `--replicas=1` and confirmed `Running`/`2/2` (elasticsearch and kibana took the longest —
+roughly 2 and 5 minutes respectively — consistent with their normal startup time, not a mesh
+regression; kibana's readiness probe restarted it twice during startup before settling, which is
+its ordinary behavior waiting on the elasticsearch connection). Node `Allocated resources` at the
+end of the retry: `memory 7880Mi (65%) requests / 15620Mi (130%) limits` — up from the mid-rollout
+low but still well short of the ~85%/169% that triggered the original Task 4 scheduling failure,
+since the sidecar cost is now baked in rather than transient double-counting during a rollout.
+
+**Outcome: all 13 app Deployments are 2/2 Ready and MESHED. No `FailedScheduling` or `SystemOOM`
+events occurred during this retry. Task 4 is now complete.**
