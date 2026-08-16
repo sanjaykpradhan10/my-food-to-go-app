@@ -32,6 +32,29 @@ kubectl wait --namespace ingress-nginx \
 
 Then `curl http://localhost:18000/public/...` reaches `public-gateway` through the Ingress (port 18000 is forwarded to the ingress controller's port 80 by `k8s/kind-config.yaml`'s `extraPortMappings`).
 
+## Install Linkerd (Ch.12 B3a)
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSfL https://run.linkerd.io/install | sh
+export PATH=$PATH:$HOME/.linkerd2/bin
+kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml
+linkerd install --crds | kubectl apply -f -
+linkerd install | kubectl apply -f -
+kubectl -n linkerd rollout status deploy --timeout=180s
+linkerd check
+linkerd viz install | kubectl apply -f -
+kubectl -n linkerd-viz rollout status deploy --timeout=180s
+```
+
+Linkerd's control plane (`linkerd` namespace) and viz extension (`linkerd-viz` namespace) are
+installed independently of `helm upgrade --install ftgo ./k8s/ftgo` — a one-time cluster
+dependency, the same relationship the chart already has with `kind` and the local registry. See
+`docs/ARCHITECTURE.md`'s service mesh section for how the `ftgo` namespace opts into meshing.
+
+Note: as of the `run.linkerd.io/install` edge-channel installer, `linkerd check --pre` requires
+the Gateway API CRDs to already be present in the cluster (the `kubectl apply --server-side`
+step above) — this is a step beyond what the stable-channel installer historically required.
+
 ## Zero-downtime rollout verification (Ch.12 B2)
 
 `k8s/verification/k6-rollout-check-job.yaml` is a standalone k6 Job — deliberately kept
