@@ -17,7 +17,7 @@ spec:
         {{- include "ftgo.waitFor" .dependsOn | nindent 8 }}
       containers:
         - name: {{ .name }}
-          image: "{{ $.Values.global.imageRegistry }}/ftgo-{{ .name }}:{{ $.Values.global.imageTag }}"
+          image: "{{ $.Values.global.imageRegistry }}/ftgo-{{ .name }}:{{ .imageTag | default $.Values.global.imageTag }}"
           ports: [{containerPort: {{ .port }}}]
           env:
             - name: SPRING_DATASOURCE_URL
