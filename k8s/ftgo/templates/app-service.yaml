@@ -17,7 +17,7 @@ spec:
         {{- include "ftgo.waitFor" .dependsOn | nindent 8 }}
       containers:
         - name: {{ .name }}
-          image: "{{ $.Values.global.imageRegistry }}/ftgo-{{ .name }}:{{ $.Values.global.imageTag }}"
+          image: "{{ $.Values.global.imageRegistry }}/ftgo-{{ .name }}:{{ .imageTag | default $.Values.global.imageTag }}"
           ports: [{containerPort: {{ .port }}}]
           env:
             - name: SPRING_DATASOURCE_URL
@@ -47,10 +47,18 @@ spec:
           # Task 4's 3 platform containers total ~1.5Gi) so 8 more business-service
           # containers don't re-trigger the node-OOM crash-loop fixed in Task 3.
           resources:
-            requests: {memory: "256Mi", cpu: "100m"}
+            # cpu request bumped 100m -> 250m so the scheduler reserves enough CPU that
+            # probe responses don't get starved under node contention; deliberately no
+            # cpu limit — CFS throttling from a tight limit would make JVM probe
+            # latency worse, the opposite of what this fix is for (Ch.12 B2 zero-downtime
+            # rollout defect: probes were timing out and flipping healthy pods NotReady).
+            requests: {memory: "256Mi", cpu: "250m"}
             limits: {memory: "512Mi"}
-          readinessProbe: {httpGet: {path: /actuator/health, port: {{ .port }}}, initialDelaySeconds: 15, periodSeconds: 10}
-          livenessProbe: {httpGet: {path: /actuator/health, port: {{ .port }}}, initialDelaySeconds: 30, periodSeconds: 15}
+          # timeoutSeconds/failureThreshold raised from the 1s/3 defaults, which were too
+          # tight for a JVM under any contention and caused sustained rollout outages —
+          # see docs/superpowers/plans/2026-08-15-ch12-zero-downtime-rollout-evidence.md.
+          readinessProbe: {httpGet: {path: /actuator/health, port: {{ .port }}}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 5}
+          livenessProbe: {httpGet: {path: /actuator/health, port: {{ .port }}}, initialDelaySeconds: 30, periodSeconds: 15, timeoutSeconds: 5, failureThreshold: 5}
 ---
 apiVersion: v1
 kind: Service

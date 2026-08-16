@@ -46,6 +46,9 @@ businessServices:
     db: ftgo_restaurant
     kafka: false
     dependsOn: [{name: mysql, port: 3306}]
+  # imageTag: per-entry override (falls back to global.imageTag when unset) — used by
+  # Ch.12 B2's zero-downtime rollout demo to move only order-service to a new version
+  # without retagging every other business service. Example: imageTag: "1.1.0"
   - name: order-service
     port: 8082
     db: ftgo_order

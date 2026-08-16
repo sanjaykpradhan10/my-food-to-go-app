@@ -1,3 +1,6 @@
+ftgo:
+  service-version: "1.1.0"
+
 spring:
   application:
     name: ftgo-order-service

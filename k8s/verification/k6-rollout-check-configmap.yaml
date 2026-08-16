@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-rollout-check-script
+  namespace: ftgo
+data:
+  rollout-check.js: |
+    import http from 'k6/http';
+    import { check } from 'k6';
+
+    export const options = {
+      scenarios: {
+        rollout_check: {
+          executor: 'constant-vus',
+          vus: 5,
+          duration: __ENV.K6_DURATION || '60s',
+        },
+      },
+    };
+
+    export default function () {
+      const res = http.get('http://order-service:8082/actuator/health');
+      check(res, {
+        'status is 200': (r) => r.status === 200,
+        'has X-Service-Version header': (r) => r.headers['X-Service-Version'] !== undefined,
+      });
+      console.log(`status=${res.status} version=${res.headers['X-Service-Version']}`);
+    }

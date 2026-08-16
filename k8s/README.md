@@ -31,3 +31,20 @@ kubectl wait --namespace ingress-nginx \
 ```
 
 Then `curl http://localhost:18000/public/...` reaches `public-gateway` through the Ingress (port 18000 is forwarded to the ingress controller's port 80 by `k8s/kind-config.yaml`'s `extraPortMappings`).
+
+## Zero-downtime rollout verification (Ch.12 B2)
+
+`k8s/verification/k6-rollout-check-job.yaml` is a standalone k6 Job — deliberately kept
+outside `k8s/ftgo/templates/` since a Job's `spec.template` is immutable and Helm applies
+every template on each `helm upgrade`, which would break subsequent upgrades once the Job
+exists. Apply/delete it manually around a rollout:
+
+    kubectl apply -f k8s/verification/k6-rollout-check-configmap.yaml
+    kubectl apply -f k8s/verification/k6-rollout-check-job.yaml
+    # ... trigger the rollout in another terminal ...
+    kubectl logs -f job/k6-rollout-check -n ftgo
+    kubectl delete job/k6-rollout-check -n ftgo   # before re-running
+
+It hits `order-service`'s `/actuator/health` in-cluster (no auth required) for a fixed
+duration, logging the HTTP status and `X-Service-Version` response header on every request —
+a clean rollout shows 100% `status=200` and a gap-free transition between version values.
