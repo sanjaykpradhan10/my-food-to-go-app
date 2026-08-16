@@ -64,9 +64,16 @@ better fit for this environment and a smaller, more focused change for B3a speci
   application infrastructure; it is the mechanism B3a uses to prove mTLS is actually happening,
   the same role k6 played for B2's zero-downtime verification.
 - **Stateful/infra services (MySQL, Kafka, ELK, Prometheus/Grafana/Tempo, GlitchTip) are not
-  meshed in B3a.** They don't participate in the HTTP-layer service-to-service calls mTLS
-  protects, and excluding them keeps B3a's proxy-count/resource-risk footprint to just the app
-  pods that actually matter for this demonstration.
+  the intended meshing target in B3a** — they don't participate in the HTTP-layer
+  service-to-service calls mTLS protects. In practice, because injection is enabled via a
+  namespace-wide annotation on `ftgo` (the simplest mechanism, matching B1's "whole stack" chart
+  philosophy) rather than per-workload opt-in, these infra pods get an injected `linkerd-proxy`
+  sidecar too when scheduled into that namespace. This is accepted as a harmless side effect
+  (extra sidecar resource overhead, no functional impact — these services don't make
+  proxy-visible HTTP calls to each other) rather than fixed via per-pod `linkerd.io/inject:
+  disabled` overrides, to keep the chart change minimal. See
+  `docs/superpowers/plans/2026-08-16-ch12-b3a-service-mesh-linkerd-evidence.md`'s
+  full-namespace-rollout section for where this was discovered.
 
 ## Resource risk and mitigation
 
