@@ -406,7 +406,6 @@ exists. Apply/delete it manually around a rollout:
     # ... trigger the rollout in another terminal ...
     kubectl logs -f job/k6-rollout-check -n ftgo
     kubectl delete job/k6-rollout-check -n ftgo   # before re-running
-```
 
 It hits `order-service`'s `/actuator/health` in-cluster (no auth required) for a fixed
 duration, logging the HTTP status and `X-Service-Version` response header on every request —
