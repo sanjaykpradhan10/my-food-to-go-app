@@ -2017,8 +2017,9 @@ across all 11 attempts, not a transient flake) and is outside B3a's scope — no
 were made by any B3a task. B3a's actual mTLS verification therefore rests on the in-cluster
 `linkerd viz tap`/`stat` evidence above, not on the e2e suite.
 
-**Deferred to B3b/B3c.** Linkerd's dashboard/golden-metrics UI (`linkerd viz dashboard`) is
-installed as verification tooling only in B3a — a proper Grafana-integrated golden-metrics view is
-B3b's scope. `ServiceProfiles`-based retries/circuit-breaking at the mesh layer, and a comparison
+**Deferred to B3b/B3c.** The `linkerd viz` extension is installed as CLI verification tooling only
+(`tap`/`stat`); its dashboard/golden-metrics UI is not used — a proper Grafana-integrated
+golden-metrics view is B3b's scope. `ServiceProfiles`-based retries/circuit-breaking at the mesh
+layer, and a comparison
 against the business services' existing Resilience4j-based application-level circuit breakers, are
 B3c's scope. Neither B3b nor B3c has started.

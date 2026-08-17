@@ -164,16 +164,16 @@ glitchtip-redis            1/1   100.00%   0.3rps           1ms           1ms   
 glitchtip-worker           1/1   100.00%   0.3rps           1ms           5ms           5ms          1
 grafana                    1/1   100.00%   0.5rps           1ms         480ms         496ms          2
 kibana                     1/1   100.00%   0.5rps           1ms         180ms         196ms          2
-kitchen-service             1/1   100.00%   0.7rps         117ms         365ms         393ms          4
+kitchen-service            1/1   100.00%   0.7rps         117ms         365ms         393ms          4
 logstash                   1/1   100.00%   0.5rps           5ms         288ms         298ms          2
-mobile-gateway              1/1   100.00%   0.7rps         150ms         465ms         493ms          4
-order-history-service       1/1   100.00%   0.7rps          63ms         365ms         393ms          4
-order-service                1/1   100.00%   0.7rps          45ms         188ms         198ms          4
-prometheus                  1/1   100.00%   0.5rps           6ms          27ms          30ms          2
-public-gateway               1/1   100.00%   0.7rps          10ms         285ms         297ms          4
-restaurant-service           1/1   100.00%   0.7rps          75ms         465ms         493ms          4
-service-registry             1/1   100.00%   1.1rps          36ms          92ms          98ms         15
-tempo                        1/1   100.00%   2.2rps          45ms         277ms         295ms         15
+mobile-gateway             1/1   100.00%   0.7rps         150ms         465ms         493ms          4
+order-history-service      1/1   100.00%   0.7rps          63ms         365ms         393ms          4
+order-service              1/1   100.00%   0.7rps          45ms         188ms         198ms          4
+prometheus                 1/1   100.00%   0.5rps           6ms          27ms          30ms          2
+public-gateway             1/1   100.00%   0.7rps          10ms         285ms         297ms          4
+restaurant-service         1/1   100.00%   0.7rps          75ms         465ms         493ms          4
+service-registry           1/1   100.00%   1.1rps          36ms          92ms          98ms         15
+tempo                      1/1   100.00%   2.2rps          45ms         277ms         295ms         15
 ```
 
 **Observability stack restored** to its original 1-replica-each state after the mesh rollout

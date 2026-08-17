@@ -106,7 +106,9 @@ not just "the install succeeded" or a config-file inspection.
 - Linkerd's dashboard/golden-metrics UI (B3b).
 - `ServiceProfiles`-based retries/circuit-breaking, and any comparison against the existing
   Resilience4j-based resilience (B3c).
-- Meshing infra/stateful services (MySQL, Kafka, ELK, Prometheus/Grafana/Tempo, GlitchTip).
+- Deliberately targeting infra/stateful services (MySQL, Kafka, ELK, Prometheus/Grafana/Tempo,
+  GlitchTip) for meshing — they end up injected anyway as a namespace-wide side effect (see
+  Architecture above), but this was never a B3a goal in itself.
 - Any change to application code — B3a is entirely infrastructure (namespace annotation +
   control-plane install + resource tuning).
 

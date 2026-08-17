@@ -214,7 +214,7 @@ Update this file at the end of every session (either tool can do it).
 
 ### Deployment
 - [ ] Deploy as container (Ch. 12)
-- [ ] Service mesh (Ch. 12)
+- [x] Service mesh (Ch. 12 — Linkerd, auto-mTLS; B3a done, B3b/B3c pending)
 - [ ] Sidecar (Ch. 12)
 
 ### Refactoring
