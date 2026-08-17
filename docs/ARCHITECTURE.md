@@ -1929,3 +1929,96 @@ rollout history deployment/order-service`) and can revert to any prior revision 
 name; `undo` reverts to the immediately prior revision. The `readinessProbe` protects rollback
 the same way it protects forward rollout — the old pod is only brought back into the endpoint
 list once its `readinessProbe` passes again.
+
+### Service mesh — Linkerd install and auto-mTLS (§12.4, B3a)
+
+Sub-project B3a of Ch.12 §12.4 closes out the service-mesh topic that Ch.11 §11.4 (microservice
+chassis) left as conceptual reading rather than implementation. B3's full scope — mTLS, mesh
+observability, and mesh-level traffic management — was split into three sequential sub-projects,
+matching this project's existing pattern of decomposing large chapter sections (B1/B2/B3 for
+§12.4 itself). B3a installs Linkerd and enables automatic mutual TLS; B3b (mesh observability) and
+B3c (mesh traffic management, contrasted with the existing Resilience4j-based application-level
+resilience) are future work. See
+`docs/superpowers/specs/2026-08-16-ch12-b3a-service-mesh-linkerd-design.md` for the full design
+rationale and `docs/superpowers/plans/2026-08-16-ch12-b3a-service-mesh-linkerd-evidence.md` for
+the captured evidence referenced throughout this section.
+
+**Linkerd over Istio.** Istio is often the book's/industry's reference service-mesh
+implementation, but its control plane (`istiod`) and Envoy sidecars carry meaningfully more
+CPU/memory overhead per pod than Linkerd's Rust-based `linkerd-proxy`. This matters concretely on
+this cluster: B2's verification (see the Zero-downtime rolling deployment section above) already
+found this single-node `kind` cluster's control-plane container prone to CPU-starvation cascades
+when ~20+ JVM-based Spring Boot pods restart simultaneously. Adding a second, heavier sidecar
+container per pod on top of that history was judged a needless risk; Linkerd's lighter footprint
+and zero-config mTLS default were a better fit.
+
+**Control plane — independent lifecycle.** The Linkerd control plane (`linkerd-destination`,
+`linkerd-identity`, `linkerd-proxy-injector`, plus the `linkerd-viz` extension for verification
+tooling) is installed into its own `linkerd`/`linkerd-viz` namespaces via `linkerd install |
+kubectl apply -f -`, not as part of `helm upgrade --install ftgo`. Its lifecycle is independent of
+the `k8s/ftgo` chart — the same relationship the chart already has with `kind` itself and the
+local image registry: a cluster-level dependency the app chart assumes is present rather than
+something it manages.
+
+**Namespace-wide auto-injection.** Rather than adding `linkerd.io/inject` annotations to each of
+the 13 business services' Deployment specs, the two gateways, and the auth/config/registry
+servers individually, a single `linkerd.io/inject: enabled` annotation on the `ftgo` namespace
+itself (`k8s/ftgo/templates/namespace.yaml`) causes every pod scheduled into it to get a
+`linkerd-proxy` sidecar automatically on its next rollout — no per-Deployment template changes
+anywhere in the chart. This matches B1's "whole stack, not a partial book-style example"
+philosophy. The tradeoff: because injection is namespace-wide rather than per-workload opt-in, the
+non-HTTP infra/stateful pods (MySQL, Kafka, ELK, Prometheus/Grafana/Tempo, GlitchTip) get an
+injected sidecar too, even though the design's original intent was to mesh only the 13
+HTTP-calling app services. This was discovered when restarting the observability stack (as part of
+recovering from the memory blocker below) caused those pods to pick up the annotation. It was
+accepted as a harmless side effect — extra sidecar resource overhead (20Mi/50Mi memory
+request/limit each), no functional impact, since those services don't make proxy-visible HTTP
+calls to each other — rather than fixed via per-pod `linkerd.io/inject: disabled` overrides, to
+keep the chart change minimal.
+
+**Resource pinning and the incremental rollout.** The injected proxy's CPU/memory
+`requests`/`limits` were pinned explicitly on the namespace annotation
+(`config.linkerd.io/proxy-cpu-request`/`-limit`, `-memory-request`/`-limit` on
+`k8s/ftgo/templates/namespace.yaml`) rather than relying on Linkerd's upstream defaults, and
+injection was rolled out incrementally — `order-service` and `restaurant-service` first, verified
+with `linkerd viz tap` showing `tls=true`, before annotating the whole namespace — specifically to
+avoid reproducing B2's CPU-contention incident on this same constrained cluster.
+
+**A different blocker than anticipated: node memory, not CPU.** The incremental rollout worked
+cleanly, but restarting the remaining 11 Deployments at once hit a real blocker — twice. The first
+attempt showed symptoms matching the anticipated CPU-starvation pattern (proxy readiness/liveness
+probes timing out), so the pinned proxy CPU values were raised and the rollout retried; the retry
+failed too, and `kubectl describe pod`/node events revealed the actual root cause was node memory
+exhaustion (`FailedScheduling: Insufficient memory`, then `SystemOOM` events killing `java`
+processes) — the sidecar's memory cost, doubled transiently during each `RollingUpdate` as old and
+new replicas coexisted, pushed the single-node cluster past its schedulable memory, taking down
+unrelated infra pods with no mesh sidecar at all. Recovery: temporarily scaled the non-mesh
+observability/infra stack (`glitchtip`, `grafana`, `kibana`, `logstash`, `prometheus`, `tempo`,
+`elasticsearch`) to 0 replicas to free memory, let `linkerd-identity` (itself a memory-pressure
+casualty) stabilize, then rolled out the 13 app Deployments one at a time with `kubectl rollout
+restart` followed by `kubectl rollout status`, waiting for each to converge before starting the
+next. Once the mesh rollout converged, the observability stack was scaled back to its original
+replica counts. This is a genuine operational finding, not a config mistake: the anticipated risk
+(CPU contention, per B2's history) and the actual constraint (memory capacity at namespace-wide
+sidecar scale) were different failure modes, both real on this cluster.
+
+**Captured evidence.** Full details in
+`docs/superpowers/plans/2026-08-16-ch12-b3a-service-mesh-linkerd-evidence.md`. Headline result:
+all 13 app Deployments (business services + gateways + auth/config/registry servers) ended 2/2
+Ready and MESHED; `linkerd viz tap deploy/order-service -n ftgo --to deploy/restaurant-service`
+against a live in-cluster call showed `tls=true` on every observed frame; `linkerd viz stat deploy
+-n ftgo` showed 100% success across all meshed workloads. The `ftgo-end-to-end-test` suite,
+however, did **not** fully pass against the meshed cluster: 10 of 11 tests failed, all tracing to
+the same root cause — a pre-existing (not caused by B3a) ingress gap where `ftgo-gateways`'
+ingress resource only routes `/mobile` and `/public` path prefixes, with no `/orders` or catch-all
+rule, so the suite's direct `POST /orders` call against the ingress root always returns a 404 from
+nginx regardless of Linkerd or mTLS. This was confirmed deterministically (reproduced identically
+across all 11 attempts, not a transient flake) and is outside B3a's scope — no ingress changes
+were made by any B3a task. B3a's actual mTLS verification therefore rests on the in-cluster
+`linkerd viz tap`/`stat` evidence above, not on the e2e suite.
+
+**Deferred to B3b/B3c.** Linkerd's dashboard/golden-metrics UI (`linkerd viz dashboard`) is
+installed as verification tooling only in B3a — a proper Grafana-integrated golden-metrics view is
+B3b's scope. `ServiceProfiles`-based retries/circuit-breaking at the mesh layer, and a comparison
+against the business services' existing Resilience4j-based application-level circuit breakers, are
+B3c's scope. Neither B3b nor B3c has started.
