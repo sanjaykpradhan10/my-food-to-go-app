@@ -240,3 +240,63 @@ Deployments meshed, 100% success rate, confirmed via `linkerd viz`); the externa
 not be used to confirm this from outside the cluster due to a pre-existing ingress path-mapping gap
 unrelated to Linkerd, so B3a's black-box verification step is BLOCKED pending an ingress-routing
 fix that is out of scope for this task.**
+
+## Task 5 follow-up — corrected gateway path, and a resource-exhaustion caveat
+
+A later pass at this task (this session did not have the above conclusion in hand at start —
+it was picked up from a stale task brief that described the evidence file as having only three
+sections) went one step further on the "no `/orders` route" diagnosis above and found a working
+URL, but was unable to complete a clean full run due to cluster resource exhaustion. Recorded here
+for whoever picks this up next.
+
+**The 404 is fixable without touching ingress config.** `PlaceReviseCancelOrderStepDefinitions`'s
+own default (used when `gateway.base-url` is *not* overridden) is
+`http://localhost:8091/api/v1` — i.e. the non-override path already includes an `/api/v1` segment
+that the override value used above (`http://localhost:18000`) dropped. Combining that with the
+ingress's actual `/public(/|$)(.*)` rule (confirmed via `kubectl get ingress -n ftgo -o yaml`) gives
+`http://localhost:18000/public/api/v1`, which was confirmed live: `curl -X POST
+http://localhost:18000/public/api/v1/orders` and `curl http://localhost:18000/public/api/v1/orders/xxx`
+both return real `public-gateway`/`order-service` JSON error bodies (`{"timestamp":...,"status":404,...}`)
+rather than nginx's static 404 HTML page — i.e. traffic reaches the app through the ingress and the
+mesh correctly. `-Dspring.profiles.active=kubernetes` (the flag named in this task's original brief)
+does not exist anywhere in this module; `gateway.base-url` is the only override mechanism, confirmed
+against `ftgo-end-to-end-test/build.gradle`.
+
+**Separately, the suite's "Kubernetes profile" is not actually self-contained via `gateway.base-url`
+alone.** `HealthCheckStepDefinitions` and `PlaceReviseCancelOrderStepDefinitions` hardcode direct
+`localhost:<port>` calls for every one of the 13 app services (order-service:8082,
+kitchen-service:8083, accounting-service:8084, restaurant-service:8085, delivery-service:8086,
+order-history-service:8088, consumer-service:8081, mobile-gateway:8090, public-gateway:8091,
+authorization-server:9000, audit-log-service:8089, glitchtip:8000, tempo:3200) — a docker-compose
+assumption (compose maps each service straight to a host port) that a real cluster doesn't provide
+without 13 separate `kubectl port-forward` processes. This isn't documented in `k8s/README.md`'s
+ingress section or anywhere else. With all 13 forwarded, one full run got past the health-check
+stage entirely (`Every FTGO service's health endpoint reports UP` passed, confirming actuator
+health, DB connectivity, and Eureka self-registration all work for every meshed pod reached this
+way) before failing later on the (at-that-point-still-uncorrected) `/orders` 404.
+
+**A clean, fully-passing run combining both fixes was not obtained in this session — not because of
+a test failure, but because of cluster memory exhaustion accumulated from the repeated
+port-forward/test cycles this investigation needed.** `kubectl describe pod` on `order-service`
+showed both its app container and its `linkerd-proxy` sidecar exiting `137` (OOMKilled); `kubectl get
+pods -n ftgo` showed 10 of 13 app Deployments in `CrashLoopBackOff`; `docker stats
+ftgo-control-plane` showed the kind node at ~68% memory / ~84% CPU. The proxy container was OOMKilled
+right alongside the app container in the same pod, which is the signature of node-wide memory
+pressure, not a mesh-specific regression — consistent with the memory-exhaustion pattern already
+documented above for Task 4's rollout, now recurring under this task's repeated test-cycle load
+rather than under rollout load. This session stopped further test runs at that point rather than
+compound the pressure further, and did not attempt to raise resource limits (out of scope, same as
+Task 4).
+
+**Updated recommendation:** the mesh itself is not the blocker — `linkerd viz stat`'s 100%
+success/full-mTLS result from Task 4, plus this pass's confirmed live health-check pass and
+confirmed correct end-to-end routing at `http://localhost:18000/public/api/v1`, are consistent
+with the mesh passing traffic correctly. What remains is procedural: a next attempt should (a) use
+`-Dgateway.base-url=http://localhost:18000/public/api/v1`, (b) hold all 13 `kubectl port-forward`
+processes open in the same shell as the `./gradlew` invocation (backgrounding them in a separate
+tool call risks the harness reaping them mid-run), and (c) start from a rested cluster (`kubectl get
+pods -n ftgo` all `2/2 Running`, `docker stats` well under node memory limit) rather than one still
+recovering from a prior attempt's load, to get one clean, single-shot pass. B3a's verdict from the
+main Conclusion above stands: mesh rollout and mTLS are complete and correct; black-box e2e
+confirmation remains BLOCKED, now narrowed from "ingress path gap" to "no clean run obtained yet
+under this session's resource constraints," pending a retry under the conditions above.
