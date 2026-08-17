@@ -2,3 +2,21 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: {{ .Values.global.namespace }}
+  annotations:
+    # Auto-inject a linkerd-proxy sidecar into every pod scheduled in this namespace (Ch.12 B3a).
+    linkerd.io/inject: enabled
+    # Explicit proxy resource pins rather than Linkerd's upstream defaults, since this
+    # single-node kind cluster already showed CPU-starvation cascades under simultaneous
+    # pod restarts (Ch.12 B2 Task 5) — a second uncapped container per pod is a needless
+    # repeat of that risk.
+    # CPU request/limit raised from 50m/100m during Task 4's full-namespace rollout: the
+    # original pins still let the proxy get throttled (probe timeouts to its own :4191
+    # admin port, cascading readiness/liveness failures) once 11 Deployments restarted
+    # together on this single-node kind cluster. See the Task 4 evidence entry.
+    config.linkerd.io/proxy-cpu-request: "100m"
+    config.linkerd.io/proxy-cpu-limit: "200m"
+    # Memory pins left unchanged (20Mi/50Mi) throughout B3a's Task 4 recovery — the exhaustion
+    # was total node capacity under simultaneous restarts, not per-proxy memory overrun, so
+    # raising these wouldn't have addressed the actual constraint.
+    config.linkerd.io/proxy-memory-request: "20Mi"
+    config.linkerd.io/proxy-memory-limit: "50Mi"

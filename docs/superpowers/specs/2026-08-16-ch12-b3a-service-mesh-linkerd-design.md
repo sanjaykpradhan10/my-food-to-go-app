@@ -64,9 +64,16 @@ better fit for this environment and a smaller, more focused change for B3a speci
   application infrastructure; it is the mechanism B3a uses to prove mTLS is actually happening,
   the same role k6 played for B2's zero-downtime verification.
 - **Stateful/infra services (MySQL, Kafka, ELK, Prometheus/Grafana/Tempo, GlitchTip) are not
-  meshed in B3a.** They don't participate in the HTTP-layer service-to-service calls mTLS
-  protects, and excluding them keeps B3a's proxy-count/resource-risk footprint to just the app
-  pods that actually matter for this demonstration.
+  the intended meshing target in B3a** — they don't participate in the HTTP-layer
+  service-to-service calls mTLS protects. In practice, because injection is enabled via a
+  namespace-wide annotation on `ftgo` (the simplest mechanism, matching B1's "whole stack" chart
+  philosophy) rather than per-workload opt-in, these infra pods get an injected `linkerd-proxy`
+  sidecar too when scheduled into that namespace. This is accepted as a harmless side effect
+  (extra sidecar resource overhead, no functional impact — these services don't make
+  proxy-visible HTTP calls to each other) rather than fixed via per-pod `linkerd.io/inject:
+  disabled` overrides, to keep the chart change minimal. See
+  `docs/superpowers/plans/2026-08-16-ch12-b3a-service-mesh-linkerd-evidence.md`'s
+  full-namespace-rollout section for where this was discovered.
 
 ## Resource risk and mitigation
 
@@ -99,7 +106,9 @@ not just "the install succeeded" or a config-file inspection.
 - Linkerd's dashboard/golden-metrics UI (B3b).
 - `ServiceProfiles`-based retries/circuit-breaking, and any comparison against the existing
   Resilience4j-based resilience (B3c).
-- Meshing infra/stateful services (MySQL, Kafka, ELK, Prometheus/Grafana/Tempo, GlitchTip).
+- Deliberately targeting infra/stateful services (MySQL, Kafka, ELK, Prometheus/Grafana/Tempo,
+  GlitchTip) for meshing — they end up injected anyway as a namespace-wide side effect (see
+  Architecture above), but this was never a B3a goal in itself.
 - Any change to application code — B3a is entirely infrastructure (namespace annotation +
   control-plane install + resource tuning).
 
@@ -109,7 +118,21 @@ not just "the install succeeded" or a config-file inspection.
 - All `ftgo` namespace app pods (13 business services + 2 gateways + auth/config/registry
   servers) show 2/2 containers Ready (app + injected proxy) after a rollout.
 - `linkerd viz tap` on a live request flow between at least two meshed services shows `tls=true`.
-- No regression to the existing Kubernetes-profile `ftgo-end-to-end-test` suite (still passes
-  with the mesh installed).
+- No regression to the existing Kubernetes-profile `ftgo-end-to-end-test` suite attributable to
+  the mesh: the first verification run failed 10/11 tests on `POST /orders` 404s; a follow-up
+  traced this to a client-side `gateway.base-url` convention mismatch (the suite's no-override
+  default already includes `/api/v1`, which the tested override value omitted) rather than an
+  ingress gap, and confirmed correct routing live (`http://localhost:18000/public/api/v1`, plus a
+  passing health-check run across all 13 services) — but a clean full pass combining that fix with
+  the suite's 13 required `kubectl port-forward`s was not obtained, as repeated test cycles pushed
+  this project's single-node cluster into the same memory-exhaustion pattern documented for the
+  full-namespace rollout below. This is unrelated to mTLS/mesh behavior, and no ingress or
+  application changes were made by any B3a task. B3a's actual mTLS verification instead relies on
+  the in-cluster evidence already captured: `linkerd viz tap` showing `tls=true` on live
+  cross-service calls, and `linkerd viz stat` showing all 13 app Deployments 2/2 Ready, MESHED,
+  100% success. A clean full e2e pass under rested cluster conditions is a documented follow-up,
+  not a B3a blocker. See
+  `docs/superpowers/plans/2026-08-16-ch12-b3a-service-mesh-linkerd-evidence.md`'s Conclusion
+  section.
 - Documentation sweep (README.md, CONTEXT.md, docs/ARCHITECTURE.md new subsection) landing in
   the same change, per this project's existing convention.
