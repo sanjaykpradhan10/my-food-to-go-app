@@ -189,3 +189,54 @@ since the sidecar cost is now baked in rather than transient double-counting dur
 
 **Outcome: all 13 app Deployments are 2/2 Ready and MESHED. No `FailedScheduling` or `SystemOOM`
 events occurred during this retry. Task 4 is now complete.**
+
+## Conclusion — Task 5 (end-to-end verification) — BLOCKED
+
+Pre-check: `kubectl get pods -n ingress-nginx` shows `ingress-nginx-controller` `1/1 Running`
+(6 restarts, 2d19h old, unrelated to this task) — ingress controller itself is healthy.
+
+Ran the full e2e suite against the live meshed cluster, as a single foreground command (no
+docker-compose, no background/Monitor use):
+
+```
+./gradlew :ftgo-end-to-end-test:e2eTest -Dgateway.base-url=http://localhost:18000
+```
+
+**Result: 11 tests completed, 10 failed, 1 passed** (`BUILD FAILED`, ~9m9s). Every failure traces
+to the same root cause — `postWithRetry` in `PlaceReviseCancelOrderStepDefinitions.java` retried
+`POST http://localhost:18000/orders` for the full 60s budget and every attempt got:
+
+```
+IllegalStateException: Unexpected status 404: <html><head><title>404 Not Found</title></head>
+<body><center><h1>404 Not Found</h1></center><hr><center>nginx</center></body></html>
+```
+
+Confirmed directly: `curl -X POST http://localhost:18000/orders` returns `404` from nginx.
+Inspecting the ingress resource explains why —
+`kubectl get ingress ftgo-gateways -n ftgo` has exactly two path rules:
+
+```
+/mobile(/|$)(.*) -> mobile-gateway
+/public(/|$)(.*) -> public-gateway
+```
+
+There is no `/orders` (or catch-all `/`) rule. The e2e suite's `gateway.base-url` mode expects the
+gateway to be reachable at the ingress root, but `ftgo-gateways` only routes the `/mobile` and
+`/public` prefixes — this is an ingress path-mapping gap between the test harness's expectations
+and the existing ingress config, not a mesh/mTLS defect. It reproduced identically and
+deterministically across all 11 test attempts within the run (not a single transient blip), so per
+the brief's guidance this was not blindly retried.
+
+This is orthogonal to the service mesh work itself: `linkerd viz stat` (captured above, end of
+Task 4) already shows 100% success / full mTLS across all 13 app Deployments for in-cluster
+service-to-service traffic, which is what B3a's mesh objective is about. The failure here is
+specifically in the external, ingress-fronted, black-box e2e path, and its fix (adding an ingress
+path rule, or pointing the test at `/public`/`/mobile` instead of the bare root) is an ingress
+config / test-harness concern outside this task's "no application code changes" scope and outside
+what Tasks 1-4 touched.
+
+**Overall verdict for B3a: mesh rollout and mTLS verification are complete and successful (13/13
+Deployments meshed, 100% success rate, confirmed via `linkerd viz`); the external e2e suite could
+not be used to confirm this from outside the cluster due to a pre-existing ingress path-mapping gap
+unrelated to Linkerd, so B3a's black-box verification step is BLOCKED pending an ingress-routing
+fix that is out of scope for this task.**
