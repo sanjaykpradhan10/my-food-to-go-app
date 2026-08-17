@@ -2008,14 +2008,22 @@ all 13 app Deployments (business services + gateways + auth/config/registry serv
 Ready and MESHED; `linkerd viz tap deploy/order-service -n ftgo --to deploy/restaurant-service`
 against a live in-cluster call showed `tls=true` on every observed frame; `linkerd viz stat deploy
 -n ftgo` showed 100% success across all meshed workloads. The `ftgo-end-to-end-test` suite,
-however, did **not** fully pass against the meshed cluster: 10 of 11 tests failed, all tracing to
-the same root cause — a pre-existing (not caused by B3a) ingress gap where `ftgo-gateways`'
-ingress resource only routes `/mobile` and `/public` path prefixes, with no `/orders` or catch-all
-rule, so the suite's direct `POST /orders` call against the ingress root always returns a 404 from
-nginx regardless of Linkerd or mTLS. This was confirmed deterministically (reproduced identically
-across all 11 attempts, not a transient flake) and is outside B3a's scope — no ingress changes
-were made by any B3a task. B3a's actual mTLS verification therefore rests on the in-cluster
-`linkerd viz tap`/`stat` evidence above, not on the e2e suite.
+however, did **not** get a clean full pass against the meshed cluster: the first attempt failed 10
+of 11 tests, all `POST /orders` calls returning 404 from nginx. That first attempt used
+`-Dgateway.base-url=http://localhost:18000`; a follow-up pass found the suite's own no-override
+default is `http://localhost:8091/api/v1` (docker-compose's direct-port assumption), and combining
+that `/api/v1` segment with the ingress's actual `/public(/|$)(.*)` rule
+(`http://localhost:18000/public/api/v1`) reaches `public-gateway`/`order-service` correctly —
+confirmed live via `curl`, and via a health-check pass that reached and verified all 13 services'
+actuator health, DB connectivity, and Eureka registration. So the 404 was a client-side
+`gateway.base-url` convention mismatch, not an ingress routing gap, and it is fixable without any
+ingress change. A clean full run combining the corrected URL with the 13 manual
+`kubectl port-forward`s the suite's other step definitions require was not obtained in this
+project's session — repeated port-forward/test cycles pushed the single-node cluster into the same
+memory-exhaustion pattern as the rollout blocker above, and further attempts were stopped rather
+than compound it. B3a's actual mTLS verification rests on the in-cluster `linkerd viz tap`/`stat`
+evidence above, which is unaffected by this; getting one clean full e2e pass under rested cluster
+conditions is a documented follow-up rather than a B3a blocker.
 
 **Deferred to B3b/B3c.** The `linkerd viz` extension is installed as CLI verification tooling only
 (`tap`/`stat`); its dashboard/golden-metrics UI is not used — a proper Grafana-integrated

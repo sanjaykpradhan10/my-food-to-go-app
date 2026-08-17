@@ -119,14 +119,19 @@ not just "the install succeeded" or a config-file inspection.
   servers) show 2/2 containers Ready (app + injected proxy) after a rollout.
 - `linkerd viz tap` on a live request flow between at least two meshed services shows `tls=true`.
 - No regression to the existing Kubernetes-profile `ftgo-end-to-end-test` suite attributable to
-  the mesh: verification found the suite's `gateway.base-url` mode fails on a pre-existing (not
-  introduced by B3a) ingress gap — `ftgo-gateways` only routes `/mobile` and `/public`, with no
-  `/orders` or catch-all rule, so the suite's direct `POST /orders` call 404s regardless of
-  Linkerd. This is unrelated to mTLS/mesh behavior and outside B3a's scope (namespace annotation +
-  control-plane install + resource tuning only — no ingress changes in any B3a task). B3a's actual
-  mTLS verification instead relies on the in-cluster evidence already captured: `linkerd viz tap`
-  showing `tls=true` on live cross-service calls, and `linkerd viz stat` showing all 13 app
-  Deployments 2/2 Ready, MESHED, 100% success. See
+  the mesh: the first verification run failed 10/11 tests on `POST /orders` 404s; a follow-up
+  traced this to a client-side `gateway.base-url` convention mismatch (the suite's no-override
+  default already includes `/api/v1`, which the tested override value omitted) rather than an
+  ingress gap, and confirmed correct routing live (`http://localhost:18000/public/api/v1`, plus a
+  passing health-check run across all 13 services) — but a clean full pass combining that fix with
+  the suite's 13 required `kubectl port-forward`s was not obtained, as repeated test cycles pushed
+  this project's single-node cluster into the same memory-exhaustion pattern documented for the
+  full-namespace rollout below. This is unrelated to mTLS/mesh behavior, and no ingress or
+  application changes were made by any B3a task. B3a's actual mTLS verification instead relies on
+  the in-cluster evidence already captured: `linkerd viz tap` showing `tls=true` on live
+  cross-service calls, and `linkerd viz stat` showing all 13 app Deployments 2/2 Ready, MESHED,
+  100% success. A clean full e2e pass under rested cluster conditions is a documented follow-up,
+  not a B3a blocker. See
   `docs/superpowers/plans/2026-08-16-ch12-b3a-service-mesh-linkerd-evidence.md`'s Conclusion
   section.
 - Documentation sweep (README.md, CONTEXT.md, docs/ARCHITECTURE.md new subsection) landing in
