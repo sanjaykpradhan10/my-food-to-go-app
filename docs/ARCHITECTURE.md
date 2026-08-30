@@ -2025,9 +2025,66 @@ than compound it. B3a's actual mTLS verification rests on the in-cluster `linker
 evidence above, which is unaffected by this; getting one clean full e2e pass under rested cluster
 conditions is a documented follow-up rather than a B3a blocker.
 
-**Deferred to B3b/B3c.** The `linkerd viz` extension is installed as CLI verification tooling only
-(`tap`/`stat`); its dashboard/golden-metrics UI is not used — a proper Grafana-integrated
-golden-metrics view is B3b's scope. `ServiceProfiles`-based retries/circuit-breaking at the mesh
-layer, and a comparison
-against the business services' existing Resilience4j-based application-level circuit breakers, are
-B3c's scope. Neither B3b nor B3c has started.
+**Deferred to B3c.** `ServiceProfiles`-based retries/circuit-breaking at the mesh layer, and a
+comparison against the business services' existing Resilience4j-based application-level circuit
+breakers, are B3c's scope. Not yet started.
+
+### Mesh observability — linkerd-viz golden metrics (§12.4, B3b)
+
+B3a installed `linkerd viz` as CLI-only verification tooling (`tap`/`stat`); B3b turns on its
+dashboard as the project's mesh-observability story.
+
+**linkerd-viz dashboard over Grafana integration.** B3a's notes above originally scoped B3b as "a
+proper Grafana-integrated golden-metrics view." That was revisited during this session's cluster
+recovery (2026-08-29, see `CONTEXT.md`'s session log): Grafana — along with the rest of the
+Ch.11 observability stack (Kibana, Logstash, Prometheus, Tempo, GlitchTip) — was permanently
+scaled to 0 replicas as a capacity decision for this single-node `kind` cluster, after
+unbounded `linkerd-proxy` sidecars and a MySQL DNS blackout were found to be the actual root
+causes of that session's degradation, not insufficient Docker Desktop allocation. Re-enabling
+Grafana just for B3b would directly undo that decision and reintroduce the JVM-contention risk
+the recovery spent the session fixing. `linkerd viz` bundles its own Prometheus instance
+(`linkerd-viz` namespace, already running since B3a) and a standalone dashboard UI
+(`linkerd viz dashboard`) that reads from it directly — no Grafana dependency, no additional
+always-on footprint on the node. This is Linkerd's own built-in golden-metrics UI: per-Deployment
+and per-route success rate, RPS, and P50/P95/P99 latency.
+
+**Access — port-forward, not ingress.** The dashboard is reached via
+`~/.linkerd2/bin/linkerd viz dashboard` (a `kubectl port-forward` wrapper against
+`linkerd-viz/web`), the same ad-hoc-tooling access pattern already used for `tap`/`stat` in B3a,
+rather than a permanent `nginx-ingress` route. It's operator-facing verification tooling, not an
+end-user-facing service — an always-on ingress route would be another idle listener on an
+already capacity-constrained node for no operational benefit.
+
+**`tap-injector` fix.** `linkerd-viz`'s `tap-injector` pod (webhook that injects the `tap`
+sidecar hook into meshed pods, used by the dashboard's live "Tap" tab) was found stuck at `1/2`
+`CrashLoopBackOff` with 98 restarts over 13 days, logging `failed to sync caches` roughly 60
+seconds after each start. Its RBAC (`ClusterRole/linkerd-tap-injector`) only needs
+`get/list/watch` on `namespaces` — nothing suggested a permissions problem, and no config had
+changed. The timing (a fixed ~60s controller-runtime cache-sync timeout expiring) pointed
+instead at the same resource-contention story as this session's other findings: the pod had no
+CPU/memory requests or limits set, so on a node that was still processing prior sessions'
+degradation it couldn't get scheduled time to complete an initial `List` call against the API
+server within that window. Once the node reached its recovered ~52%/79% cpu/mem allocation
+state, deleting the pod let it restart cleanly (`caches synced` within milliseconds) — confirming
+this was transient resource starvation, not a defect in `tap-injector` itself, so no chart or
+manifest change was needed.
+
+**Evidence.** `linkerd viz stat deploy -n ftgo` shows all 13 business-service Deployments meshed
+(`1/1`) with 100% success and sub-100ms P99 latency from readiness/liveness-probe traffic alone.
+To confirm the golden metrics actually track real request volume rather than just probe noise,
+the existing k6 load-generation Job from B2 (`k8s/verification/k6-rollout-check-job.yaml`, 5 VUs
+hammering `order-service`'s `/actuator/health`) was run against the live mesh while polling
+`linkerd viz stat deploy/order-service -n ftgo` every 20s:
+
+| Elapsed | RPS | Success | P50 | P95 | P99 |
+|---|---|---|---|---|---|
+| baseline (idle) | 0.5rps | 100.00% | 1ms | 9ms | 10ms |
+| +20s | 150.4rps | 100.00% | 1ms | 1ms | 3ms |
+| +40s | 402.1rps | 100.00% | 1ms | 1ms | 7ms |
+| +60s | 686.0rps | 100.00% | 1ms | 1ms | 3ms |
+| +80s | 708.8rps | 100.00% | 1ms | 1ms | 3ms |
+
+RPS climbs cleanly from the idle probe baseline to the k6 job's steady-state load (matching the
+job's own reported 612 req/s average) and back down to baseline once the job completed, with
+success rate holding at 100% throughout — confirming the dashboard's golden metrics accurately
+reflect live mesh traffic, not just static configuration.
