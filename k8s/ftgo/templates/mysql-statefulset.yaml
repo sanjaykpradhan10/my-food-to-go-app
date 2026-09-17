@@ -30,10 +30,18 @@ spec:
           volumeMounts:
             - {name: mysql-data, mountPath: /var/lib/mysql}
             - {name: init-sql, mountPath: /docker-entrypoint-initdb.d}
+          # timeoutSeconds/failureThreshold raised from the 1s/3 defaults for the same reason as
+          # app-service.yaml: mysqladmin ping under node contention took longer than 1s, which
+          # dropped this pod out of Ready — and because the mysql Service is headless (clusterIP:
+          # None), a NotReady mysql-0 has ZERO Service endpoints, so "mysql" stops resolving in
+          # DNS entirely for every dependent service (UnknownHostException, not just a failed
+          # connection) rather than degrading gracefully. See CONTEXT.md session log 2026-08-29.
           readinessProbe:
             exec: {command: ["sh", "-c", "mysqladmin ping -h localhost -u ftgo -p\"$MYSQL_PASSWORD\""]}
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
       volumes:
         - name: init-sql
           configMap: {name: mysql-init-sql}
