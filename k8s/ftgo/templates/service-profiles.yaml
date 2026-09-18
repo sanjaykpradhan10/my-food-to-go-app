@@ -1,0 +1,73 @@
+# Ch.12 B3c: mesh-layer retries (Linkerd ServiceProfiles) for order-service's four
+# downstream GET calls. Authored by hand against the CRD shape confirmed via
+# `linkerd profile --template` (the installed edge-26.8.2 CLI dropped the `--tap`
+# flag this plan originally assumed, so a live-traffic skeleton could not be tap-derived;
+# the route paths below are taken directly from the *Proxy.java source files instead,
+# per the plan's Global Constraints).
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: restaurant-service.{{ .Values.global.namespace }}.svc.cluster.local
+  namespace: {{ .Values.global.namespace }}
+spec:
+  routes:
+    - name: GET /restaurants/{id}
+      condition:
+        method: GET
+        pathRegex: /restaurants/[^/]*
+      isRetryable: true
+  retryBudget:
+    retryRatio: 0.2
+    minRetriesPerSecond: 10
+    ttl: 10s
+---
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: kitchen-service.{{ .Values.global.namespace }}.svc.cluster.local
+  namespace: {{ .Values.global.namespace }}
+spec:
+  routes:
+    - name: GET /tickets/order/{orderId}
+      condition:
+        method: GET
+        pathRegex: /tickets/order/[^/]*
+      isRetryable: true
+  retryBudget:
+    retryRatio: 0.2
+    minRetriesPerSecond: 10
+    ttl: 10s
+---
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: delivery-service.{{ .Values.global.namespace }}.svc.cluster.local
+  namespace: {{ .Values.global.namespace }}
+spec:
+  routes:
+    - name: GET /deliveries/order/{orderId}
+      condition:
+        method: GET
+        pathRegex: /deliveries/order/[^/]*
+      isRetryable: true
+  retryBudget:
+    retryRatio: 0.2
+    minRetriesPerSecond: 10
+    ttl: 10s
+---
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: accounting-service.{{ .Values.global.namespace }}.svc.cluster.local
+  namespace: {{ .Values.global.namespace }}
+spec:
+  routes:
+    - name: GET /authorizations/order/{orderId}
+      condition:
+        method: GET
+        pathRegex: /authorizations/order/[^/]*
+      isRetryable: true
+  retryBudget:
+    retryRatio: 0.2
+    minRetriesPerSecond: 10
+    ttl: 10s
