@@ -175,6 +175,8 @@ Configuration sourced from three tiers: **Spring Cloud Config Server** (`config-
 
 Each `findX`/`findXForView` method has a `@CircuitBreaker`-annotated fallback method returning `Unavailable<>(throwable.getMessage())` — this is what turns a timeout or an open circuit into a degraded section instead of a failed request. `RestaurantServiceProxy` alone carries two methods against the same `restaurantService` circuit breaker instance: the pre-existing `findRestaurant` (throws, used by `POST /orders`'s order-creation validation) and the new `findRestaurantForView` (returns `SectionResult`, used only by `GET /orders/{id}/view`) — same remote endpoint, two different failure-handling contracts for two different callers.
 
+**Mesh-level retries do not apply here (Ch.12 B3c):** `k8s/ftgo/templates/service-profiles.yaml` defines a Linkerd `ServiceProfile` for each of these four services' GET route, intended as a mesh-layer retry complement below these Resilience4j circuit breakers. In practice they have no effect on this integration, because all four `RestClient`s above are `@LoadBalanced` and resolve their Eureka application names (`ftgo-restaurant-service` etc.) to a specific pod IP via Spring Cloud LoadBalancer — never through the Kubernetes Service, which is what Linkerd's outbound route-retry logic requires. See `docs/ARCHITECTURE.md`'s B3c section for the full finding.
+
 ## Events
 
 ### Publishes (`order.events`, choreography only)

@@ -2025,9 +2025,10 @@ than compound it. B3a's actual mTLS verification rests on the in-cluster `linker
 evidence above, which is unaffected by this; getting one clean full e2e pass under rested cluster
 conditions is a documented follow-up rather than a B3a blocker.
 
-**Deferred to B3c.** `ServiceProfiles`-based retries/circuit-breaking at the mesh layer, and a
-comparison against the business services' existing Resilience4j-based application-level circuit
-breakers, are B3c's scope. Not yet started.
+**B3c note.** `ServiceProfiles`-based retries/circuit-breaking at the mesh layer, and a comparison
+against the business services' existing Resilience4j-based application-level circuit breakers, were
+B3c's scope — done; see the "Mesh traffic management" section below for what was built and, more
+importantly, the limitation B3c's own verification uncovered.
 
 ### Mesh observability — linkerd-viz golden metrics (§12.4, B3b)
 
@@ -2088,3 +2089,76 @@ RPS climbs cleanly from the idle probe baseline to the k6 job's steady-state loa
 job's own reported 612 req/s average) and back down to baseline once the job completed, with
 success rate holding at 100% throughout — confirming the dashboard's golden metrics accurately
 reflect live mesh traffic, not just static configuration.
+
+### Mesh traffic management — ServiceProfiles (§12.4, B3c)
+
+B3a and B3b established the mesh's identity/security (auto-mTLS) and observability layers; B3c
+adds Linkerd's traffic-management primitive — `ServiceProfile` — as a mesh-layer retry complement
+to the business services' existing Resilience4j circuit breakers, targeting `order-service`'s four
+downstream GET calls (to `restaurant-service`, `kitchen-service`, `delivery-service`,
+`accounting-service` — the same four calls the Ch.7 API-composition endpoint `GET /orders/{id}/view`
+fans out to concurrently).
+
+**What was built.** `k8s/ftgo/templates/service-profiles.yaml` defines one `ServiceProfile` per
+callee, named `<service>.ftgo.svc.cluster.local` per Linkerd's required convention, each marking
+its single GET route `isRetryable: true` with a bounded retry budget (`retryRatio: 0.2`,
+`minRetriesPerSecond: 10`, `ttl: 10s` — retries capped at 20% of underlying request rate plus a
+10rps floor, the standard retry-storm safeguard). None of the four services publish an OpenAPI
+spec, and the installed Linkerd CLI (`edge-26.8.2`) has removed `linkerd profile --tap` (the
+tap-derived generation approach this sub-project's plan assumed) entirely, so the routes were
+instead authored by hand against the CRD shape confirmed via `linkerd profile --template`, using
+the exact GET paths already sourced from each `*Proxy.java` file during planning.
+
+**The `ServiceProfile`-is-attached-to-the-destination naming caveat.** A `ServiceProfile` is a
+property of the *callee's* identity (`restaurant-service.ftgo.svc.cluster.local`), not the caller —
+any meshed client addressing that same Service name gets the same route classification and retry
+behavior automatically, with no per-caller configuration. This is by design (it's how the mesh
+scales this feature past a single relationship), and it's also exactly what makes the finding below
+possible: the `ServiceProfile` is correctly attached and correctly shaped, but *nothing calls the
+destination by that name*.
+
+**The central finding: mesh-level retries have no effect on order-service's real traffic.**
+Verification (fault-injecting `restaurant-service` and `kitchen-service` by scaling each to 0 and
+driving `GET /orders/1/view`, with and without the corresponding `ServiceProfile` present — full
+detail and raw evidence in
+`docs/superpowers/plans/2026-08-29-ch12-b3c-mesh-traffic-management-evidence.md`) found that
+Prometheus never records a single route-classified metric (`rt_route` label) for any of
+order-service's four outbound calls, in any configuration. Root cause: `RestClientConfig.java`
+builds all four `RestClient` beans as `@LoadBalanced`, targeting Eureka application names
+(`http://ftgo-restaurant-service` etc. — the Ch.3 service-discovery pattern) rather than the
+Kubernetes Service DNS name. Spring Cloud LoadBalancer resolves these to a specific **pod IP**, and
+the HTTP call goes straight there. Linkerd's outbound `ServiceProfile` route-matching and retry
+logic is keyed on the request's destination resolving to a Kubernetes Service identity
+(`<name>.<namespace>.svc.cluster.local`) — a call addressed directly at a pod IP never passes
+through that lookup, so the mesh has no opportunity to apply the `ServiceProfile` at all, correctly
+authored or not.
+
+`/orders/{id}/view` continued returning `200` with a gracefully degraded section throughout every
+injected fault, in every configuration tested — that behavior comes entirely from Resilience4j's
+existing circuit breakers and `@CircuitBreaker` fallback methods (§3, §5), not from any mesh-layer
+retry. This contradicts this sub-project's original hypothesis (stated in B3a's deferred note above)
+that the two layers would visibly complement each other.
+
+**Mesh vs. client-side service discovery, compared:**
+
+| | Mesh (`ServiceProfile`) | Application (Resilience4j) |
+|---|---|---|
+| Layer | Transport (sidecar proxy) | Application (JVM, per-dependency Java config) |
+| Requires | Traffic addressed via the Kubernetes Service | Nothing — works regardless of how the callee is addressed |
+| Awareness | None — retries any classified-retryable route blindly | Business-aware (e.g. excludes `RestaurantNotFoundException` from the circuit's failure count) |
+| Failure handling | Retry within a bounded budget, then give up | Circuit-breaker state machine + explicit fallback method |
+| Config surface | One YAML resource per callee, mesh-wide | Per-proxy Java `@CircuitBreaker` annotations |
+| **Effective here** | **No — order-service bypasses the Service via Eureka** | **Yes — this is what actually protects `/orders/{id}/view`** |
+
+**Why this isn't a B3c defect.** The `ServiceProfile`s are correctly authored per the plan's spec
+and successfully applied — the gap is structural, not a mistake in this sub-project's YAML. A
+service mesh and a client-side discovery library (Eureka) are two independent implementations of
+the same concern (locate a healthy backend instance); stacking one under the other without changing
+which one the application actually calls through means the lower layer's traffic-shaping features
+go dark for that traffic, however correctly they're configured. Making order-service's
+`ServiceProfile`s take effect would mean switching `RestClientConfig` from `@LoadBalanced`
+Eureka-resolved clients to plain Kubernetes-Service-addressed calls for these four dependencies —
+removing part of Ch.3's client-side-discovery pattern specifically for this integration — which is
+a Java/architecture change explicitly out of scope for B3c's plan ("No Java code changes") and a
+distinct learning topic in its own right (the book's own discussion of platform-provided vs.
+library-provided traffic management, revisited here empirically rather than just conceptually).
