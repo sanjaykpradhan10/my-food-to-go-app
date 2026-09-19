@@ -222,9 +222,9 @@ Update this file at the end of every session (either tool can do it).
 - [ ] Remaining §11.1 topics (e.g. transport-level security) not covered — deliberately out of scope for this project, not pending work
 
 ### Deployment
-- [ ] Deploy as container (Ch. 12)
+- [x] Deploy as container (Ch. 12, §12.1–12.3 — sub-project A: Docker images + Docker Compose for all services, see `docs/CH12-DEPLOYMENT.md`)
 - [x] Service mesh (Ch. 12 — Linkerd, auto-mTLS; B3a done, B3b done, B3c done — see "Understood well" below for the mesh-vs-client-side-discovery finding)
-- [ ] Sidecar (Ch. 12)
+- [x] Sidecar (Ch. 12 — Linkerd's own implementation mechanism is the sidecar pattern: a `linkerd-proxy` container injected into every pod alongside the application container, intercepting all its traffic; not a separately implemented pattern beyond the service mesh work above)
 
 ### Refactoring
 - [x] Strangler application (Ch. 13 — conceptual only, no implementation; this project has no monolith to strangle)
