@@ -124,6 +124,7 @@ my-food-to-go-app/
 ├── ftgo-config-server/        ← Spring Cloud Config Server, git-backed by `config-repo/` (Ch.11, §11.2)
 ├── ftgo-end-to-end-test/     ← end-to-end test module (Ch.10, not a runnable service)
 └── docs/
+    ├── BUILD-JOURNEY.md      ← chapter-by-chapter narrative: book concepts, examples, what was built, interview prep
     ├── ARCHITECTURE.md       ← event catalog, outbox pattern, saga sequence diagrams
     ├── session-*.md          ← per-session summaries
     └── superpowers/
