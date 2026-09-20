@@ -1,5 +1,7 @@
 # my-food-to-go-app
 
+![Unit Tests](https://github.com/sanjaykpradhan10/my-food-to-go-app/actions/workflows/unit-tests.yml/badge.svg)
+
 A hands-on implementation of the FTGO (Food To Go) application from [*Microservices Patterns*](https://microservices.io/book) by Chris Richardson, built chapter by chapter alongside the book.
 
 ## What this is
@@ -75,6 +77,7 @@ It also starts the application services, each on the port listed in the [Service
 ```bash
 ./gradlew test
 ```
+This is exactly what CI (`.github/workflows/unit-tests.yml`) runs on every push/PR to `main`.
 
 **Build all services:**
 ```bash

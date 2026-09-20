@@ -1,4 +1,6 @@
 spring:
+  application:
+    name: ftgo-accounting-service
   # spring-cloud-starter-config (added for live outbox-interval refresh) makes
   # ConfigDataMissingEnvironmentPostProcessor require a spring.config.import property once it's
   # on the classpath; "optional:" plus config.enabled=false here means the test context boots
